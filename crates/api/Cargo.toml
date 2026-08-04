@@ -1,0 +1,31 @@
+[package]
+name = "cex-api"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "api"
+path = "src/main.rs"
+
+[lib]
+name = "cex_api"
+path = "src/lib.rs"
+
+[dependencies]
+cex-proto.workspace = true
+anyhow.workspace = true
+futures-util = "0.3"
+redis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+# The tests drive a real engine so the loopback is exercised end to end
+# rather than against a mock that cannot disagree with reality.
+cex-engine = { path = "../engine" }
+tempfile.workspace = true
