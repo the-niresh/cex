@@ -267,12 +267,17 @@ pub enum Event {
     },
 }
 
-/// An event as it appears on the output stream: the engine's sequence number plus
-/// the command that produced it, so `persist` can deduplicate on redelivery.
+/// Everything one command produced, published as a single stream entry.
+///
+/// Batched rather than one entry per event so a consumer always sees a coherent
+/// unit: a trade and the balance changes it caused arrive together or not at all.
+/// `seq` is the engine's gap-free counter and is what downstream services
+/// deduplicate on when a redelivery happens.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StampedEvent {
+pub struct EventBatch {
     pub seq: Seq,
-    pub event: Event,
+    pub request_id: RequestId,
+    pub events: Vec<Event>,
 }
 
 // ─────────────────────────── responses ───────────────────────────

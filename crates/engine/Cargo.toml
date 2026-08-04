@@ -1,0 +1,27 @@
+[package]
+name = "cex-engine"
+version.workspace = true
+edition.workspace = true
+
+# The executable is `engine` — that is what gets typed on a server.
+[[bin]]
+name = "engine"
+path = "src/main.rs"
+
+[lib]
+name = "cex_engine"
+path = "src/lib.rs"
+
+[dependencies]
+cex-core.workspace = true
+cex-proto.workspace = true
+anyhow.workspace = true
+redis.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+uuid.workspace = true
