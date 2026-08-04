@@ -1,0 +1,6 @@
+# Pins the compiler for everyone: laptop, CI, build container.
+# Without this, a machine on a different rustc silently gets different
+# behaviour, and "works here, fails in CI" becomes a category of bug.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
