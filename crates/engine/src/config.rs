@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use cex_proto::{CHANNEL_RESPONSES, STREAM_COMMANDS, STREAM_EVENTS};
+use cex_proto::{CHANNEL_RESPONSES, QUEUE_QUERIES, STREAM_COMMANDS, STREAM_EVENTS};
 
 /// Everything the engine process needs from its environment.
 ///
@@ -12,6 +12,8 @@ pub struct Config {
     pub commands_stream: String,
     pub events_stream: String,
     pub responses_channel: String,
+    /// Read requests. A plain list, not a stream: reads are never logged.
+    pub queries_queue: String,
     pub snapshot_dir: PathBuf,
     /// Take a snapshot after this many applied commands.
     pub snapshot_every: usize,
@@ -30,6 +32,7 @@ impl Default for Config {
             commands_stream: STREAM_COMMANDS.into(),
             events_stream: STREAM_EVENTS.into(),
             responses_channel: CHANNEL_RESPONSES.into(),
+            queries_queue: QUEUE_QUERIES.into(),
             snapshot_dir: PathBuf::from("data/snapshots"),
             snapshot_every: 5_000,
             snapshot_keep: 3,
@@ -47,6 +50,7 @@ impl Config {
             commands_stream: env_or("CEX_COMMANDS_STREAM", d.commands_stream),
             events_stream: env_or("CEX_EVENTS_STREAM", d.events_stream),
             responses_channel: env_or("CEX_RESPONSES_CHANNEL", d.responses_channel),
+            queries_queue: env_or("CEX_QUERIES_QUEUE", d.queries_queue),
             snapshot_dir: env_or("CEX_SNAPSHOT_DIR", d.snapshot_dir.display().to_string()).into(),
             snapshot_every: env_num("CEX_SNAPSHOT_EVERY", d.snapshot_every),
             snapshot_keep: env_num("CEX_SNAPSHOT_KEEP", d.snapshot_keep),

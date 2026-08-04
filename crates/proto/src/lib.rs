@@ -327,8 +327,13 @@ pub struct MarketView {
 }
 
 /// Result payload delivered back over the loopback channel.
+///
+/// **Adjacently** tagged (`type` + `data`), not internally tagged. An internal
+/// tag cannot be applied to a variant holding a sequence — serde fails at
+/// runtime with "cannot serialize tagged newtype variant ... containing a
+/// sequence" — and several variants here carry lists. See `tests/wire.rs`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "ok", rename_all = "snake_case")]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ResponseBody {
     Ack,
     Balances(Vec<BalanceView>),
@@ -349,12 +354,16 @@ pub enum ResponseBody {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Response {
     pub request_id: RequestId,
-    #[serde(flatten)]
     pub result: ResponseResult,
 }
 
+/// Success or failure, tagged explicitly on `status`.
+///
+/// Not `untagged`: an untagged enum decides a variant by trying each in turn,
+/// so a shape change can silently make an error decode as a success. The caller
+/// would then act on a result that was never produced.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ResponseResult {
     Ok { data: ResponseBody },
     Err { error: String },

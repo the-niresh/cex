@@ -20,7 +20,7 @@
 use anyhow::{Context, Result};
 use cex_core::state::{Snapshot, State};
 use cex_core::MarketRegistry;
-use cex_proto::{Command, EventBatch, Response, FIELD_PAYLOAD};
+use cex_proto::{Command, EventBatch, Query, Response, FIELD_PAYLOAD};
 use redis::aio::MultiplexedConnection;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
@@ -134,6 +134,43 @@ impl Runner {
         Ok(applied)
     }
 
+    /// Answer every query currently waiting, and return how many were answered.
+    ///
+    /// Reads are popped from a plain list rather than a stream: they change
+    /// nothing, so there is nothing to replay, and logging them would slow every
+    /// future recovery down for no benefit. They are answered from the same
+    /// state the command loop owns, so a read always reflects every command
+    /// applied before it.
+    pub async fn poll_queries(&mut self) -> Result<usize> {
+        let mut answered = 0usize;
+        loop {
+            let payload: Option<String> = self
+                .conn
+                .rpop(&self.cfg.queries_queue, None)
+                .await
+                .context("popping the query queue")?;
+            let Some(payload) = payload else { break };
+
+            let query: Query = match serde_json::from_str(&payload) {
+                Ok(q) => q,
+                Err(e) => {
+                    // No request id to reply to, so the caller can only time out.
+                    error!(error = %e, "undecodable query, dropping");
+                    continue;
+                }
+            };
+
+            let request_id = query.request_id();
+            let response = match self.state.query(&query) {
+                Ok(body) => Response::ok(request_id, body),
+                Err(e) => Response::err(request_id, e.to_string()),
+            };
+            self.reply(response).await;
+            answered += 1;
+        }
+        Ok(answered)
+    }
+
     /// Apply one command and publish its outcome.
     ///
     /// A malformed or rejected command is answered with an error and does not
@@ -229,6 +266,11 @@ impl Runner {
             "engine running"
         );
         loop {
+            // Reads first: they are cheap and a caller is blocked on each one.
+            if let Err(e) = self.poll_queries().await {
+                error!(error = %e, "query poll failed");
+            }
+
             match self.step().await {
                 Ok(0) => {}
                 Ok(n) => debug!(applied = n, position = %self.position, "batch applied"),

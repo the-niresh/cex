@@ -33,6 +33,7 @@ fn test_config(dir: &std::path::Path) -> Config {
         commands_stream: format!("test:{tag}:commands"),
         events_stream: format!("test:{tag}:events"),
         responses_channel: format!("test:{tag}:responses"),
+        queries_queue: format!("test:{tag}:queries"),
         snapshot_dir: dir.to_path_buf(),
         snapshot_every: 1_000_000, // off unless a test asks for it
         snapshot_keep: 3,
