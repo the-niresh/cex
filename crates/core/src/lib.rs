@@ -8,12 +8,15 @@
 //!
 //! Floats are not used here and must not be introduced. See [`math`].
 
+pub mod balances;
 pub mod book;
 pub mod error;
 pub mod market;
 pub mod math;
+pub mod state;
 
 pub use book::{Order, OrderBook};
 pub use error::EngineError;
 pub use market::{Market, MarketRegistry};
 pub use math::{mul_div, Rounding};
+pub use state::{Applied, State};
