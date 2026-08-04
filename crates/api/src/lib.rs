@@ -5,8 +5,10 @@
 
 pub mod auth;
 pub mod loopback;
+pub mod routes;
 pub mod users;
 
 pub use auth::{hash_password, verify_password, Tokens};
 pub use loopback::{Loopback, LoopbackConfig, LoopbackError};
+pub use routes::{build_router, AppState};
 pub use users::{User, UserStore, UsersError};
