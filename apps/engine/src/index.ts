@@ -2,16 +2,25 @@ import "dotenv/config";
 import { createClient } from "redis";
 import { env } from "./utils/env.js";
 import type { MARKET_ASSETS } from "./utils/types.ts";
+import type { PositionSide } from "./utils/perps-types.ts";
 import  MatchingEngine  from "./modules/mathchingEngine.ts";
+import PerpsEngine from "./modules/perpsEngine.ts";
 
 const matchingEngine = new MatchingEngine();
+const perpsEngine = new PerpsEngine();
 
 export type EngineCommandType =
   | "create_order"
   | "get_depth"
   | "get_user_balance"
   | "get_order"
-  | "cancel_order";
+  | "cancel_order"
+  | "perps_deposit"
+  | "perps_open"
+  | "perps_close"
+  | "perps_mark_price"
+  | "perps_position"
+  | "perps_account";
 
 export interface EngineRequest {
   correlationId: string;
@@ -96,6 +105,62 @@ function handleEngineRequest(message: EngineRequest): unknown {
         message.payload.userId as string,
         message.payload.orderId as string,
       );
+      if (!result.ok) throw new Error(result.error);
+      return result.data;
+    }
+
+    case "perps_deposit": {
+      const p = message.payload;
+      const result = perpsEngine.deposit(p.userId as string, p.amount as number);
+      if (!result.ok) throw new Error(result.error);
+      return result.data;
+    }
+
+    case "perps_open": {
+      const p = message.payload;
+      const result = perpsEngine.openPosition(
+        p.userId as string,
+        p.symbol as MARKET_ASSETS,
+        p.side as PositionSide,
+        p.size as number,
+        p.leverage as number,
+      );
+      if (!result.ok) throw new Error(result.error);
+      return result.data;
+    }
+
+    case "perps_close": {
+      const p = message.payload;
+      const result = perpsEngine.closePosition(
+        p.userId as string,
+        p.symbol as MARKET_ASSETS,
+      );
+      if (!result.ok) throw new Error(result.error);
+      return result.data;
+    }
+
+    case "perps_mark_price": {
+      const p = message.payload;
+      const result = perpsEngine.setMarkPrice(
+        p.symbol as MARKET_ASSETS,
+        p.price as number,
+      );
+      if (!result.ok) throw new Error(result.error);
+      return result.data;
+    }
+
+    case "perps_position": {
+      const p = message.payload;
+      const result = perpsEngine.getPosition(
+        p.userId as string,
+        p.symbol as MARKET_ASSETS,
+      );
+      if (!result.ok) throw new Error(result.error);
+      return result.data;
+    }
+
+    case "perps_account": {
+      const result = perpsEngine.getAccount(message.payload.userId as string);
       if (!result.ok) throw new Error(result.error);
       return result.data;
     }
