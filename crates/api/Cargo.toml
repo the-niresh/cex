@@ -23,8 +23,18 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+# sqlx 0.9 split the old `runtime-tokio-rustls` feature into a runtime
+# and a TLS backend chosen separately.
+sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring", "uuid", "macros"] }
+argon2 = { version = "0.5.3", features = ["std"] }
+# `getrandom` gives password_hash an OS random source for salts.
+password-hash = { version = "0.5", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+# jsonwebtoken 11 requires an explicit crypto provider feature.
+jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust_crypto"] }
 
 [dev-dependencies]
+base64 = "0.23.1"
 # The tests drive a real engine so the loopback is exercised end to end
 # rather than against a mock that cannot disagree with reality.
 cex-engine = { path = "../engine" }

@@ -3,6 +3,10 @@
 //! Holds no exchange state of its own — every balance, order, and price lives in
 //! the engine. That is what makes it safe to run as many copies as you need.
 
+pub mod auth;
 pub mod loopback;
+pub mod users;
 
+pub use auth::{hash_password, verify_password, Tokens};
 pub use loopback::{Loopback, LoopbackConfig, LoopbackError};
+pub use users::{User, UserStore, UsersError};

@@ -29,6 +29,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 tempfile = "3"
 
+# Argon2 is memory-hard by design, which makes it ~100x slower when built
+# unoptimised — 45 seconds for a handful of tests. Optimise just the hashing
+# crates so debug builds stay fast without touching anything else.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.password-hash]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
