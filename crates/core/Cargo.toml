@@ -1,0 +1,12 @@
+[package]
+name = "cex-core"
+version.workspace = true
+edition.workspace = true
+
+# Deliberately no tokio, no redis, no time, no rand.
+# The engine core must be a pure function of (state, command) or replay is a lie.
+[dependencies]
+cex-proto.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
