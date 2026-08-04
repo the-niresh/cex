@@ -15,7 +15,7 @@
 //! The book knows nothing about balances. It reports what happened; the engine
 //! layer moves the money.
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use cex_proto::{DepthDelta, OrderId, OrderStatus, OrderType, Side, TimeInForce, UserId};
 use serde::{Deserialize, Serialize};
@@ -154,7 +154,9 @@ pub struct OrderBook {
     pub symbol: String,
     bids: BTreeMap<i64, Level>,
     asks: BTreeMap<i64, Level>,
-    orders: HashMap<OrderId, Order>,
+    /// `BTreeMap`, not `HashMap`: a hash map iterates in a random order, which
+    /// would make two snapshots of identical state differ byte for byte.
+    orders: BTreeMap<OrderId, Order>,
     /// Monotonic per-symbol counter stamped on every depth diff, so a client that
     /// misses a message can tell instead of drifting silently.
     depth_seq: u64,
@@ -167,7 +169,7 @@ impl OrderBook {
             symbol: symbol.into(),
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
-            orders: HashMap::new(),
+            orders: BTreeMap::new(),
             depth_seq: 0,
             last_price: None,
         }
@@ -534,7 +536,7 @@ impl OrderBook {
     /// Drop terminal orders that no level still references, so the arena does not
     /// grow without bound. Called between commands, never during a match.
     pub fn compact(&mut self) {
-        let referenced: HashSet<OrderId> = self
+        let referenced: BTreeSet<OrderId> = self
             .bids
             .values()
             .chain(self.asks.values())

@@ -34,12 +34,18 @@ impl Balance {
     }
 }
 
-/// Keyed on `(user, asset)`. A `BTreeMap` rather than a `HashMap` so that
-/// iteration order is deterministic — snapshots must be byte-identical across
-/// runs or replay verification is worthless.
+/// Nested `user -> asset -> balance`.
+///
+/// `BTreeMap` rather than `HashMap` so iteration order is deterministic —
+/// snapshots must be byte-identical across runs or replay cannot be verified.
+///
+/// Nested rather than keyed on a `(user, asset)` tuple for two reasons: a tuple
+/// cannot be expressed as a JSON object key at all, so a snapshot of the flat
+/// form simply fails; and listing one user's balances becomes a single lookup
+/// instead of a scan of every account on the exchange.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Balances {
-    inner: BTreeMap<(UserId, String), Balance>,
+    inner: BTreeMap<UserId, BTreeMap<String, Balance>>,
 }
 
 impl Balances {
@@ -50,13 +56,18 @@ impl Balances {
     /// Read an account. Never creates one.
     pub fn get(&self, user: UserId, asset: &str) -> Balance {
         self.inner
-            .get(&(user, asset.to_string()))
+            .get(&user)
+            .and_then(|by_asset| by_asset.get(asset))
             .copied()
             .unwrap_or_default()
     }
 
     fn entry(&mut self, user: UserId, asset: &str) -> &mut Balance {
-        self.inner.entry((user, asset.to_string())).or_default()
+        self.inner
+            .entry(user)
+            .or_default()
+            .entry(asset.to_string())
+            .or_default()
     }
 
     fn require_non_negative(amount: i64) -> Result<(), EngineError> {
@@ -152,27 +163,36 @@ impl Balances {
     /// The conservation check compares this against what was deposited.
     pub fn total_supply(&self, asset: &str) -> i64 {
         self.inner
-            .iter()
-            .filter(|((_, a), _)| a == asset)
-            .map(|(_, b)| b.total())
+            .values()
+            .filter_map(|by_asset| by_asset.get(asset))
+            .map(|b| b.total())
             .sum()
     }
 
-    /// Non-empty balances for one user.
+    /// Non-empty balances for one user. One lookup, not a scan.
     pub fn for_user(&self, user: UserId) -> Vec<BalanceView> {
         self.inner
-            .iter()
-            .filter(|((u, _), b)| *u == user && b.total() != 0)
-            .map(|((_, asset), b)| BalanceView {
-                asset: asset.clone(),
-                available: b.available,
-                locked: b.locked,
+            .get(&user)
+            .map(|by_asset| {
+                by_asset
+                    .iter()
+                    .filter(|(_, b)| b.total() != 0)
+                    .map(|(asset, b)| BalanceView {
+                        asset: asset.clone(),
+                        available: b.available,
+                        locked: b.locked,
+                    })
+                    .collect()
             })
-            .collect()
+            .unwrap_or_default()
     }
 
-    /// Every `(user, asset)` pair currently tracked. Used by the invariant check.
-    pub fn accounts(&self) -> impl Iterator<Item = (&(UserId, String), &Balance)> {
-        self.inner.iter()
+    /// Every `(user, asset, balance)` currently tracked. Used by the invariant check.
+    pub fn accounts(&self) -> impl Iterator<Item = (UserId, &str, &Balance)> {
+        self.inner.iter().flat_map(|(user, by_asset)| {
+            by_asset
+                .iter()
+                .map(move |(asset, bal)| (*user, asset.as_str(), bal))
+        })
     }
 }

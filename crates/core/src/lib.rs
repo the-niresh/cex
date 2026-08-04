@@ -19,4 +19,4 @@ pub use book::{Order, OrderBook};
 pub use error::EngineError;
 pub use market::{Market, MarketRegistry};
 pub use math::{mul_div, Rounding};
-pub use state::{Applied, State};
+pub use state::{Applied, Snapshot, State};

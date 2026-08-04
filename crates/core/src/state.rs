@@ -48,6 +48,49 @@ pub struct Applied {
     pub events: Vec<Event>,
 }
 
+/// Bumped whenever the shape of [`State`] changes. A snapshot written by a newer
+/// build is refused rather than misread — replaying the log is always available
+/// as a fallback, and a silently misinterpreted field is not.
+pub const SNAPSHOT_VERSION: u32 = 1;
+
+/// Engine state plus the log position it was taken at.
+///
+/// The position is the whole point: without it there is no way to know which
+/// commands still need replaying, and the snapshot is worthless.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub version: u32,
+    /// Id of the last command applied before this snapshot was taken.
+    pub last_stream_id: String,
+    pub state: State,
+}
+
+impl Snapshot {
+    pub fn of(state: &State, last_stream_id: impl Into<String>) -> Self {
+        Snapshot {
+            version: SNAPSHOT_VERSION,
+            last_stream_id: last_stream_id.into(),
+            state: state.clone(),
+        }
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, EngineError> {
+        serde_json::to_vec(self).map_err(|e| EngineError::Snapshot(e.to_string()))
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, EngineError> {
+        let snap: Snapshot =
+            serde_json::from_slice(bytes).map_err(|e| EngineError::Snapshot(e.to_string()))?;
+        if snap.version != SNAPSHOT_VERSION {
+            return Err(EngineError::Snapshot(format!(
+                "snapshot version {}, this build understands {}",
+                snap.version, SNAPSHOT_VERSION
+            )));
+        }
+        Ok(snap)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct State {
     markets: MarketRegistry,
@@ -734,7 +777,7 @@ impl State {
             }
         }
 
-        for ((user, asset), bal) in self.balances.accounts() {
+        for (user, asset, bal) in self.balances.accounts() {
             if bal.available < 0 || bal.locked < 0 {
                 return Err(format!("negative balance for {user} {asset}: {bal:?}"));
             }
@@ -761,8 +804,8 @@ impl State {
             .chain(
                 self.balances
                     .accounts()
-                    .filter(|(_, b)| b.locked != 0)
-                    .map(|(k, _)| k.clone()),
+                    .filter(|(_, _, b)| b.locked != 0)
+                    .map(|(user, asset, _)| (user, asset.to_string())),
             )
             .collect();
 

@@ -32,6 +32,8 @@ pub enum EngineError {
     },
     #[error("market order cannot be filled: book has only {available} of {requested}")]
     InsufficientLiquidity { requested: i64, available: i64 },
+    #[error("snapshot: {0}")]
+    Snapshot(String),
     #[error(transparent)]
     Math(#[from] MathError),
 }
