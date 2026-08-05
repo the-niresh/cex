@@ -26,7 +26,7 @@ price feed and three command types:
 | `cex-core` — matching, ledger, settlement, snapshots | Built · 118 tests |
 | `cex-proto` — wire types | Built · 18 tests |
 | `engine` — stream consumer, snapshots, crash recovery, boot lock | Built · 53 tests |
-| `api` — loopback, auth, REST routes | Built · 58 tests |
+| `api` — loopback, auth, REST routes | Built · 66 tests |
 | `persist` — Postgres history writer | Built · 27 tests |
 | `ws` — market data fan-out | Built · 52 tests |
 | Perpetuals | Not started |
@@ -97,6 +97,7 @@ Amounts are integers in atomic units — see [Scaling](#scaling).
 | `POST` | `/orders` | yes | place a limit or market order |
 | `DELETE` | `/orders/:id` | yes | cancel a resting order |
 | `GET` | `/orders/open` | yes | your live orders |
+| `GET` | `/trades/:symbol` | — | recent trade prints, newest first (`?limit=`, max 500) |
 
 ## Scaling
 
@@ -112,7 +113,7 @@ Prices and quantities are integers, never floats.
 
 ```bash
 docker compose up -d      # redis on 6390, postgres on 5442
-cargo test                # 326 tests; the engine, api, persist and ws suites need both containers
+cargo test                # 334 tests; the engine, api, persist and ws suites need both containers
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -250,8 +251,6 @@ Named rather than buried, because each is a real thing to fix:
   process paused past its lease may not notice until it wakes, and another engine can legitimately
   hold the stream by then. Closing that window completely needs a fencing token checked on every
   write to the command log.
-* **There is no `GET /trades/:symbol` yet.** The data is now there — `persist` writes it and
-  `HistoryStore::fills_for_symbol` reads it — but no route serves it.
 * **A `504` from the API is genuinely ambiguous.** The command is on the durable log and may still
   be applied, so a timeout is not proof that nothing happened. Re-read `/orders/open` to find out.
 * **Replay republishes events.** Recovery re-applies commands after the snapshot, so downstream

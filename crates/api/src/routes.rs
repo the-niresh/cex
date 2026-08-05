@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, Request, State};
+use axum::extract::{Path, Query as UrlQuery, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -23,6 +23,8 @@ use uuid::Uuid;
 use crate::auth::Tokens;
 use crate::loopback::{Loopback, LoopbackError};
 use crate::users::{UserStore, UsersError};
+use cex_persist::HistoryStore;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -33,16 +35,42 @@ struct Inner {
     loopback: Loopback,
     users: UserStore,
     tokens: Tokens,
+    /// Read-only here. Only `persist` ever writes these tables.
+    history: HistoryStore,
 }
 
 impl AppState {
-    pub fn new(loopback: Loopback, users: UserStore, tokens: Tokens) -> Self {
+    pub fn new(
+        loopback: Loopback,
+        users: UserStore,
+        tokens: Tokens,
+        history: HistoryStore,
+    ) -> Self {
         AppState {
             inner: Arc::new(Inner {
                 loopback,
                 users,
                 tokens,
+                history,
             }),
+        }
+    }
+
+    /// Whether the exchange lists this market.
+    ///
+    /// Only worth asking when a history query came back empty, to tell a market
+    /// that has not traded yet from a symbol that does not exist.
+    async fn market_exists(&self, symbol: &str) -> Result<bool, ApiError> {
+        let body = self
+            .inner
+            .loopback
+            .query(Query::Markets {
+                request_id: Uuid::nil(),
+            })
+            .await?;
+        match body {
+            ResponseBody::Markets(markets) => Ok(markets.iter().any(|m| m.symbol == symbol)),
+            other => Err(unexpected(other)),
         }
     }
 }
@@ -66,6 +94,10 @@ impl ApiError {
             status,
             message: message.into(),
         }
+    }
+
+    fn bad_request(message: impl Into<String>) -> Self {
+        ApiError::new(StatusCode::BAD_REQUEST, message)
     }
 }
 
@@ -127,6 +159,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/login", post(login))
         .route("/markets", get(markets))
         .route("/depth/{symbol}", get(depth))
+        .route("/trades/{symbol}", get(trades))
         .merge(protected)
         .with_state(state)
 }
@@ -233,6 +266,81 @@ async fn markets(State(state): State<AppState>) -> ApiResult<Json<serde_json::Va
         ResponseBody::Markets(m) => Ok(Json(json!({ "markets": m }))),
         other => Err(unexpected(other)),
     }
+}
+
+/// The most trades one request may ask for.
+///
+/// Without a ceiling, `?limit=100000000` is a way to make one HTTP request drag
+/// the exchange's entire trade history through Postgres and into memory.
+const MAX_TRADES: i64 = 500;
+const DEFAULT_TRADES: i64 = 50;
+
+/// One trade, as the public is entitled to see it.
+///
+/// Built field by field from a `FillRow` rather than by serialising it, so the
+/// counterparty columns that row carries — `maker_user_id`, `taker_user_id`,
+/// and the order ids that would link trades to a trader across requests — have
+/// no route to the wire. Same rule the websocket feed keeps.
+#[derive(Debug, Serialize)]
+struct PublicTrade {
+    seq: u64,
+    price: i64,
+    qty: i64,
+    /// Side of the aggressing order.
+    taker_side: String,
+    timestamp_ms: i64,
+}
+
+async fn trades(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    UrlQuery(params): UrlQuery<HashMap<String, String>>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let limit = match params.get("limit") {
+        None => DEFAULT_TRADES,
+        Some(raw) => raw
+            .parse::<i64>()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(|| ApiError::bad_request("limit must be a positive integer"))?
+            .min(MAX_TRADES),
+    };
+
+    let rows = state
+        .inner
+        .history
+        .fills_for_symbol(&symbol, limit)
+        .await
+        .map_err(|e| {
+            // The caller gets nothing useful from a database error, and the
+            // detail belongs in the log rather than in a public response.
+            tracing::error!(error = %e, symbol, "reading trade history failed");
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "could not read trade history")
+        })?;
+
+    // An empty result is ambiguous: a market that has not traded yet looks
+    // exactly like a typo. Only then is it worth a round trip to find out
+    // which, so the common path stays a single query.
+    if rows.is_empty() && !state.market_exists(&symbol).await? {
+        return Err(ApiError::bad_request("unknown market"));
+    }
+
+    let trades: Vec<PublicTrade> = rows
+        .into_iter()
+        .map(|f| PublicTrade {
+            seq: f.seq,
+            price: f.price,
+            qty: f.qty,
+            taker_side: f.taker_side,
+            timestamp_ms: f.created_at_ms,
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "symbol": symbol,
+        "limit": limit,
+        "trades": trades,
+    })))
 }
 
 async fn depth(

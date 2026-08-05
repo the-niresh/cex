@@ -127,6 +127,12 @@ pub struct FillRow {
     pub notional: i64,
     pub maker_fee: i64,
     pub taker_fee: i64,
+    /// When the persister wrote the row, in milliseconds since the epoch.
+    ///
+    /// Not when the trade matched — the engine has no clock, deliberately, so
+    /// there is no exchange-authoritative timestamp to report. This is close
+    /// enough to order a chart by and honest about what it is.
+    pub created_at_ms: i64,
 }
 
 fn row_to_fill(row: PgRow) -> FillRow {
@@ -144,6 +150,7 @@ fn row_to_fill(row: PgRow) -> FillRow {
         notional: row.get("notional"),
         maker_fee: row.get("maker_fee"),
         taker_fee: row.get("taker_fee"),
+        created_at_ms: row.get("created_at_ms"),
     }
 }
 
@@ -327,7 +334,8 @@ impl HistoryStore {
         sqlx::query(
             "SELECT seq, idx, symbol, price, qty, maker_order_id, taker_order_id,
                     maker_user_id, taker_user_id, taker_side, notional,
-                    maker_fee, taker_fee
+                    maker_fee, taker_fee,
+                    (EXTRACT(EPOCH FROM created_at) * 1000)::BIGINT AS created_at_ms
              FROM fills WHERE symbol = $1 ORDER BY seq DESC, idx DESC LIMIT $2",
         )
         .bind(symbol)

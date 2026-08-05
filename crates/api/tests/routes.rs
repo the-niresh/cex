@@ -33,6 +33,7 @@ fn database_url() -> String {
 /// private Postgres schema so tests do not collide.
 struct Harness {
     router: axum::Router,
+    history: cex_persist::HistoryStore,
     _engine: tokio::task::JoinHandle<()>,
     _dir: tempfile::TempDir,
 }
@@ -77,11 +78,50 @@ impl Harness {
         let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
         let tokens = Tokens::new(b"test secret for the route tests", Duration::from_secs(3600));
 
+        let history = cex_persist::HistoryStore::connect_to_schema(
+            &database_url(),
+            &format!("t{tag}"),
+        )
+        .await
+        .expect("postgres history schema");
+
         Harness {
-            router: build_router(AppState::new(loopback, users, tokens)),
+            router: build_router(AppState::new(loopback, users, tokens, history.clone())),
+            history,
             _engine: engine,
             _dir: dir,
         }
+    }
+
+    /// Write a trade print exactly as `persist` would, so the endpoint is read
+    /// against real rows rather than a fixture shaped to suit it.
+    async fn record_trade(&self, seq: u64, symbol: &str, price: i64, qty: i64) -> (Uuid, Uuid) {
+        let maker = Uuid::new_v4();
+        let taker = Uuid::new_v4();
+        self.history
+            .write_batches(&[cex_proto::EventBatch {
+                seq,
+                request_id: Uuid::new_v4(),
+                events: vec![cex_proto::Event::Trades {
+                    symbol: symbol.into(),
+                    fills: vec![cex_proto::Fill {
+                        symbol: symbol.into(),
+                        price,
+                        qty,
+                        maker_order_id: 1,
+                        taker_order_id: 2,
+                        maker_user_id: maker,
+                        taker_user_id: taker,
+                        taker_side: cex_proto::Side::Buy,
+                        notional: 50_000_000,
+                        maker_fee: 10_000,
+                        taker_fee: 50,
+                    }],
+                }],
+            }])
+            .await
+            .expect("recording a trade");
+        (maker, taker)
     }
 
     async fn call(&self, req: Request<Body>) -> (StatusCode, Value) {
@@ -541,4 +581,118 @@ async fn the_book_shows_resting_orders_from_every_user() {
     let (_, body) = h.get(&format!("/depth/{SYM}"), None).await;
     assert_eq!(body["bids"][0][0], 49_000_000_000i64);
     assert_eq!(body["asks"][0][0], P50K);
+}
+
+// ───────────────────────── trade history ─────────────────────────
+
+#[tokio::test]
+async fn trades_are_public_and_newest_first() {
+    let h = Harness::start().await;
+    h.record_trade(1, SYM, P50K, Q1).await;
+    h.record_trade(2, SYM, P50K + 1_000_000, Q1 * 2).await;
+
+    let (status, body) = h.get(&format!("/trades/{SYM}"), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let trades = body["trades"].as_array().expect("a trades array");
+    assert_eq!(trades.len(), 2);
+    assert_eq!(
+        trades[0]["seq"], 2,
+        "the most recent print must come first: {body}"
+    );
+    assert_eq!(trades[0]["price"], P50K + 1_000_000);
+    assert_eq!(trades[0]["qty"], Q1 * 2);
+    assert_eq!(trades[0]["taker_side"], "BUY");
+    assert!(
+        trades[0]["timestamp_ms"].as_i64().unwrap_or(0) > 0,
+        "a trade feed without a time is nearly useless: {body}"
+    );
+}
+
+/// The same rule the websocket feed keeps: a public endpoint says what traded,
+/// never who.
+#[tokio::test]
+async fn the_trades_endpoint_never_says_who_traded() {
+    let h = Harness::start().await;
+    let (maker, taker) = h.record_trade(1, SYM, P50K, Q1).await;
+
+    let (_, body) = h.get(&format!("/trades/{SYM}"), None).await;
+    let raw = body.to_string();
+
+    assert!(
+        !raw.contains(&maker.to_string()),
+        "the response named the maker: {raw}"
+    );
+    assert!(
+        !raw.contains(&taker.to_string()),
+        "the response named the taker: {raw}"
+    );
+    assert!(
+        !raw.contains("maker_order_id") && !raw.contains("taker_order_id"),
+        "order ids identify traders across requests: {raw}"
+    );
+}
+
+#[tokio::test]
+async fn trades_from_another_market_are_not_included() {
+    let h = Harness::start().await;
+    h.record_trade(1, SYM, P50K, Q1).await;
+    h.record_trade(2, "ETH_USDT", 3_000_000_000, Q1).await;
+
+    let (_, body) = h.get(&format!("/trades/{SYM}"), None).await;
+    let trades = body["trades"].as_array().unwrap();
+    assert_eq!(trades.len(), 1);
+    assert_eq!(trades[0]["seq"], 1);
+}
+
+#[tokio::test]
+async fn a_market_that_has_never_traded_returns_an_empty_list() {
+    let h = Harness::start().await;
+    let (status, body) = h.get(&format!("/trades/{SYM}"), None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["trades"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn trades_for_an_unknown_market_is_a_client_error() {
+    // Consistent with `/depth`. Answering a typo with an empty list looks
+    // identical to a market that simply has not traded yet.
+    let h = Harness::start().await;
+    let (status, _) = h.get("/trades/NOT_A_MARKET", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn trades_honours_a_limit() {
+    let h = Harness::start().await;
+    for seq in 1..=5 {
+        h.record_trade(seq, SYM, P50K + seq as i64, Q1).await;
+    }
+
+    let (_, body) = h.get(&format!("/trades/{SYM}?limit=2"), None).await;
+    let trades = body["trades"].as_array().unwrap();
+    assert_eq!(trades.len(), 2);
+    assert_eq!(trades[0]["seq"], 5, "still newest first");
+}
+
+#[tokio::test]
+async fn an_unbounded_limit_is_capped_rather_than_served() {
+    let h = Harness::start().await;
+    h.record_trade(1, SYM, P50K, Q1).await;
+
+    // Left unchecked this is a way to ask one HTTP request to drag the entire
+    // trade history of the exchange through Postgres.
+    let (status, body) = h
+        .get(&format!("/trades/{SYM}?limit=100000000"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["limit"], 500, "the cap should be reported back: {body}");
+}
+
+#[tokio::test]
+async fn a_nonsense_limit_is_a_client_error() {
+    let h = Harness::start().await;
+    let (status, _) = h.get(&format!("/trades/{SYM}?limit=banana"), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

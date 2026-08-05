@@ -14,6 +14,9 @@ path = "src/lib.rs"
 [dependencies]
 cex-proto.workspace = true
 cex-auth.workspace = true
+# The history tables are defined and written by `persist`; reading them through
+# the same type keeps one definition of the schema rather than two.
+cex-persist = { path = "../persist" }
 anyhow.workspace = true
 futures-util = "0.3"
 redis.workspace = true

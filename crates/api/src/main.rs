@@ -42,8 +42,13 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("connecting to postgres: {e}"))?;
 
+    // Read-only: `persist` owns these tables, the API only serves them.
+    let history = cex_persist::HistoryStore::connect(&database_url)
+        .await
+        .map_err(|e| anyhow::anyhow!("connecting to the history tables: {e}"))?;
+
     let tokens = Tokens::new(secret.as_bytes(), Duration::from_secs(24 * 3600));
-    let app = build_router(AppState::new(loopback, users, tokens));
+    let app = build_router(AppState::new(loopback, users, tokens, history));
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await

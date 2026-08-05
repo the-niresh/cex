@@ -229,6 +229,7 @@ dependencies = [
  "base64 0.23.1",
  "cex-auth",
  "cex-engine",
+ "cex-persist",
  "cex-proto",
  "futures-util",
  "http-body-util",
