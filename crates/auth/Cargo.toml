@@ -1,0 +1,15 @@
+[package]
+name = "cex-auth"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "cex_auth"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+# jsonwebtoken 11 requires an explicit crypto provider feature.
+jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust_crypto"] }

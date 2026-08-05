@@ -13,6 +13,7 @@ path = "src/lib.rs"
 
 [dependencies]
 cex-proto.workspace = true
+cex-auth.workspace = true
 anyhow.workspace = true
 futures-util = "0.3"
 redis.workspace = true
@@ -30,8 +31,6 @@ argon2 = { version = "0.5.3", features = ["std"] }
 # `getrandom` gives password_hash an OS random source for salts.
 password-hash = { version = "0.5", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
-# jsonwebtoken 11 requires an explicit crypto provider feature.
-jsonwebtoken = { version = "11.0.0", default-features = false, features = ["rust_crypto"] }
 axum = "0.8.9"
 tower-http = { version = "0.7.0", features = ["cors", "trace"] }
 
