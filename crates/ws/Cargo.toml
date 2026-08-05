@@ -1,0 +1,34 @@
+[package]
+name = "cex-ws"
+version.workspace = true
+edition.workspace = true
+
+# The executable is `ws` — that is what gets typed on a server.
+[[bin]]
+name = "ws"
+path = "src/main.rs"
+
+[lib]
+name = "cex_ws"
+path = "src/lib.rs"
+
+[dependencies]
+cex-proto.workspace = true
+cex-auth.workspace = true
+anyhow.workspace = true
+futures-util = "0.3"
+redis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+axum = { version = "0.8.9", features = ["ws"] }
+tower-http = { version = "0.7.0", features = ["trace"] }
+
+[dev-dependencies]
+# A real websocket client, so the server tests speak the actual protocol
+# rather than calling handlers directly.
+tokio-tungstenite = "0.24"

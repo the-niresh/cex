@@ -9,6 +9,7 @@ members = [
     "crates/engine",
     "crates/api",
     "crates/persist",
+    "crates/ws",
 ]
 
 [workspace.package]
