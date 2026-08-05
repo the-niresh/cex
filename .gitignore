@@ -2,3 +2,7 @@
 /data
 .env
 *.snapshot
+
+# local review-session tooling
+.agents/
+.lavish/

@@ -23,8 +23,12 @@ use uuid::Uuid;
 use crate::auth::Tokens;
 use crate::loopback::{Loopback, LoopbackError};
 use crate::users::{UserStore, UsersError};
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
+use axum::http::{HeaderName, HeaderValue, Method};
 use cex_persist::HistoryStore;
 use std::collections::HashMap;
+use std::time::Duration;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -144,7 +148,89 @@ type ApiResult<T> = Result<T, ApiError>;
 
 // ───────────────────────── router ─────────────────────────
 
+// ───────────────────────── cross-origin access ─────────────────────────
+
+/// An origin string that cannot be sent as a header.
+#[derive(Debug, thiserror::Error)]
+#[error("not a usable origin: {0}")]
+pub struct InvalidOrigin(String);
+
+/// Which browser origins may call this API.
+///
+/// Listed explicitly, never `Any`. A wildcard would hand a funded, token-bearing
+/// API to any page on the internet, and it is the kind of setting nobody
+/// revisits once it works.
+#[derive(Debug, Clone)]
+pub struct CorsSettings {
+    origins: Vec<HeaderValue>,
+}
+
+impl CorsSettings {
+    /// The Vite dev server, on both spellings of localhost. A browser treats
+    /// them as different origins, and which one you get depends on how the
+    /// developer typed the address.
+    pub fn dev() -> Self {
+        CorsSettings {
+            // Audited: both parse, so the unwrap cannot fire.
+            origins: ["http://localhost:5173", "http://127.0.0.1:5173"]
+                .iter()
+                .map(|o| HeaderValue::from_static(o))
+                .collect(),
+        }
+    }
+
+    pub fn new<I, S>(origins: I) -> Result<Self, InvalidOrigin>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        origins
+            .into_iter()
+            .map(|o| {
+                let o = o.as_ref().trim();
+                HeaderValue::from_str(o).map_err(|_| InvalidOrigin(o.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(|origins| CorsSettings { origins })
+    }
+
+    /// `CEX_CORS_ORIGINS`, comma-separated. Unset means the dev defaults —
+    /// a deployment that forgets it gets a blocked browser, which is loud,
+    /// rather than an open one, which is silent.
+    pub fn from_env() -> Result<Self, InvalidOrigin> {
+        match std::env::var("CEX_CORS_ORIGINS") {
+            Err(_) => Ok(Self::dev()),
+            Ok(raw) => Self::new(raw.split(',').filter(|s| !s.trim().is_empty())),
+        }
+    }
+
+    fn layer(&self) -> CorsLayer {
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::list(self.origins.clone()))
+            .allow_methods([Method::GET, Method::POST, Method::DELETE])
+            // `authorization` carries the token and `idempotency-key` makes a
+            // retry safe. A browser silently strips any header not named here,
+            // so leaving one out turns every order anonymous or duplicable.
+            .allow_headers([
+                AUTHORIZATION,
+                CONTENT_TYPE,
+                HeaderName::from_static("idempotency-key"),
+            ])
+            .max_age(Duration::from_secs(600))
+    }
+}
+
+impl Default for CorsSettings {
+    fn default() -> Self {
+        Self::dev()
+    }
+}
+
 pub fn build_router(state: AppState) -> Router {
+    build_router_with_cors(state, CorsSettings::default())
+}
+
+pub fn build_router_with_cors(state: AppState, cors: CorsSettings) -> Router {
     let protected = Router::new()
         .route("/deposit", post(deposit))
         .route("/balances", get(balances))
@@ -161,6 +247,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/depth/{symbol}", get(depth))
         .route("/trades/{symbol}", get(trades))
         .merge(protected)
+        // Outermost, so a preflight is answered here rather than routed into
+        // `require_auth` — a browser never sends the token on an OPTIONS, so
+        // routing it would refuse every cross-origin write with a 401.
+        .layer(cors.layer())
         .with_state(state)
 }
 

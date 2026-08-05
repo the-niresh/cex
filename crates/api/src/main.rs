@@ -3,7 +3,9 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use cex_api::{build_router, AppState, Loopback, LoopbackConfig, Tokens, UserStore};
+use cex_api::{
+    build_router_with_cors, AppState, CorsSettings, Loopback, LoopbackConfig, Tokens, UserStore,
+};
 
 fn env_or(key: &str, fallback: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| fallback.to_string())
@@ -47,8 +49,12 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("connecting to the history tables: {e}"))?;
 
+    // A malformed origin means no browser would ever be let in. Better to say
+    // so at boot than to serve a stack whose first request is blocked.
+    let cors = CorsSettings::from_env().context("reading CEX_CORS_ORIGINS")?;
+
     let tokens = Tokens::new(secret.as_bytes(), Duration::from_secs(24 * 3600));
-    let app = build_router(AppState::new(loopback, users, tokens, history));
+    let app = build_router_with_cors(AppState::new(loopback, users, tokens, history), cors);
 
     let listener = tokio::net::TcpListener::bind(&bind)
         .await

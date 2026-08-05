@@ -124,6 +124,48 @@ impl Harness {
         (maker, taker)
     }
 
+    /// Like `call`, but keeps the response headers. CORS lives entirely in
+    /// them — the body of a preflight is empty by design.
+    async fn call_headers(&self, req: Request<Body>) -> (StatusCode, axum::http::HeaderMap) {
+        let res = self.router.clone().oneshot(req).await.unwrap();
+        (res.status(), res.headers().clone())
+    }
+
+    /// The OPTIONS request a browser sends before a cross-origin write.
+    async fn preflight(
+        &self,
+        method: &str,
+        path: &str,
+        origin: &str,
+        request_headers: &str,
+    ) -> (StatusCode, axum::http::HeaderMap) {
+        let req = Request::builder()
+            .method("OPTIONS")
+            .uri(path)
+            .header("origin", origin)
+            .header("access-control-request-method", method)
+            .header("access-control-request-headers", request_headers)
+            .body(Body::empty())
+            .unwrap();
+        self.call_headers(req).await
+    }
+
+    /// A simple cross-origin read. No preflight is sent for one of these, so
+    /// the grant has to ride on the response itself.
+    async fn get_with_origin(
+        &self,
+        path: &str,
+        origin: &str,
+    ) -> (StatusCode, axum::http::HeaderMap) {
+        let req = Request::builder()
+            .method("GET")
+            .uri(path)
+            .header("origin", origin)
+            .body(Body::empty())
+            .unwrap();
+        self.call_headers(req).await
+    }
+
     async fn call(&self, req: Request<Body>) -> (StatusCode, Value) {
         let res = self.router.clone().oneshot(req).await.unwrap();
         let status = res.status();
@@ -876,5 +918,129 @@ async fn a_retried_cancel_is_harmless() {
         StatusCode::OK,
         "the retry of a cancel should report the original outcome, not a fresh \
          error about an order that is no longer open: {b2}"
+    );
+}
+
+// ───────────────────────── cross-origin access ─────────────────────────
+//
+// The browser is the only client that enforces any of this, so every one of
+// these is really a statement about what a page served from the dev server is
+// allowed to do. Getting it wrong fails at the very first request, before any
+// of the trading logic above is ever reached.
+
+/// The Vite dev server. Allowed explicitly rather than by wildcard.
+const DEV_ORIGIN: &str = "http://localhost:5173";
+
+fn header<'a>(headers: &'a axum::http::HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|v| v.to_str().ok())
+}
+
+#[tokio::test]
+async fn a_preflight_from_the_dev_origin_is_allowed() {
+    let h = Harness::start().await;
+
+    let (status, headers) = h
+        .preflight("POST", "/orders", DEV_ORIGIN, "authorization,content-type")
+        .await;
+
+    assert!(
+        status.is_success(),
+        "a preflight should be answered, not routed: got {status}"
+    );
+    assert_eq!(
+        header(&headers, "access-control-allow-origin"),
+        Some(DEV_ORIGIN),
+        "the dev origin must be echoed back or the browser blocks the request"
+    );
+}
+
+#[tokio::test]
+async fn a_preflight_allows_the_two_headers_the_client_cannot_do_without() {
+    let h = Harness::start().await;
+
+    let (_, headers) = h
+        .preflight(
+            "POST",
+            "/orders",
+            DEV_ORIGIN,
+            "authorization,content-type,idempotency-key",
+        )
+        .await;
+
+    let allowed = header(&headers, "access-control-allow-headers")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    // Without these two the browser strips them from the real request: the
+    // order arrives unauthenticated, and a retry places a second one.
+    assert!(
+        allowed.contains("authorization"),
+        "authorization must be allowed, got: {allowed}"
+    );
+    assert!(
+        allowed.contains("idempotency-key"),
+        "idempotency-key must be allowed, got: {allowed}"
+    );
+}
+
+#[tokio::test]
+async fn a_preflight_allows_the_methods_the_screen_uses() {
+    let h = Harness::start().await;
+
+    let (_, headers) = h
+        .preflight("DELETE", "/orders/1", DEV_ORIGIN, "authorization")
+        .await;
+
+    let allowed = header(&headers, "access-control-allow-methods")
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+
+    for method in ["GET", "POST", "DELETE"] {
+        assert!(
+            allowed.contains(method),
+            "{method} must be allowed, got: {allowed}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_unknown_origin_is_not_granted_access() {
+    let h = Harness::start().await;
+
+    let (_, headers) = h
+        .preflight("POST", "/orders", "https://evil.example", "authorization")
+        .await;
+
+    assert_eq!(
+        header(&headers, "access-control-allow-origin"),
+        None,
+        "an origin we did not list must get no grant at all"
+    );
+}
+
+#[tokio::test]
+async fn access_is_never_granted_by_wildcard() {
+    let h = Harness::start().await;
+
+    let (_, headers) = h.get_with_origin("/markets", DEV_ORIGIN).await;
+
+    assert_ne!(
+        header(&headers, "access-control-allow-origin"),
+        Some("*"),
+        "a wildcard would hand this API to any page on the internet"
+    );
+}
+
+#[tokio::test]
+async fn a_plain_read_from_the_dev_origin_carries_the_grant() {
+    let h = Harness::start().await;
+
+    let (status, headers) = h.get_with_origin("/markets", DEV_ORIGIN).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        header(&headers, "access-control-allow-origin"),
+        Some(DEV_ORIGIN),
+        "a simple GET needs the grant on the response, there is no preflight"
     );
 }
