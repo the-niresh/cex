@@ -144,6 +144,25 @@ impl Harness {
         self.call(b.body(Body::empty()).unwrap()).await
     }
 
+    async fn send_with_key(
+        &self,
+        method: &str,
+        path: &str,
+        token: Option<&str>,
+        body: Value,
+        key: &str,
+    ) -> (StatusCode, Value) {
+        let mut b = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("content-type", "application/json")
+            .header("idempotency-key", key);
+        if let Some(t) = token {
+            b = b.header("authorization", format!("Bearer {t}"));
+        }
+        self.call(b.body(Body::from(body.to_string())).unwrap()).await
+    }
+
     async fn send(
         &self,
         method: &str,
@@ -695,4 +714,167 @@ async fn a_nonsense_limit_is_a_client_error() {
     let h = Harness::start().await;
     let (status, _) = h.get(&format!("/trades/{SYM}?limit=banana"), None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+// ───────────────────────── idempotency ─────────────────────────
+
+/// A 504 is genuinely ambiguous: the command is already on the durable log, so
+/// a timeout is not proof nothing happened. A caller that simply retries must
+/// not be charged twice.
+
+#[tokio::test]
+async fn a_retried_order_with_the_same_key_places_one_order() {
+    let h = Harness::start().await;
+    let token = h.user("USDT", 1_000_000_000).await;
+
+    let (s1, b1) = h
+        .send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "abc-123")
+        .await;
+    let (s2, b2) = h
+        .send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "abc-123")
+        .await;
+
+    assert_eq!(s1, StatusCode::CREATED, "{b1}");
+    assert_eq!(s2, StatusCode::CREATED, "{b2}");
+    assert_eq!(
+        b1["order_id"], b2["order_id"],
+        "the retry must name the order that already exists, not a new one"
+    );
+
+    let (_, open) = h.get("/orders/open", Some(&token)).await;
+    assert_eq!(
+        open["orders"].as_array().unwrap().len(),
+        1,
+        "the retry placed a second order: {open}"
+    );
+}
+
+#[tokio::test]
+async fn a_retried_deposit_with_the_same_key_credits_once() {
+    let h = Harness::start().await;
+    let token = h.user("USDT", 1_000).await;
+
+    let body = json!({"asset": "USDT", "amount": 500});
+    h.send_with_key("POST", "/deposit", Some(&token), body.clone(), "dep-1")
+        .await;
+    h.send_with_key("POST", "/deposit", Some(&token), body, "dep-1")
+        .await;
+
+    let (_, balances) = h.get("/balances", Some(&token)).await;
+    let usdt = balances["balances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["asset"] == "USDT")
+        .cloned()
+        .expect("a USDT balance");
+    assert_eq!(
+        usdt["available"], 1_500,
+        "the retry credited twice: {balances}"
+    );
+}
+
+#[tokio::test]
+async fn without_a_key_two_identical_requests_are_two_orders() {
+    // Idempotency is opt-in. Two deliberate identical orders must both stand.
+    let h = Harness::start().await;
+    let token = h.user("USDT", 1_000_000_000).await;
+
+    h.send("POST", "/orders", Some(&token), order("BUY", P50K, Q1))
+        .await;
+    h.send("POST", "/orders", Some(&token), order("BUY", P50K, Q1))
+        .await;
+
+    let (_, open) = h.get("/orders/open", Some(&token)).await;
+    assert_eq!(open["orders"].as_array().unwrap().len(), 2);
+}
+
+/// The key is the caller's, not the exchange's.
+#[tokio::test]
+async fn two_users_may_choose_the_same_idempotency_key() {
+    let h = Harness::start().await;
+    let alice = h.user("USDT", 1_000_000_000).await;
+    let bob = h.user("USDT", 1_000_000_000).await;
+
+    let (sa, ba) = h
+        .send_with_key("POST", "/orders", Some(&alice), order("BUY", P50K, Q1), "same")
+        .await;
+    let (sb, bb) = h
+        .send_with_key("POST", "/orders", Some(&bob), order("BUY", P50K, Q1), "same")
+        .await;
+
+    assert_eq!(sa, StatusCode::CREATED, "{ba}");
+    assert_eq!(sb, StatusCode::CREATED, "{bb}");
+    assert_ne!(
+        ba["order_id"], bb["order_id"],
+        "bob was handed alice's order because they picked the same key"
+    );
+
+    for token in [&alice, &bob] {
+        let (_, open) = h.get("/orders/open", Some(token)).await;
+        assert_eq!(open["orders"].as_array().unwrap().len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn a_different_key_is_a_different_order() {
+    let h = Harness::start().await;
+    let token = h.user("USDT", 1_000_000_000).await;
+
+    h.send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "one")
+        .await;
+    h.send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "two")
+        .await;
+
+    let (_, open) = h.get("/orders/open", Some(&token)).await;
+    assert_eq!(open["orders"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn an_empty_idempotency_key_is_rejected() {
+    // Silently ignoring it would leave the caller believing they are protected.
+    let h = Harness::start().await;
+    let token = h.user("USDT", 1_000_000_000).await;
+
+    let (status, _) = h
+        .send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "   ")
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn an_over_long_idempotency_key_is_rejected() {
+    let h = Harness::start().await;
+    let token = h.user("USDT", 1_000_000_000).await;
+    let huge = "k".repeat(5_000);
+
+    let (status, _) = h
+        .send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), &huge)
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_retried_cancel_is_harmless() {
+    let h = Harness::start().await;
+    let token = h.user("USDT", 1_000_000_000).await;
+    let (_, placed) = h
+        .send("POST", "/orders", Some(&token), order("BUY", P50K, Q1))
+        .await;
+    let id = placed["order_id"].as_u64().unwrap();
+
+    let (s1, _) = h
+        .send_with_key("DELETE", &format!("/orders/{id}"), Some(&token), json!({}), "c-1")
+        .await;
+    let (s2, b2) = h
+        .send_with_key("DELETE", &format!("/orders/{id}"), Some(&token), json!({}), "c-1")
+        .await;
+
+    assert_eq!(s1, StatusCode::OK);
+    assert_eq!(
+        s2,
+        StatusCode::OK,
+        "the retry of a cancel should report the original outcome, not a fresh \
+         error about an order that is no longer open: {b2}"
+    );
 }

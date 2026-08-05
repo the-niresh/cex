@@ -268,6 +268,51 @@ async fn markets(State(state): State<AppState>) -> ApiResult<Json<serde_json::Va
     }
 }
 
+
+/// Namespace for deriving a request id from a caller's idempotency key.
+///
+/// Fixed forever. Changing it would make every key a client has already used
+/// stop matching, which would silently turn retries back into duplicates.
+const IDEMPOTENCY_NAMESPACE: Uuid = Uuid::from_u128(0x9f2b_1c44_6a7d_4e18_9c3a_5d0e_7b61_28af);
+
+/// Longest idempotency key accepted. Long enough for a UUID or a ULID with room
+/// to spare, short enough that the header cannot be used as free storage.
+const MAX_IDEMPOTENCY_KEY: usize = 200;
+
+/// The id this command should travel under.
+///
+/// With an `Idempotency-Key` header the id is derived from it, so a retry
+/// carries the same id and the engine recognises it as one it already applied.
+/// Without the header a fresh id is used and nothing is deduplicated —
+/// idempotency is opt-in, because two deliberate identical orders are a normal
+/// thing to want.
+///
+/// The key is scoped to the caller. Two users picking `"1"` must not have one
+/// of them handed the other's answer.
+fn request_id_for(user_id: Uuid, req: &Request) -> ApiResult<Uuid> {
+    let Some(raw) = req.headers().get("idempotency-key") else {
+        return Ok(Uuid::new_v4());
+    };
+
+    let key = raw
+        .to_str()
+        .map_err(|_| ApiError::bad_request("Idempotency-Key must be ASCII"))?
+        .trim();
+
+    // Rejected rather than ignored: a caller who sent a key believes they are
+    // protected, and silently dropping it is the one outcome they cannot see.
+    if key.is_empty() || key.len() > MAX_IDEMPOTENCY_KEY {
+        return Err(ApiError::bad_request(format!(
+            "Idempotency-Key must be 1 to {MAX_IDEMPOTENCY_KEY} characters"
+        )));
+    }
+
+    Ok(Uuid::new_v5(
+        &IDEMPOTENCY_NAMESPACE,
+        format!("{user_id}:{key}").as_bytes(),
+    ))
+}
+
 /// The most trades one request may ask for.
 ///
 /// Without a ceiling, `?limit=100000000` is a way to make one HTTP request drag
@@ -380,17 +425,21 @@ async fn deposit(
     req: Request,
 ) -> ApiResult<Json<serde_json::Value>> {
     let user_id = caller(&req)?;
+    let request_id = request_id_for(user_id, &req)?;
     let body: DepositBody = read_json(req).await?;
 
     state
         .inner
         .loopback
-        .command(Command::Deposit {
-            request_id: Uuid::nil(),
-            user_id,
-            asset: body.asset,
-            amount: body.amount,
-        })
+        .command_with_id(
+            Command::Deposit {
+                request_id,
+                user_id,
+                asset: body.asset,
+                amount: body.amount,
+            },
+            request_id,
+        )
         .await?;
 
     Ok(Json(json!({ "status": "ok" })))
@@ -432,21 +481,25 @@ async fn place_order(
     req: Request,
 ) -> ApiResult<(StatusCode, Json<serde_json::Value>)> {
     let user_id = caller(&req)?;
+    let request_id = request_id_for(user_id, &req)?;
     let body: PlaceOrderBody = read_json(req).await?;
 
     let result = state
         .inner
         .loopback
-        .command(Command::PlaceOrder {
-            request_id: Uuid::nil(),
-            user_id,
-            symbol: body.symbol,
-            side: body.side,
-            order_type: body.order_type,
-            time_in_force: body.time_in_force,
-            price: body.price,
-            qty: body.qty,
-        })
+        .command_with_id(
+            Command::PlaceOrder {
+                request_id,
+                user_id,
+                symbol: body.symbol,
+                side: body.side,
+                order_type: body.order_type,
+                time_in_force: body.time_in_force,
+                price: body.price,
+                qty: body.qty,
+            },
+            request_id,
+        )
         .await?;
 
     match result {
@@ -476,15 +529,19 @@ async fn cancel_order(
     req: Request,
 ) -> ApiResult<Json<serde_json::Value>> {
     let user_id = caller(&req)?;
+    let request_id = request_id_for(user_id, &req)?;
 
     state
         .inner
         .loopback
-        .command(Command::CancelOrder {
-            request_id: Uuid::nil(),
-            user_id,
-            order_id,
-        })
+        .command_with_id(
+            Command::CancelOrder {
+                request_id,
+                user_id,
+                order_id,
+            },
+            request_id,
+        )
         .await?;
 
     Ok(Json(json!({ "status": "ok", "order_id": order_id })))

@@ -73,8 +73,18 @@ impl Runner {
         // is the one invariant whose violation corrupts state rather than
         // degrading service, because a second engine applies every command a
         // second time.
+        // A connection of its own, deliberately not a clone of the one the read
+        // loop uses. `MultiplexedConnection` pipelines over a single socket, so
+        // a blocking `XREAD` sitting on it delays everything queued behind it —
+        // which would mean releasing the lock on shutdown waits out `block_ms`,
+        // and the replacement engine waits with it.
+        let lock_conn = client
+            .get_multiplexed_async_connection()
+            .await
+            .context("connecting to redis for the stream lock")?;
+
         let lock = EngineLock::acquire(
-            conn.clone(),
+            lock_conn,
             &cfg.commands_stream,
             std::time::Duration::from_millis(cfg.lock_ttl_ms),
         )

@@ -20,11 +20,11 @@
 //! its reservation is settled once at the end against the total — drawing it down
 //! per fill would let per-fill rounding accumulate past what was locked.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use cex_proto::{
     Command, DepthSnapshot, Event, Fill, MarketView, OrderId, OrderType, OrderView, Query,
-    ResponseBody, Seq, Side, TimeInForce, UserId,
+    RequestId, ResponseBody, Seq, Side, TimeInForce, UserId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,63 @@ pub struct Applied {
 /// build is refused rather than misread — replaying the log is always available
 /// as a fallback, and a silently misinterpreted field is not.
 pub const SNAPSHOT_VERSION: u32 = 1;
+
+/// How many command ids the engine remembers for deduplication.
+///
+/// This is the honest limit of the guarantee: a retry is recognised while its
+/// command is still in the window, not forever. Big enough to cover any
+/// plausible client retry, small enough that the log stays a few megabytes in
+/// a snapshot rather than growing without bound for the life of the exchange.
+pub const IDEMPOTENCY_CAPACITY: usize = 50_000;
+
+/// Command ids already applied, and what each one answered.
+///
+/// A `504` from the API is genuinely ambiguous — the command is on the durable
+/// log and may yet apply — so a caller that retries must not be charged twice.
+/// The API derives the request id from the caller's idempotency key, so a retry
+/// arrives carrying the same id and is recognised here.
+///
+/// Every applied command is recorded, not only ones a client marked. That also
+/// makes the command log itself exactly-once: appending the same command twice,
+/// however it happens, applies it once.
+///
+/// `BTreeMap` and `VecDeque`, never a `HashMap` — like every other map in
+/// `State`, this has to encode identically for identical state or no replay
+/// could be verified.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct IdempotencyLog {
+    seen: BTreeMap<RequestId, ResponseBody>,
+    /// Insertion order, so eviction is deterministic rather than whatever the
+    /// map happens to iterate first.
+    order: VecDeque<RequestId>,
+}
+
+impl IdempotencyLog {
+    /// What this command answered the first time, if it is still remembered.
+    pub fn recall(&self, id: &RequestId) -> Option<&ResponseBody> {
+        self.seen.get(id)
+    }
+
+    /// Record an applied command, evicting the oldest if the log is full.
+    pub fn remember(&mut self, id: RequestId, response: ResponseBody) {
+        if self.seen.insert(id, response).is_none() {
+            self.order.push_back(id);
+        }
+        while self.order.len() > IDEMPOTENCY_CAPACITY {
+            if let Some(oldest) = self.order.pop_front() {
+                self.seen.remove(&oldest);
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.seen.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.seen.is_empty()
+    }
+}
 
 /// Engine state plus the log position it was taken at.
 ///
@@ -101,6 +158,14 @@ pub struct State {
     /// Net deposited per asset. The conservation check compares the ledger's total
     /// supply against this; any divergence is money created or lost.
     minted: BTreeMap<String, i64>,
+    /// Commands already applied. See [`IdempotencyLog`].
+    ///
+    /// `serde(default)` so a snapshot written before this existed still loads
+    /// and simply starts with an empty log. The only cost is that commands from
+    /// before the upgrade are not deduplicated, and those were answered long
+    /// ago — much cheaper than forcing a full replay of the log on upgrade.
+    #[serde(default)]
+    idempotency: IdempotencyLog,
 }
 
 impl State {
@@ -116,6 +181,7 @@ impl State {
             seq: 0,
             next_order_id: 1,
             minted: BTreeMap::new(),
+            idempotency: IdempotencyLog::default(),
         }
     }
 
@@ -174,6 +240,18 @@ impl State {
     /// Apply one command. On `Err` the state is unchanged — every check that can
     /// fail runs before the first mutation.
     pub fn apply(&mut self, cmd: Command) -> Result<Applied, EngineError> {
+        // Already applied. Answer with what it produced the first time, change
+        // nothing, and publish nothing — a second set of events would move
+        // every downstream reader's view for something that did not happen.
+        let request_id = cmd.request_id();
+        if let Some(response) = self.idempotency.recall(&request_id) {
+            return Ok(Applied {
+                seq: self.seq,
+                response: response.clone(),
+                events: Vec::new(),
+            });
+        }
+
         let (response, events) = match cmd {
             Command::Deposit {
                 user_id,
@@ -210,12 +288,23 @@ impl State {
             } => self.cancel_order(user_id, order_id)?,
         };
 
+        // Only commands that actually applied are recorded. A rejected command
+        // changed nothing, so re-running it is harmless — and remembering the
+        // failure would leave a caller permanently unable to retry a request
+        // that never happened.
+        self.idempotency.remember(request_id, response.clone());
+
         self.seq += 1;
         Ok(Applied {
             seq: self.seq,
             response,
             events,
         })
+    }
+
+    /// How many command ids are currently remembered.
+    pub fn remembered_requests(&self) -> usize {
+        self.idempotency.len()
     }
 
     fn deposit(

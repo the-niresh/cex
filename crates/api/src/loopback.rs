@@ -147,8 +147,21 @@ impl Loopback {
 
     /// Send a state-changing request. It is appended to the durable log, so it
     /// survives an engine restart even if the reply never arrives.
-    pub async fn command(&self, mut cmd: Command) -> Result<ResponseBody, LoopbackError> {
-        let id = Uuid::new_v4();
+    /// Send a command under a fresh id. Nothing deduplicates it.
+    pub async fn command(&self, cmd: Command) -> Result<ResponseBody, LoopbackError> {
+        self.command_with_id(cmd, Uuid::new_v4()).await
+    }
+
+    /// Send a command under a caller-chosen id.
+    ///
+    /// The engine remembers ids it has applied, so sending the same one twice
+    /// applies it once and returns the original answer. That is what makes a
+    /// retry after a timeout safe.
+    pub async fn command_with_id(
+        &self,
+        mut cmd: Command,
+        id: Uuid,
+    ) -> Result<ResponseBody, LoopbackError> {
         set_command_request_id(&mut cmd, id);
 
         let json =

@@ -124,12 +124,21 @@ fn two_states_built_from_the_same_commands_encode_identically() {
     let alice = Uuid::new_v4();
     let bob = Uuid::new_v4();
 
+    // Built once and replayed, because the command ids are part of the state now
+    // — the engine remembers them to deduplicate retries. Regenerating them per
+    // build would be two different command logs, which is not what this asserts.
+    let commands = vec![
+        deposit(alice, USDT, 1_000_000_000),
+        deposit(bob, BTC, 100_000_000),
+        limit(alice, Side::Buy, P49K, Q1),
+        limit(bob, Side::Sell, P49K, Q1),
+    ];
+
     let build = || {
         let mut s = state();
-        s.apply(deposit(alice, USDT, 1_000_000_000)).unwrap();
-        s.apply(deposit(bob, BTC, 100_000_000)).unwrap();
-        s.apply(limit(alice, Side::Buy, P49K, Q1)).unwrap();
-        s.apply(limit(bob, Side::Sell, P49K, Q1)).unwrap();
+        for cmd in &commands {
+            s.apply(cmd.clone()).unwrap();
+        }
         s
     };
 

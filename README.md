@@ -23,10 +23,10 @@ price feed and three command types:
 
 | Component | State |
 |---|---|
-| `cex-core` — matching, ledger, settlement, snapshots | Built · 118 tests |
+| `cex-core` — matching, ledger, settlement, snapshots, idempotency | Built · 132 tests |
 | `cex-proto` — wire types | Built · 18 tests |
 | `engine` — stream consumer, snapshots, crash recovery, boot lock | Built · 53 tests |
-| `api` — loopback, auth, REST routes | Built · 66 tests |
+| `api` — loopback, auth, REST routes | Built · 74 tests |
 | `persist` — Postgres history writer | Built · 27 tests |
 | `ws` — market data fan-out | Built · 52 tests |
 | Perpetuals | Not started |
@@ -113,7 +113,7 @@ Prices and quantities are integers, never floats.
 
 ```bash
 docker compose up -d      # redis on 6390, postgres on 5442
-cargo test                # 334 tests; the engine, api, persist and ws suites need both containers
+cargo test                # 356 tests; the engine, api, persist and ws suites need both containers
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -220,6 +220,38 @@ group, so a second instance would read the same commands and apply everything tw
 on `<commands-stream>:lock` enforces it: the engine takes it at boot, renews it while it runs, and
 stops the moment it cannot. A second engine refuses to start and names the one holding the stream.
 
+## Retrying safely
+
+A `504` from the API is genuinely ambiguous: the command is already on the durable log, so a
+timeout is not proof that nothing happened. Send an `Idempotency-Key` and a retry becomes safe.
+
+```bash
+curl -XPOST localhost:8080/orders -H "authorization: Bearer $TOKEN" \
+  -H 'idempotency-key: my-order-1' -H 'content-type: application/json' \
+  -d '{"symbol":"BTC_USDT","side":"BUY","order_type":"LIMIT",
+       "time_in_force":"GTC","price":50000000000,"qty":100000}'
+```
+
+Send it again with the same key and you get the same `order_id` back, not a second order. Accepted
+on `POST /deposit`, `POST /orders` and `DELETE /orders/:id`.
+
+The API turns the key into the command's `request_id` — a UUIDv5 derived from the key **and the
+caller**, so two users may pick `"1"` without either receiving the other's answer. The engine
+remembers ids it has applied along with what each one returned, so a repeat is answered from that
+record: no state changes, no events are published, and `seq` does not advance.
+
+Three things worth knowing:
+
+* **It is opt-in.** Without the header every request gets a fresh id, because two deliberate
+  identical orders are a normal thing to want.
+* **Rejected commands are not remembered.** A command that failed changed nothing, so re-running it
+  is harmless — and remembering the failure would leave you unable to retry a request that never
+  happened.
+* **The window is 50,000 commands.** Beyond that the id is forgotten and a retry applies as new.
+
+Because every applied command is recorded, the command log itself is exactly-once: appending the
+same command twice, however that happens, applies it once.
+
 ## Running exactly one engine
 
 The engine takes a lease on `<commands-stream>:lock` before it reads anything, renews it once a
@@ -251,8 +283,9 @@ Named rather than buried, because each is a real thing to fix:
   process paused past its lease may not notice until it wakes, and another engine can legitimately
   hold the stream by then. Closing that window completely needs a fencing token checked on every
   write to the command log.
-* **A `504` from the API is genuinely ambiguous.** The command is on the durable log and may still
-  be applied, so a timeout is not proof that nothing happened. Re-read `/orders/open` to find out.
+* **Idempotency only reaches back as far as the log.** The engine remembers the last 50,000
+  command ids; a retry that arrives after its command has been pushed out of that window is applied
+  as a new one. Ample for a client retry, not a substitute for reconciliation after a long outage.
 * **Replay republishes events.** Recovery re-applies commands after the snapshot, so downstream
   consumers see duplicates and must deduplicate on `seq`. `persist` does it against a table and
   `ws` against an in-memory high-water mark; anything new must do it too.
