@@ -236,6 +236,7 @@ pub fn build_router_with_cors(state: AppState, cors: CorsSettings) -> Router {
         .route("/balances", get(balances))
         .route("/orders", post(place_order))
         .route("/orders/open", get(open_orders))
+        .route("/orders/history", get(order_history))
         .route("/orders/{id}", delete(cancel_order))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
@@ -426,20 +427,38 @@ struct PublicTrade {
     timestamp_ms: i64,
 }
 
+/// How many rows a history request may ask for, defaulted and capped.
+///
+/// One definition, used by the public tape and by a caller's own history alike:
+/// the reasoning for the ceiling is the same on both, and two copies of it would
+/// eventually disagree.
+fn parse_limit(raw: Option<&str>) -> ApiResult<i64> {
+    match raw {
+        None => Ok(DEFAULT_TRADES),
+        Some(raw) => raw
+            .parse::<i64>()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(|| ApiError::bad_request("limit must be a positive integer"))
+            .map(|n| n.min(MAX_TRADES)),
+    }
+}
+
+/// One query parameter, for handlers that took the whole `Request` and so
+/// cannot also use the `Query` extractor.
+fn query_param<'a>(query: Option<&'a str>, key: &str) -> Option<&'a str> {
+    query?.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == key).then_some(v)
+    })
+}
+
 async fn trades(
     State(state): State<AppState>,
     Path(symbol): Path<String>,
     UrlQuery(params): UrlQuery<HashMap<String, String>>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let limit = match params.get("limit") {
-        None => DEFAULT_TRADES,
-        Some(raw) => raw
-            .parse::<i64>()
-            .ok()
-            .filter(|n| *n > 0)
-            .ok_or_else(|| ApiError::bad_request("limit must be a positive integer"))?
-            .min(MAX_TRADES),
-    };
+    let limit = parse_limit(params.get("limit").map(|s| s.as_str()))?;
 
     let rows = state
         .inner
@@ -635,6 +654,107 @@ async fn cancel_order(
         .await?;
 
     Ok(Json(json!({ "status": "ok", "order_id": order_id })))
+}
+
+/// One of the caller's own fills, told from their side of the trade.
+///
+/// Built field by field from a `FillRow` for the same reason `PublicTrade` is:
+/// the row names both counterparties, and the one thing this endpoint must
+/// never do is tell a trader who they traded with. Only the caller's own order
+/// id, side, role and fee survive the translation.
+#[derive(Debug, Serialize)]
+struct MyFill {
+    seq: u64,
+    idx: i32,
+    symbol: String,
+    /// The caller's own order. Never the other side's.
+    order_id: u64,
+    /// The caller's own side — which is the opposite of `taker_side` when they
+    /// were the maker.
+    side: String,
+    /// `MAKER` or `TAKER`. Decides which fee they paid.
+    role: String,
+    price: i64,
+    qty: i64,
+    notional: i64,
+    /// What this caller paid, in quote atoms.
+    fee: i64,
+    timestamp_ms: i64,
+}
+
+/// The side facing the aggressor.
+///
+/// The column only ever holds `BUY` or `SELL` — the persister writes it from a
+/// `Side`. Anything else is corrupt history, so it is logged and passed through
+/// rather than turned into a plausible-looking guess.
+fn opposite_side(taker_side: &str) -> String {
+    match taker_side {
+        "BUY" => "SELL".to_string(),
+        "SELL" => "BUY".to_string(),
+        other => {
+            tracing::error!(taker_side = other, "a fill row has an unknown side");
+            other.to_string()
+        }
+    }
+}
+
+impl MyFill {
+    fn for_caller(row: cex_persist::FillRow, caller: Uuid) -> MyFill {
+        let is_maker = row.maker_user_id == caller;
+        MyFill {
+            seq: row.seq,
+            idx: row.idx,
+            symbol: row.symbol,
+            order_id: if is_maker {
+                row.maker_order_id
+            } else {
+                row.taker_order_id
+            },
+            side: if is_maker {
+                opposite_side(&row.taker_side)
+            } else {
+                row.taker_side
+            },
+            role: if is_maker { "MAKER" } else { "TAKER" }.to_string(),
+            price: row.price,
+            qty: row.qty,
+            notional: row.notional,
+            fee: if is_maker {
+                row.maker_fee
+            } else {
+                row.taker_fee
+            },
+            timestamp_ms: row.created_at_ms,
+        }
+    }
+}
+
+async fn order_history(
+    State(state): State<AppState>,
+    req: Request,
+) -> ApiResult<Json<serde_json::Value>> {
+    let user_id = caller(&req)?;
+    let limit = parse_limit(query_param(req.uri().query(), "limit"))?;
+
+    let rows = state
+        .inner
+        .history
+        .fills_for_user(user_id, limit)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, %user_id, "reading fill history failed");
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not read fill history",
+            )
+        })?;
+
+    let fills: Vec<MyFill> = rows
+        .into_iter()
+        .map(|row| MyFill::for_caller(row, user_id))
+        .collect();
+
+    Ok(Json(json!({ "limit": limit, "fills": fills })))
 }
 
 async fn open_orders(

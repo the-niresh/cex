@@ -97,7 +97,17 @@ Amounts are integers in atomic units — see [Scaling](#scaling).
 | `POST` | `/orders` | yes | place a limit or market order |
 | `DELETE` | `/orders/:id` | yes | cancel a resting order |
 | `GET` | `/orders/open` | yes | your live orders |
+| `GET` | `/orders/history` | yes | your own fills, newest first (`?limit=`, max 500) |
 | `GET` | `/trades/:symbol` | — | recent trade prints, newest first (`?limit=`, max 500) |
+
+`/trades/:symbol` is the public tape and names nobody. `/orders/history` is the same rows scoped
+to the caller and told from their side — their order id, their side, their role, the fee they
+paid — and still says nothing about who was on the other side of the trade.
+
+A browser may call the API from the origins named in `CEX_CORS_ORIGINS` (comma-separated;
+unset means the Vite dev server). Listed explicitly, never `*`: a wildcard would hand a
+token-bearing API to any page on the internet. `authorization` and `idempotency-key` are in the
+allowed set, because a browser silently strips any header that is not.
 
 ## Scaling
 

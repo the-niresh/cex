@@ -124,6 +124,59 @@ impl Harness {
         (maker, taker)
     }
 
+    /// A trade between two named users, so a test can assert what one of them
+    /// is allowed to see about it.
+    async fn record_trade_between(
+        &self,
+        seq: u64,
+        symbol: &str,
+        maker: Uuid,
+        taker: Uuid,
+        taker_side: cex_proto::Side,
+    ) {
+        self.history
+            .write_batches(&[cex_proto::EventBatch {
+                seq,
+                request_id: Uuid::new_v4(),
+                events: vec![cex_proto::Event::Trades {
+                    symbol: symbol.into(),
+                    fills: vec![cex_proto::Fill {
+                        symbol: symbol.into(),
+                        price: P50K,
+                        qty: Q1,
+                        maker_order_id: 11,
+                        taker_order_id: 22,
+                        maker_user_id: maker,
+                        taker_user_id: taker,
+                        taker_side,
+                        notional: 50_000_000,
+                        maker_fee: 500,
+                        taker_fee: 100,
+                    }],
+                }],
+            }])
+            .await
+            .expect("recording a trade");
+    }
+
+    /// Register a user and keep their id as well as their token.
+    async fn registered_user(&self) -> (String, Uuid) {
+        let username = format!("u{}", Uuid::new_v4().simple());
+        let (status, body) = self
+            .send(
+                "POST",
+                "/register",
+                None,
+                json!({"username": username, "password": "a-good-password"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "register failed: {body}");
+        (
+            body["token"].as_str().unwrap().to_string(),
+            body["user_id"].as_str().unwrap().parse().unwrap(),
+        )
+    }
+
     /// Like `call`, but keeps the response headers. CORS lives entirely in
     /// them — the body of a preflight is empty by design.
     async fn call_headers(&self, req: Request<Body>) -> (StatusCode, axum::http::HeaderMap) {
@@ -1043,4 +1096,201 @@ async fn a_plain_read_from_the_dev_origin_carries_the_grant() {
         Some(DEV_ORIGIN),
         "a simple GET needs the grant on the response, there is no preflight"
     );
+}
+
+// ───────────────────────── your own fill history ─────────────────────────
+//
+// `GET /trades/:symbol` is the public tape and strips every user id. This is the
+// other half: the same rows, scoped to the caller, told from their side of the
+// trade — but still saying nothing about who was on the other side of it.
+
+#[tokio::test]
+async fn order_history_needs_a_token() {
+    let h = Harness::start().await;
+
+    let (status, _) = h.get("/orders/history", None).await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn order_history_returns_the_callers_own_fills() {
+    let h = Harness::start().await;
+    let (token, alice) = h.registered_user().await;
+    let bob = Uuid::new_v4();
+
+    h.record_trade_between(1, SYM, alice, bob, cex_proto::Side::Buy)
+        .await;
+    h.record_trade_between(2, SYM, bob, alice, cex_proto::Side::Sell)
+        .await;
+
+    let (status, body) = h.get("/orders/history", Some(&token)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let fills = body["fills"].as_array().unwrap();
+    assert_eq!(
+        fills.len(),
+        2,
+        "alice made one of these and took the other; both are hers: {body}"
+    );
+}
+
+#[tokio::test]
+async fn order_history_excludes_other_peoples_fills() {
+    let h = Harness::start().await;
+    let (token, alice) = h.registered_user().await;
+    let bob = Uuid::new_v4();
+
+    h.record_trade_between(1, SYM, alice, bob, cex_proto::Side::Buy)
+        .await;
+    // A trade alice had nothing to do with.
+    h.record_trade_between(2, SYM, Uuid::new_v4(), Uuid::new_v4(), cex_proto::Side::Buy)
+        .await;
+
+    let (_, body) = h.get("/orders/history", Some(&token)).await;
+
+    let fills = body["fills"].as_array().unwrap();
+    assert_eq!(fills.len(), 1, "a stranger's trade is not alice's: {body}");
+    assert_eq!(fills[0]["seq"], 1);
+}
+
+#[tokio::test]
+async fn order_history_never_names_the_counterparty() {
+    let h = Harness::start().await;
+    let (token, alice) = h.registered_user().await;
+    let bob = Uuid::new_v4();
+
+    h.record_trade_between(1, SYM, alice, bob, cex_proto::Side::Buy)
+        .await;
+
+    let (_, body) = h.get("/orders/history", Some(&token)).await;
+    let raw = body.to_string();
+
+    assert!(
+        !raw.contains(&bob.to_string()),
+        "the counterparty's id must never reach the wire: {raw}"
+    );
+    assert!(
+        !raw.contains("maker_user_id") && !raw.contains("taker_user_id"),
+        "the counterparty columns must not be serialised at all: {raw}"
+    );
+    assert!(
+        !raw.contains(&22.to_string()) || !raw.contains("taker_order_id"),
+        "the counterparty's order id links their trades together across \
+         requests, so it does not belong here either: {raw}"
+    );
+}
+
+#[tokio::test]
+async fn order_history_tells_the_trade_from_the_callers_side() {
+    let h = Harness::start().await;
+    let (token, alice) = h.registered_user().await;
+    let bob = Uuid::new_v4();
+
+    // Alice is the maker. The aggressor bought, so alice sold.
+    h.record_trade_between(1, SYM, alice, bob, cex_proto::Side::Buy)
+        .await;
+
+    let (_, body) = h.get("/orders/history", Some(&token)).await;
+    let f = &body["fills"][0];
+
+    assert_eq!(f["side"], "SELL", "the maker is on the opposite side: {body}");
+    assert_eq!(f["role"], "MAKER");
+    assert_eq!(f["fee"], 500, "a maker pays the maker fee, not the taker's");
+    assert_eq!(f["order_id"], 11, "her own order id, not the aggressor's");
+    assert_eq!(f["price"], P50K);
+    assert_eq!(f["qty"], Q1);
+}
+
+#[tokio::test]
+async fn order_history_tells_a_taker_they_were_the_taker() {
+    let h = Harness::start().await;
+    let (token, alice) = h.registered_user().await;
+    let bob = Uuid::new_v4();
+
+    // Alice is the aggressor this time, and she sold.
+    h.record_trade_between(1, SYM, bob, alice, cex_proto::Side::Sell)
+        .await;
+
+    let (_, body) = h.get("/orders/history", Some(&token)).await;
+    let f = &body["fills"][0];
+
+    assert_eq!(f["side"], "SELL", "the taker's side is the aggressing side");
+    assert_eq!(f["role"], "TAKER");
+    assert_eq!(f["fee"], 100, "a taker pays the taker fee");
+    assert_eq!(f["order_id"], 22, "her own order id");
+}
+
+#[tokio::test]
+async fn order_history_is_newest_first() {
+    let h = Harness::start().await;
+    let (token, alice) = h.registered_user().await;
+    let bob = Uuid::new_v4();
+
+    for seq in 1..=3u64 {
+        h.record_trade_between(seq, SYM, alice, bob, cex_proto::Side::Buy)
+            .await;
+    }
+
+    let (_, body) = h.get("/orders/history", Some(&token)).await;
+    let seqs: Vec<u64> = body["fills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["seq"].as_u64().unwrap())
+        .collect();
+
+    assert_eq!(seqs, vec![3, 2, 1]);
+}
+
+#[tokio::test]
+async fn order_history_honours_a_limit() {
+    let h = Harness::start().await;
+    let (token, alice) = h.registered_user().await;
+    let bob = Uuid::new_v4();
+
+    for seq in 1..=4u64 {
+        h.record_trade_between(seq, SYM, alice, bob, cex_proto::Side::Buy)
+            .await;
+    }
+
+    let (_, body) = h.get("/orders/history?limit=2", Some(&token)).await;
+
+    assert_eq!(body["fills"].as_array().unwrap().len(), 2);
+    assert_eq!(body["limit"], 2);
+}
+
+#[tokio::test]
+async fn an_unbounded_history_limit_is_capped_rather_than_served() {
+    let h = Harness::start().await;
+    let (token, _) = h.registered_user().await;
+
+    let (status, body) = h.get("/orders/history?limit=100000000", Some(&token)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["limit"], 500,
+        "an unbounded limit would drag a whole trading history through Postgres"
+    );
+}
+
+#[tokio::test]
+async fn a_nonsense_history_limit_is_a_client_error() {
+    let h = Harness::start().await;
+    let (token, _) = h.registered_user().await;
+
+    let (status, _) = h.get("/orders/history?limit=-1", Some(&token)).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_user_who_has_never_traded_gets_an_empty_history() {
+    let h = Harness::start().await;
+    let (token, _) = h.registered_user().await;
+
+    let (status, body) = h.get("/orders/history", Some(&token)).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["fills"].as_array().unwrap().is_empty());
 }

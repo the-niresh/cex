@@ -597,3 +597,131 @@ async fn a_schema_name_that_could_terminate_a_statement_is_refused() {
     let bad = HistoryStore::connect_to_schema(&database_url(), "x\"; DROP TABLE users; --").await;
     assert!(bad.is_err());
 }
+
+// ───────────────────────── a user's own fills ─────────────────────────
+//
+// A user is the maker on some of their fills and the taker on others, and the
+// row does not care which — so the query has to match on both columns or half
+// a trader's history silently disappears.
+
+#[tokio::test]
+async fn a_users_fills_include_the_ones_they_made_and_the_ones_they_took() {
+    let s = store().await;
+    let alice = Uuid::new_v4();
+    let bob = Uuid::new_v4();
+
+    s.write_batches(&[
+        batch(
+            1,
+            vec![Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![fill(1, 2, alice, bob, Q1)],
+            }],
+        ),
+        batch(
+            2,
+            vec![Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![fill(3, 4, bob, alice, Q1 * 2)],
+            }],
+        ),
+    ])
+    .await
+    .unwrap();
+
+    let rows = s.fills_for_user(alice, 100).await.unwrap();
+    assert_eq!(
+        rows.len(),
+        2,
+        "alice made one and took the other; both are hers"
+    );
+}
+
+#[tokio::test]
+async fn one_users_fills_do_not_include_a_strangers() {
+    let s = store().await;
+    let alice = Uuid::new_v4();
+    let bob = Uuid::new_v4();
+    let carol = Uuid::new_v4();
+    let dave = Uuid::new_v4();
+
+    s.write_batches(&[
+        batch(
+            1,
+            vec![Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![fill(1, 2, alice, bob, Q1)],
+            }],
+        ),
+        batch(
+            2,
+            vec![Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![fill(3, 4, carol, dave, Q1)],
+            }],
+        ),
+    ])
+    .await
+    .unwrap();
+
+    let rows = s.fills_for_user(alice, 100).await.unwrap();
+    assert_eq!(rows.len(), 1, "carol and dave's trade is not alice's");
+    assert_eq!(rows[0].seq, 1);
+}
+
+#[tokio::test]
+async fn a_users_fills_come_back_newest_first() {
+    let s = store().await;
+    let alice = Uuid::new_v4();
+    let bob = Uuid::new_v4();
+
+    for seq in 1..=3u64 {
+        s.write_batches(&[batch(
+            seq,
+            vec![Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![fill(1, 2, alice, bob, Q1)],
+            }],
+        )])
+        .await
+        .unwrap();
+    }
+
+    let rows = s.fills_for_user(alice, 100).await.unwrap();
+    let seqs: Vec<u64> = rows.iter().map(|f| f.seq).collect();
+    assert_eq!(seqs, vec![3, 2, 1], "newest first, like the public tape");
+}
+
+#[tokio::test]
+async fn a_users_fills_honour_the_limit() {
+    let s = store().await;
+    let alice = Uuid::new_v4();
+    let bob = Uuid::new_v4();
+
+    for seq in 1..=5u64 {
+        s.write_batches(&[batch(
+            seq,
+            vec![Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![fill(1, 2, alice, bob, Q1)],
+            }],
+        )])
+        .await
+        .unwrap();
+    }
+
+    let rows = s.fills_for_user(alice, 2).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(
+        rows.iter().map(|f| f.seq).collect::<Vec<_>>(),
+        vec![5, 4],
+        "a limit takes the newest, not an arbitrary two"
+    );
+}
+
+#[tokio::test]
+async fn a_user_who_has_never_traded_has_no_fills() {
+    let s = store().await;
+    let rows = s.fills_for_user(Uuid::new_v4(), 100).await.unwrap();
+    assert!(rows.is_empty());
+}

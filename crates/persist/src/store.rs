@@ -346,6 +346,36 @@ impl HistoryStore {
         .map_err(db)
     }
 
+    /// One user's fills, newest first.
+    ///
+    /// Matches on **both** counterparty columns: a trader is the maker on some
+    /// of their fills and the taker on others, and a query that looked at only
+    /// one would drop half their history without ever looking wrong.
+    ///
+    /// The rows still carry both user ids. Deciding what a caller may see is
+    /// the API's job, not the store's — see how `GET /orders/history` builds
+    /// its response field by field.
+    pub async fn fills_for_user(
+        &self,
+        user_id: UserId,
+        limit: i64,
+    ) -> Result<Vec<FillRow>, StoreError> {
+        sqlx::query(
+            "SELECT seq, idx, symbol, price, qty, maker_order_id, taker_order_id,
+                    maker_user_id, taker_user_id, taker_side, notional,
+                    maker_fee, taker_fee,
+                    (EXTRACT(EPOCH FROM created_at) * 1000)::BIGINT AS created_at_ms
+             FROM fills WHERE maker_user_id = $1 OR taker_user_id = $1
+             ORDER BY seq DESC, idx DESC LIMIT $2",
+        )
+        .bind(user_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map(|rows| rows.into_iter().map(row_to_fill).collect())
+        .map_err(db)
+    }
+
     pub async fn balance_changes_for(
         &self,
         user_id: UserId,
