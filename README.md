@@ -27,13 +27,14 @@ price feed and three command types:
 | `cex-proto` — wire types | Built · 18 tests |
 | `engine` — stream consumer, snapshots, crash recovery | Built · 36 tests |
 | `api` — loopback, auth, REST routes | Built · 58 tests |
+| `persist` — Postgres history writer | Built · 27 tests |
 | `ws` — market data fan-out | Not started |
-| `persist` — Postgres history writer | Not started |
 | Perpetuals | Not started |
 
-**Spot trading works end to end.** Two users can register, deposit, place orders, match, and settle
-over HTTP. What is missing is the live market-data feed and the historical record — you can trade,
-but a UI has nothing to stream and `GET /trades` has no source yet.
+**Spot trading works end to end, and history is durable.** Two users can register, deposit, place
+orders, match, and settle over HTTP, and every order, fill and balance change lands in Postgres
+behind the engine. What is missing is the live market-data feed — you can trade and query history,
+but a UI has nothing to stream.
 
 ## Running it
 
@@ -44,7 +45,13 @@ cargo build --release
 ./target/release/engine &                # consumes cex:commands
 CEX_JWT_SECRET=$(openssl rand -hex 32) \
   ./target/release/api &                 # listens on :8080
+./target/release/persist &               # cex:events → postgres
 ```
+
+`persist` is optional to trade — the engine does not wait on it, and stopping it costs history
+freshness and nothing else. Give each deployed instance its own stable `CEX_PERSIST_CONSUMER`
+name: Redis holds unacknowledged entries against the name that received them, so a name that
+changed on every boot would orphan its own backlog.
 
 ```bash
 # register, fund, and trade
@@ -94,7 +101,7 @@ Prices and quantities are integers, never floats.
 
 ```bash
 docker compose up -d      # redis on 6390, postgres on 5442
-cargo test                # 230 tests; the engine and api suites need both containers
+cargo test                # 257 tests; the engine, api and persist suites need both containers
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -116,6 +123,27 @@ crates/
 `core` has no async dependencies **on purpose**. A crate that cannot perform I/O cannot
 accidentally become non-deterministic, and the constraint is enforced by the manifest rather
 than by review.
+
+## History
+
+`persist` reads `cex:events` and writes four tables. It is a separate process because **the engine
+must never wait on a database**: the engine publishes a batch and moves on in microseconds while
+the persister catches up at whatever speed Postgres allows.
+
+| Table | |
+|---|---|
+| `event_batches` | one row per applied command, keyed on `seq`. The dedupe guard. |
+| `orders` | one row per order, updated in place as it fills or is cancelled |
+| `fills` | one row per match, immutable, keyed `(seq, idx)` |
+| `balance_changes` | append-only trail of every balance-affecting event |
+
+Unlike the engine, it reads with `XREADGROUP`: it has no snapshot of its own, so it wants exactly
+what a consumer group gives — Redis tracks the cursor, and anything unacknowledged comes back.
+
+Delivery is therefore at-least-once, twice over: Redis redelivers what was never acknowledged, and
+the engine republishes events whenever recovery replays the command log. Both are handled the same
+way. A batch and the row recording that it was written commit in **one transaction**, so a crash
+anywhere leaves history exactly as it was and the redelivery that follows re-does the work cleanly.
 
 ## Design rules
 
@@ -150,11 +178,16 @@ Named rather than buried, because each is a real thing to fix:
 
 * **Nothing prevents two engines running.** Both would consume the whole stream and double-apply
   every command. Needs a Redis lock at boot.
-* **`ws` and `persist` do not exist.** No live market-data feed, and no queryable history.
+* **`ws` does not exist.** No live market-data feed.
+* **There is no `GET /trades/:symbol` yet.** The data is now there — `persist` writes it and
+  `HistoryStore::fills_for_symbol` reads it — but no route serves it.
 * **A `504` from the API is genuinely ambiguous.** The command is on the durable log and may still
   be applied, so a timeout is not proof that nothing happened. Re-read `/orders/open` to find out.
 * **Replay republishes events.** Recovery re-applies commands after the snapshot, so downstream
-  consumers see duplicates and must deduplicate on `seq`.
+  consumers see duplicates and must deduplicate on `seq`. `persist` does; anything new must too.
+* **A batch `persist` cannot write stalls history rather than skipping it.** The entries stay
+  unacknowledged and are retried forever. That is the right failure — better a stalled writer that
+  pages you than one that quietly drops trades — but it does need someone watching for it.
 
 ## Naming conventions
 

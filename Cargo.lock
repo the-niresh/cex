@@ -274,6 +274,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "cex-persist"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cex-engine",
+ "cex-proto",
+ "redis",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "cex-proto"
 version = "0.1.0"
 dependencies = [

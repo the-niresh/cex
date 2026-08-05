@@ -1,0 +1,33 @@
+[package]
+name = "cex-persist"
+version.workspace = true
+edition.workspace = true
+
+# The executable is `persist` — that is what gets typed on a server.
+[[bin]]
+name = "persist"
+path = "src/main.rs"
+
+[lib]
+name = "cex_persist"
+path = "src/lib.rs"
+
+[dependencies]
+cex-proto.workspace = true
+anyhow.workspace = true
+redis.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+# Same feature split as the api crate: sqlx 0.9 picks a runtime and a TLS
+# backend separately.
+sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring", "uuid", "macros"] }
+
+[dev-dependencies]
+# The tests drive a real engine so what lands in Postgres is what the engine
+# actually publishes, not what a hand-written fixture claims it publishes.
+cex-engine = { path = "../engine" }
+tempfile.workspace = true
