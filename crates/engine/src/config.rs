@@ -21,6 +21,13 @@ pub struct Config {
     pub snapshot_keep: usize,
     /// How long `XREAD` blocks waiting for new commands, in milliseconds.
     pub block_ms: usize,
+    /// How long the boot lock is leased for, in milliseconds.
+    ///
+    /// The engine renews it once a third of this has gone, so `block_ms` must
+    /// be comfortably under `lock_ttl_ms / 3` — otherwise a healthy engine can
+    /// sit in `XREAD` for longer than its own lease and stop for no reason.
+    /// `Runner::boot` refuses a configuration where that is not true.
+    pub lock_ttl_ms: u64,
 }
 
 impl Default for Config {
@@ -37,6 +44,7 @@ impl Default for Config {
             snapshot_every: 5_000,
             snapshot_keep: 3,
             block_ms: 5_000,
+            lock_ttl_ms: 30_000,
         }
     }
 }
@@ -55,6 +63,7 @@ impl Config {
             snapshot_every: env_num("CEX_SNAPSHOT_EVERY", d.snapshot_every),
             snapshot_keep: env_num("CEX_SNAPSHOT_KEEP", d.snapshot_keep),
             block_ms: env_num("CEX_BLOCK_MS", d.block_ms),
+            lock_ttl_ms: env_num("CEX_LOCK_TTL_MS", d.lock_ttl_ms as usize) as u64,
         }
     }
 }

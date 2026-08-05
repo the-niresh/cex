@@ -45,6 +45,7 @@ fn pair(dir: &std::path::Path) -> (EngineConfig, LoopbackConfig) {
             snapshot_every: 1_000_000,
             snapshot_keep: 3,
             block_ms: 150,
+            lock_ttl_ms: 30_000,
         },
         LoopbackConfig {
             redis_url: redis_url(),

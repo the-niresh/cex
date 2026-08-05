@@ -52,6 +52,7 @@ impl Harness {
             snapshot_every: 1_000_000,
             snapshot_keep: 3,
             block_ms: 50,
+            lock_ttl_ms: 30_000,
         };
 
         let loopback_cfg = LoopbackConfig {

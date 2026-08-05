@@ -33,6 +33,7 @@ fn test_config(dir: &std::path::Path) -> Config {
         snapshot_every: 1_000_000,
         snapshot_keep: 3,
         block_ms: 150,
+        lock_ttl_ms: 30_000,
     }
 }
 

@@ -27,6 +27,7 @@ use redis::AsyncCommands;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
+use crate::lock::EngineLock;
 use crate::snapshot_store::SnapshotStore;
 use crate::stream_id::StreamId;
 
@@ -38,6 +39,9 @@ pub struct Runner {
     /// Last command id applied. Replay resumes from here.
     position: StreamId,
     applied_since_snapshot: usize,
+    /// Proof that this process is the only engine on this command stream.
+    /// Held for as long as the engine runs; losing it stops the engine.
+    lock: EngineLock,
 }
 
 impl Runner {
@@ -49,6 +53,37 @@ impl Runner {
             .get_multiplexed_async_connection()
             .await
             .context("connecting to redis")?;
+
+        // The lease is renewed once a third of it has gone, and the loop can
+        // sit in `XREAD` for `block_ms` between renewals. If the read can
+        // outlast the renewal interval, a perfectly healthy engine loses its
+        // own lock. That is knowable here, so it is refused here rather than
+        // discovered at three in the morning.
+        let refresh_interval = cfg.lock_ttl_ms / 3;
+        if cfg.block_ms as u64 >= refresh_interval {
+            anyhow::bail!(
+                "block_ms ({}) must be below lock_ttl_ms / 3 ({}), or the engine \
+                 will let its own lock lapse while waiting for commands",
+                cfg.block_ms,
+                refresh_interval
+            );
+        }
+
+        // Before anything else. Rule 6 — exactly one engine per command stream —
+        // is the one invariant whose violation corrupts state rather than
+        // degrading service, because a second engine applies every command a
+        // second time.
+        let lock = EngineLock::acquire(
+            conn.clone(),
+            &cfg.commands_stream,
+            std::time::Duration::from_millis(cfg.lock_ttl_ms),
+        )
+        .await?;
+        info!(
+            stream = %cfg.commands_stream,
+            engine = %lock.id(),
+            "took the command stream lock"
+        );
 
         let store = SnapshotStore::new(cfg.snapshot_dir.clone(), cfg.snapshot_keep);
 
@@ -71,7 +106,13 @@ impl Runner {
             state,
             position,
             applied_since_snapshot: 0,
+            lock,
         })
+    }
+
+    /// This engine's hold on its command stream.
+    pub fn lock(&mut self) -> &mut EngineLock {
+        &mut self.lock
     }
 
     pub fn state(&self) -> &State {
@@ -258,6 +299,33 @@ impl Runner {
         Ok(())
     }
 
+    /// Give up the command stream so a replacement can take it immediately.
+    ///
+    /// Without this every restart — including a planned deploy — would wait out
+    /// the whole lease before the new engine could boot, because nothing else
+    /// clears the key. A `kill -9` still falls back to lease expiry; this is
+    /// what makes the *graceful* path cost nothing.
+    ///
+    /// Returns whether we were still the holder. `false` is not a failure: it
+    /// means the lease had already lapsed and another engine legitimately owns
+    /// the stream, in which case releasing deliberately does nothing.
+    ///
+    /// Deliberately does not snapshot. Callers that want a fast restart should
+    /// call [`Runner::snapshot`] first, so the order is visible where it
+    /// matters rather than hidden in here.
+    pub async fn shutdown(&mut self) -> Result<bool> {
+        let held = self.lock.release().await?;
+        if held {
+            info!(stream = %self.cfg.commands_stream, "released the command stream lock");
+        } else {
+            warn!(
+                stream = %self.cfg.commands_stream,
+                "lease had already lapsed; another engine may own this stream"
+            );
+        }
+        Ok(held)
+    }
+
     /// Run until the process is killed.
     pub async fn run(&mut self) -> Result<()> {
         info!(
@@ -266,6 +334,12 @@ impl Runner {
             "engine running"
         );
         loop {
+            // Before touching anything, confirm we are still the engine. If the
+            // lease has been taken, another process is applying these very
+            // commands and the only safe thing left to do is stop: two engines
+            // on one stream double-apply everything they see.
+            self.lock.refresh_if_due().await?;
+
             // Reads first: they are cheap and a caller is blocked on each one.
             if let Err(e) = self.poll_queries().await {
                 error!(error = %e, "query poll failed");

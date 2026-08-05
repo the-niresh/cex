@@ -25,7 +25,7 @@ price feed and three command types:
 |---|---|
 | `cex-core` — matching, ledger, settlement, snapshots | Built · 118 tests |
 | `cex-proto` — wire types | Built · 18 tests |
-| `engine` — stream consumer, snapshots, crash recovery | Built · 36 tests |
+| `engine` — stream consumer, snapshots, crash recovery, boot lock | Built · 53 tests |
 | `api` — loopback, auth, REST routes | Built · 58 tests |
 | `persist` — Postgres history writer | Built · 27 tests |
 | `ws` — market data fan-out | Built · 52 tests |
@@ -112,7 +112,7 @@ Prices and quantities are integers, never floats.
 
 ```bash
 docker compose up -d      # redis on 6390, postgres on 5442
-cargo test                # 309 tests; the engine, api, persist and ws suites need both containers
+cargo test                # 326 tests; the engine, api, persist and ws suites need both containers
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -215,15 +215,41 @@ supply is conserved and that every locked atom is backed by a live order.
 difference between the reservation and the actual cost is refunded immediately.
 
 **6. Exactly one engine per command stream.** The engine reads with plain `XREAD`, not a consumer
-group, so a second instance would read the same commands and apply everything twice. There is no
-lock enforcing this yet — see Known gaps.
+group, so a second instance would read the same commands and apply everything twice. A Redis lease
+on `<commands-stream>:lock` enforces it: the engine takes it at boot, renews it while it runs, and
+stops the moment it cannot. A second engine refuses to start and names the one holding the stream.
+
+## Running exactly one engine
+
+The engine takes a lease on `<commands-stream>:lock` before it reads anything, renews it once a
+third of the lease has gone, and **stops** if a renewal finds the lock is no longer its own. A
+second engine on the same stream refuses to start:
+
+```
+Error: the command stream cex:commands is already owned by engine engine-ab5bb596-...
+```
+
+Two engines on two different command streams is a legitimate deployment, so the key is derived from
+the stream name rather than being global.
+
+Stopping matters as much as starting. On `SIGTERM` the engine snapshots, releases the lease and
+exits, so a replacement boots immediately — a deploy costs nothing. After a `kill -9` nothing is
+released and the replacement waits out the lease instead, which is the right trade: an engine that
+stopped answering is not necessarily an engine that stopped running.
+
+`CEX_LOCK_TTL_MS` sets the lease (default 30s). `CEX_BLOCK_MS` must stay below a third of it, or
+the loop could sit in `XREAD` for longer than its own lease; the engine refuses to start rather
+than let that happen quietly.
 
 ## Known gaps
 
 Named rather than buried, because each is a real thing to fix:
 
-* **Nothing prevents two engines running.** Both would consume the whole stream and double-apply
-  every command. Needs a Redis lock at boot.
+* **The engine lock is a lease, not a hard guarantee.** It reliably stops the accidental second
+  start, which is the thing that actually happens. It cannot make double-application impossible: a
+  process paused past its lease may not notice until it wakes, and another engine can legitimately
+  hold the stream by then. Closing that window completely needs a fencing token checked on every
+  write to the command log.
 * **There is no `GET /trades/:symbol` yet.** The data is now there — `persist` writes it and
   `HistoryStore::fills_for_symbol` reads it — but no route serves it.
 * **A `504` from the API is genuinely ambiguous.** The command is on the durable log and may still

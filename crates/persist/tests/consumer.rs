@@ -338,6 +338,7 @@ async fn an_engine_running_ahead_while_the_persister_is_down_loses_nothing() {
         snapshot_every: 1_000_000,
         snapshot_keep: 3,
         block_ms: 150,
+        lock_ttl_ms: 30_000,
     };
 
     // The group must exist before the engine publishes, or Redis has nowhere to

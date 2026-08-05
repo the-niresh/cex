@@ -39,6 +39,8 @@ fn test_config(dir: &std::path::Path) -> Config {
         snapshot_keep: 3,
         // Short, so a drained stream returns promptly instead of hanging the test.
         block_ms: 150,
+        // Short, so a test that models a crash can wait out the lease.
+        lock_ttl_ms: 900,
     }
 }
 
@@ -313,6 +315,9 @@ async fn a_crash_mid_stream_loses_nothing() {
     control_cfg.snapshot_dir = control_dir.path().to_path_buf();
     let mut control = Runner::boot(control_cfg).await.unwrap();
     drain(&mut control).await;
+    // It has read everything it needs; hand the stream on. Its state stays in
+    // memory for the comparison at the end.
+    control.shutdown().await.unwrap();
 
     // The engine that dies. Consume a couple of batches, snapshot, then drop it.
     let mut victim = Runner::boot(cfg.clone()).await.unwrap();
@@ -327,7 +332,11 @@ async fn a_crash_mid_stream_loses_nothing() {
     );
     victim.snapshot().await.unwrap();
     let snapshot_position = victim.position();
-    drop(victim); // no clean shutdown, no final flush
+    drop(victim); // no clean shutdown, no final flush, no lock released
+
+    // A killed engine releases nothing, so the replacement waits out the lease.
+    // This is the `kill -9` path; a graceful stop hands the lock over at once.
+    tokio::time::sleep(std::time::Duration::from_millis(1_200)).await;
 
     // A brand new process boots from the snapshot directory alone.
     let mut recovered = Runner::boot(cfg.clone()).await.unwrap();
@@ -380,6 +389,9 @@ async fn a_replayed_command_is_not_applied_twice() {
     drain(&mut first).await;
     first.snapshot().await.unwrap();
     assert_eq!(balances(&first, alice), vec![("USDT".into(), 1_000, 0)]);
+    // A clean stop: snapshot, release the stream, exit. The replacement boots
+    // straight away rather than waiting for the lease to lapse.
+    assert!(first.shutdown().await.unwrap(), "we still held the lock");
     drop(first);
 
     let mut second = Runner::boot(cfg.clone()).await.unwrap();
