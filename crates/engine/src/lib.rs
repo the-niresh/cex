@@ -8,12 +8,14 @@
 
 pub mod config;
 pub mod lock;
+pub mod query_loop;
 pub mod runner;
 pub mod snapshot_store;
 pub mod stream_id;
 
 pub use config::Config;
 pub use lock::{EngineLock, LockError};
+pub use query_loop::{QueryLoopConfig, SharedState};
 pub use runner::Runner;
 pub use snapshot_store::SnapshotStore;
 pub use stream_id::StreamId;

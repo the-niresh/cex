@@ -16,32 +16,57 @@
 //! published. A crash mid-command means that command is replayed on restart —
 //! at-least-once delivery, which is why downstream consumers deduplicate on
 //! `seq`.
+//!
+//! ## Commands and queries run concurrently
+//!
+//! `state` is `Arc<Mutex<State>>`, shared with the query task `run()` spawns
+//! (see `query_loop.rs`). Every command's `apply()` and `check_invariants()`
+//! happen inside one lock section with no `.await` held across it, and so
+//! does every query's `state.query()`. That is what makes it safe for a query
+//! to be answered on a completely independent Redis connection and task,
+//! running while the command loop sits in `XREAD BLOCK`, without ever
+//! observing a half-applied command.
+
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use cex_core::state::{Snapshot, State};
 use cex_core::MarketRegistry;
-use cex_proto::{Command, EventBatch, Query, Response, FIELD_PAYLOAD};
+use cex_proto::{Command, EventBatch, Response, FIELD_PAYLOAD};
 use redis::aio::MultiplexedConnection;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
+use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
 use crate::lock::EngineLock;
+use crate::query_loop::{self, QueryLoopConfig, SharedState};
 use crate::snapshot_store::SnapshotStore;
 use crate::stream_id::StreamId;
 
 pub struct Runner {
     cfg: Config,
     conn: MultiplexedConnection,
+    /// Kept only to open a fresh connection for the query task in `run()` —
+    /// deliberately not a clone of `conn` or the lock's connection. See the
+    /// comment on `lock_conn` in `boot` for why sharing a multiplexed
+    /// connection with a blocking command is the wrong move.
+    client: redis::Client,
     store: SnapshotStore,
-    state: State,
+    state: SharedState,
     /// Last command id applied. Replay resumes from here.
     position: StreamId,
     applied_since_snapshot: usize,
     /// Proof that this process is the only engine on this command stream.
     /// Held for as long as the engine runs; losing it stops the engine.
     lock: EngineLock,
+    /// The concurrent query task, once `run()` has started it. Aborted
+    /// explicitly when the command loop stops, and again by `Drop` as a
+    /// safety net if `run()`'s own future is cancelled from outside (e.g.
+    /// `main.rs`'s `tokio::select!` against a stop signal) before it gets the
+    /// chance to abort it itself.
+    query_task: Option<JoinHandle<()>>,
 }
 
 impl Runner {
@@ -112,11 +137,13 @@ impl Runner {
         Ok(Runner {
             cfg,
             conn,
+            client,
             store,
-            state,
+            state: Arc::new(Mutex::new(state)),
             position,
             applied_since_snapshot: 0,
             lock,
+            query_task: None,
         })
     }
 
@@ -125,8 +152,11 @@ impl Runner {
         &mut self.lock
     }
 
-    pub fn state(&self) -> &State {
-        &self.state
+    /// The current state, locked. Every existing call site (`.seq()`,
+    /// `.check_invariants()`, `.query(..)`, `.open_order_ids()`, ...) keeps
+    /// working unchanged: `MutexGuard<State>` derefs to `&State`.
+    pub fn state(&self) -> std::sync::MutexGuard<'_, State> {
+        self.state.lock().expect("state mutex poisoned")
     }
 
     pub fn position(&self) -> StreamId {
@@ -191,11 +221,11 @@ impl Runner {
 
     /// Answer every query currently waiting, and return how many were answered.
     ///
-    /// Reads are popped from a plain list rather than a stream: they change
-    /// nothing, so there is nothing to replay, and logging them would slow every
-    /// future recovery down for no benefit. They are answered from the same
-    /// state the command loop owns, so a read always reflects every command
-    /// applied before it.
+    /// A non-blocking `RPOP` drain against the same shared state the concurrent
+    /// query task (`query_loop::run`) uses. `Runner::run` does not call this —
+    /// production query serving is the concurrent task — but it stays as the
+    /// deterministic, single-step way tests exercise query answering without
+    /// spinning up a background task.
     pub async fn poll_queries(&mut self) -> Result<usize> {
         let mut answered = 0usize;
         loop {
@@ -206,19 +236,8 @@ impl Runner {
                 .context("popping the query queue")?;
             let Some(payload) = payload else { break };
 
-            let query: Query = match serde_json::from_str(&payload) {
-                Ok(q) => q,
-                Err(e) => {
-                    // No request id to reply to, so the caller can only time out.
-                    error!(error = %e, "undecodable query, dropping");
-                    continue;
-                }
-            };
-
-            let request_id = query.request_id();
-            let response = match self.state.query(&query) {
-                Ok(body) => Response::ok(request_id, body),
-                Err(e) => Response::err(request_id, e.to_string()),
+            let Some(response) = query_loop::answer(&self.state, &payload) else {
+                continue;
             };
             self.reply(response).await;
             answered += 1;
@@ -240,14 +259,25 @@ impl Runner {
         };
         let request_id = cmd.request_id();
 
-        match self.state.apply(cmd) {
-            Ok(applied) => {
+        // The whole apply-and-check happens inside one lock section, with no
+        // `.await` in it. That is what makes it atomic with respect to the
+        // query task: a query taking the lock either sees every effect of this
+        // command or none of them, never a partial one.
+        let outcome = {
+            let mut state = self.state.lock().expect("state mutex poisoned");
+            let outcome = state.apply(cmd);
+            if outcome.is_ok() {
                 debug_assert!(
-                    self.state.check_invariants().is_ok(),
+                    state.check_invariants().is_ok(),
                     "invariants broken: {:?}",
-                    self.state.check_invariants()
+                    state.check_invariants()
                 );
+            }
+            outcome
+        };
 
+        match outcome {
+            Ok(applied) => {
                 if !applied.events.is_empty() {
                     let batch = EventBatch {
                         seq: applied.seq,
@@ -303,14 +333,21 @@ impl Runner {
 
     /// Write a snapshot at the current position and prune old ones.
     pub async fn snapshot(&mut self) -> Result<()> {
-        let snap = Snapshot::of(&self.state, self.position.to_string());
+        // Locked just long enough to build the snapshot — `Snapshot::of` clones
+        // what it needs. Encoding and the filesystem write happen after the
+        // lock is released.
+        let snap = {
+            let state = self.state.lock().expect("state mutex poisoned");
+            Snapshot::of(&state, self.position.to_string())
+        };
+        let seq = snap.state.seq();
         let path = self.store.save(&snap)?;
         self.applied_since_snapshot = 0;
         let pruned = self.store.prune()?;
         info!(
             path = %path.display(),
             position = %self.position,
-            seq = self.state.seq(),
+            seq,
             pruned,
             "snapshot written"
         );
@@ -345,23 +382,50 @@ impl Runner {
     }
 
     /// Run until the process is killed.
+    ///
+    /// Spawns the concurrent query task, then runs the command loop until it
+    /// stops (only ever by losing the stream lock — `step()` errors are
+    /// retried in place). The query task is aborted the moment the command
+    /// loop stops: an engine that is no longer applying commands must not go
+    /// on answering reads as though it still were.
     pub async fn run(&mut self) -> Result<()> {
         info!(
             stream = %self.cfg.commands_stream,
             from = %self.position,
             "engine running"
         );
+
+        let query_conn = self
+            .client
+            .get_multiplexed_async_connection()
+            .await
+            .context("connecting to redis for the query loop")?;
+        let query_cfg = QueryLoopConfig {
+            queries_queue: self.cfg.queries_queue.clone(),
+            responses_channel: self.cfg.responses_channel.clone(),
+        };
+        self.query_task = Some(tokio::spawn(query_loop::run(
+            query_conn,
+            query_cfg,
+            Arc::clone(&self.state),
+        )));
+
+        let outcome = self.command_loop().await;
+
+        if let Some(handle) = self.query_task.take() {
+            handle.abort();
+        }
+
+        outcome
+    }
+
+    async fn command_loop(&mut self) -> Result<()> {
         loop {
             // Before touching anything, confirm we are still the engine. If the
             // lease has been taken, another process is applying these very
             // commands and the only safe thing left to do is stop: two engines
             // on one stream double-apply everything they see.
             self.lock.refresh_if_due().await?;
-
-            // Reads first: they are cheap and a caller is blocked on each one.
-            if let Err(e) = self.poll_queries().await {
-                error!(error = %e, "query poll failed");
-            }
 
             match self.step().await {
                 Ok(0) => {}
@@ -371,6 +435,14 @@ impl Runner {
                     tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                 }
             }
+        }
+    }
+}
+
+impl Drop for Runner {
+    fn drop(&mut self) {
+        if let Some(handle) = self.query_task.take() {
+            handle.abort();
         }
     }
 }
