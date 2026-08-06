@@ -134,6 +134,16 @@ what sweeping to it would cost — cumulative size, cumulative cash, and the ble
 and the footer shows which side is holding more resting size. All of it comes off levels already
 on screen. The book and the tape share one column through the tabs in their panel head.
 
+**Every grey is solved, not chosen.** The four text greys are computed for a contrast ratio
+against the surface they actually sit on — `--panel-hi`, the lighter of the two, so nothing is
+short where the labels live — and the ramp bottoms out at 4.5:1. It did not used to: the two
+lowest steps were 2.9:1 and 1.8:1, and between them they carried every column heading and field
+label on the screen, so the structure was being drawn in a colour you could not quite see. Green
+and red mean *side* and nothing else, which left no colour for "you can press this" — hence a
+third hue, azure, for selection and focus only. A script walks the rendered page and checks all
+44 distinct text styles against WCAG AA rather than trusting the tokens in isolation, because the
+chart draws its axis labels into a canvas the DOM cannot see.
+
 **Nothing asks for an account until something moves money.** The book, the tape, the chart and
 the ticket are all usable signed out — the sign-in panel opens when BUY, SELL or CREDIT is
 pressed, not on arrival, and it can be dismissed. A page that demands credentials before it shows
