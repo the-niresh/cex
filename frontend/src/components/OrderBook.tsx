@@ -245,13 +245,16 @@ export function OrderBook({
         )}
       </div>
 
-      {/* Which side is holding more size, at a glance. */}
+      {/* Which side is holding more size, at a glance. The two labels come from
+          one rounding, not two: rounding each half separately puts 59.5 and
+          40.5 on screen as "60%" and "41%", which adds to 101. The bar itself
+          keeps the exact widths. */}
       <div className="imbalance" aria-label="resting size, bids against asks">
         <div className="b" style={{ flexBasis: `${bidShare}%` }}>
           <span>{Math.round(bidShare)}%</span>
         </div>
         <div className="s" style={{ flexBasis: `${100 - bidShare}%` }}>
-          <span>{Math.round(100 - bidShare)}%</span>
+          <span>{100 - Math.round(bidShare)}%</span>
         </div>
       </div>
     </section>

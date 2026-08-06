@@ -123,6 +123,13 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
         minMove: Number(market.tick_size) / quoteUnit,
       },
     });
+
+    // Spread whatever bars exist across the panel. Without this the chart keeps
+    // its default bar spacing and pins the series to the right edge, so a young
+    // market — which is every market here that is not BTC_USDT — draws a dozen
+    // candles in the last tenth of the width and leaves the rest blank, looking
+    // broken rather than new.
+    chartRef.current?.timeScale().fitContent();
   }, [candles, market]);
 
   return (
