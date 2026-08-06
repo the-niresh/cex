@@ -725,3 +725,222 @@ async fn a_user_who_has_never_traded_has_no_fills() {
     let rows = s.fills_for_user(Uuid::new_v4(), 100).await.unwrap();
     assert!(rows.is_empty());
 }
+
+// ───────────────────────── candles ─────────────────────────
+//
+// A candle is a *display projection* of the fills table and nothing more. It is
+// derived from `created_at`, which is when the persister wrote the row and not
+// when the trade matched — the engine owns no clock, deliberately. That makes it
+// good enough to draw a chart with and wrong for anything that prices or
+// settles, which is why nothing but the chart may ever read it.
+
+/// An epoch second that is exactly on a bucket boundary, so the expected bar
+/// times below are obvious. Divisible by 300, hence by 60 as well — buckets are
+/// floored against the epoch, not against the first trade, so a base that is
+/// merely *round-looking* (1_700_000_000 is 20s past a minute) would split
+/// these fixtures across bars for reasons that have nothing to do with the code.
+const T0: i64 = 1_699_999_800;
+const MIN: i64 = 60;
+
+/// The persister stamps `created_at` itself, so a test needing two fills in
+/// different candles has to move one. Reaching past the store for this is the
+/// point: the clock is not the exchange's to own.
+async fn backdate(store: &HistoryStore, seq: u64, at: i64) {
+    sqlx::query("UPDATE fills SET created_at = to_timestamp($2) WHERE seq = $1")
+        .bind(seq as i64)
+        .bind(at as f64)
+        .execute(store.pool())
+        .await
+        .expect("backdating a fill");
+}
+
+/// One fill at a chosen price, written as its own batch so it can be backdated.
+async fn traded(store: &HistoryStore, seq: u64, price: i64, qty: i64, at: i64) {
+    let mut f = fill(1, 2, Uuid::new_v4(), Uuid::new_v4(), qty);
+    f.price = price;
+    store
+        .write_batches(&[batch(
+            seq,
+            vec![Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![f],
+            }],
+        )])
+        .await
+        .unwrap();
+    backdate(store, seq, at).await;
+}
+
+#[tokio::test]
+async fn trades_in_the_same_minute_become_one_candle() {
+    let s = store().await;
+
+    traded(&s, 1, P50K, Q1, T0 + 1).await;
+    traded(&s, 2, P50K, Q1, T0 + 30).await;
+    traded(&s, 3, P50K, Q1, T0 + 59).await;
+
+    let candles = s.candles(SYM, MIN, 100).await.unwrap();
+
+    assert_eq!(candles.len(), 1, "all three fell inside one minute");
+    assert_eq!(candles[0].trades, 3);
+}
+
+#[tokio::test]
+async fn a_trade_in_the_next_minute_starts_a_new_candle() {
+    let s = store().await;
+
+    traded(&s, 1, P50K, Q1, T0 + 59).await;
+    traded(&s, 2, P50K, Q1, T0 + 60).await;
+
+    let candles = s.candles(SYM, MIN, 100).await.unwrap();
+
+    assert_eq!(
+        candles.len(),
+        2,
+        "one second apart, but across the boundary"
+    );
+    assert_eq!(candles[0].time_ms, T0 * 1000);
+    assert_eq!(candles[1].time_ms, (T0 + MIN) * 1000);
+}
+
+#[tokio::test]
+async fn a_candle_opens_at_its_first_trade_and_closes_at_its_last() {
+    let s = store().await;
+
+    // Deliberately not in price order, so a query that sorted by price rather
+    // than by sequence would get both ends wrong.
+    traded(&s, 1, 50_100_000_000, Q1, T0 + 1).await;
+    traded(&s, 2, 50_300_000_000, Q1, T0 + 2).await;
+    traded(&s, 3, 50_200_000_000, Q1, T0 + 3).await;
+
+    let c = &s.candles(SYM, MIN, 100).await.unwrap()[0];
+
+    assert_eq!(c.open, 50_100_000_000, "the first trade in the bucket");
+    assert_eq!(c.close, 50_200_000_000, "the last trade in the bucket");
+}
+
+#[tokio::test]
+async fn a_candle_spans_the_high_and_low_of_its_trades() {
+    let s = store().await;
+
+    traded(&s, 1, 50_100_000_000, Q1, T0 + 1).await;
+    traded(&s, 2, 50_300_000_000, Q1, T0 + 2).await;
+    traded(&s, 3, 50_050_000_000, Q1, T0 + 3).await;
+
+    let c = &s.candles(SYM, MIN, 100).await.unwrap()[0];
+
+    assert_eq!(c.high, 50_300_000_000);
+    assert_eq!(c.low, 50_050_000_000);
+    assert!(c.low <= c.open && c.open <= c.high);
+    assert!(c.low <= c.close && c.close <= c.high);
+}
+
+#[tokio::test]
+async fn a_candles_volume_is_the_base_quantity_traded() {
+    let s = store().await;
+
+    traded(&s, 1, P50K, Q1, T0 + 1).await;
+    traded(&s, 2, P50K, Q1 * 3, T0 + 2).await;
+
+    let c = &s.candles(SYM, MIN, 100).await.unwrap()[0];
+
+    assert_eq!(c.volume, Q1 * 4, "base atoms, not quote, and not a count");
+    assert_eq!(c.trades, 2);
+}
+
+#[tokio::test]
+async fn candles_only_cover_the_symbol_asked_for() {
+    let s = store().await;
+
+    traded(&s, 1, P50K, Q1, T0 + 1).await;
+
+    let mut other = fill(1, 2, Uuid::new_v4(), Uuid::new_v4(), Q1 * 9);
+    other.symbol = "ETH_USDT".into();
+    s.write_batches(&[batch(
+        2,
+        vec![Event::Trades {
+            symbol: "ETH_USDT".into(),
+            fills: vec![other],
+        }],
+    )])
+    .await
+    .unwrap();
+    backdate(&s, 2, T0 + 2).await;
+
+    let candles = s.candles(SYM, MIN, 100).await.unwrap();
+
+    assert_eq!(candles.len(), 1);
+    assert_eq!(candles[0].volume, Q1, "the ETH trade is a different market");
+}
+
+#[tokio::test]
+async fn candles_come_back_oldest_first() {
+    let s = store().await;
+
+    for i in 0..4i64 {
+        traded(&s, i as u64 + 1, P50K, Q1, T0 + i * MIN).await;
+    }
+
+    let candles = s.candles(SYM, MIN, 100).await.unwrap();
+    let times: Vec<i64> = candles.iter().map(|c| c.time_ms).collect();
+
+    assert_eq!(
+        times,
+        vec![
+            T0 * 1000,
+            (T0 + MIN) * 1000,
+            (T0 + 2 * MIN) * 1000,
+            (T0 + 3 * MIN) * 1000
+        ],
+        "ascending: a chart draws left to right, unlike the newest-first tape"
+    );
+}
+
+#[tokio::test]
+async fn a_candle_limit_keeps_the_newest_buckets() {
+    let s = store().await;
+
+    for i in 0..5i64 {
+        traded(&s, i as u64 + 1, P50K, Q1, T0 + i * MIN).await;
+    }
+
+    let candles = s.candles(SYM, MIN, 2).await.unwrap();
+
+    assert_eq!(candles.len(), 2);
+    assert_eq!(
+        candles.iter().map(|c| c.time_ms).collect::<Vec<_>>(),
+        vec![(T0 + 3 * MIN) * 1000, (T0 + 4 * MIN) * 1000],
+        "a limit drops the oldest, then still returns ascending"
+    );
+}
+
+#[tokio::test]
+async fn a_wider_bucket_merges_the_candles_inside_it() {
+    let s = store().await;
+
+    for i in 0..5i64 {
+        traded(&s, i as u64 + 1, P50K, Q1, T0 + i * MIN).await;
+    }
+
+    let five = s.candles(SYM, 5 * MIN, 100).await.unwrap();
+
+    assert_eq!(
+        five.len(),
+        1,
+        "five one-minute trades are one five-minute bar"
+    );
+    assert_eq!(five[0].volume, Q1 * 5);
+    assert_eq!(five[0].time_ms, T0 * 1000);
+}
+
+#[tokio::test]
+async fn a_symbol_that_never_traded_has_no_candles() {
+    let s = store().await;
+    assert!(s.candles(SYM, MIN, 100).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_bucket_of_zero_seconds_is_refused_rather_than_dividing_by_it() {
+    let s = store().await;
+    assert!(s.candles(SYM, 0, 100).await.is_err());
+}

@@ -107,7 +107,10 @@ fn a_buy_does_not_cross_an_ask_above_its_limit() {
     b.place(limit(1, user(), Side::Sell, P51K, Q1));
     let out = b.place(limit(2, user(), Side::Buy, P50K, Q1));
 
-    assert!(out.fills.is_empty(), "a buy at 50k must not take an ask at 51k");
+    assert!(
+        out.fills.is_empty(),
+        "a buy at 50k must not take an ask at 51k"
+    );
     assert_eq!(b.best_bid(), Some(P50K));
     assert_eq!(b.best_ask(), Some(P51K));
 }
@@ -118,7 +121,10 @@ fn a_sell_crosses_a_bid_at_or_above_its_limit_but_not_below() {
     b.place(limit(1, user(), Side::Buy, P50K, Q1));
 
     let no = b.place(limit(2, user(), Side::Sell, P51K, Q1));
-    assert!(no.fills.is_empty(), "a sell at 51k must not hit a bid at 50k");
+    assert!(
+        no.fills.is_empty(),
+        "a sell at 51k must not hit a bid at 50k"
+    );
 
     let yes = b.place(limit(3, user(), Side::Sell, P49K, Q1));
     assert_eq!(yes.fills.len(), 1, "a sell at 49k must hit a bid at 50k");
@@ -177,7 +183,11 @@ fn a_taker_sweeps_price_levels_from_best_to_worst() {
     let out = b.place(limit(4, user(), Side::Buy, P51K, Q1 * 3));
 
     let prices: Vec<i64> = out.fills.iter().map(|f| f.price).collect();
-    assert_eq!(prices, vec![P49K, P50K, P51K], "cheapest ask consumed first");
+    assert_eq!(
+        prices,
+        vec![P49K, P50K, P51K],
+        "cheapest ask consumed first"
+    );
 }
 
 // ───────────────────────── partial fills ─────────────────────────
@@ -343,7 +353,10 @@ fn cancelling_twice_is_an_error_not_a_second_refund() {
     let mut b = book();
     b.place(limit(1, user(), Side::Buy, P50K, Q1));
     assert!(b.cancel(1).is_ok());
-    assert!(b.cancel(1).is_err(), "a closed order cannot be cancelled again");
+    assert!(
+        b.cancel(1).is_err(),
+        "a closed order cannot be cancelled again"
+    );
 }
 
 #[test]
@@ -389,7 +402,11 @@ fn self_trade_prevention_removes_the_maker_then_keeps_matching() {
     let out = b.place(limit(3, alice, Side::Buy, P50K, Q1));
 
     assert_eq!(out.stp_cancelled.len(), 1);
-    assert_eq!(out.fills.len(), 1, "matching continues past the pulled order");
+    assert_eq!(
+        out.fills.len(),
+        1,
+        "matching continues past the pulled order"
+    );
     assert_eq!(out.fills[0].maker_user_id, bob);
 }
 
@@ -421,7 +438,10 @@ fn simulate_reports_short_fill_when_the_book_is_thin() {
 
     let sim = b.simulate(m, Side::Buy, Q1 * 5, None).unwrap();
 
-    assert_eq!(sim.fillable_qty, Q1, "cannot promise more than the book holds");
+    assert_eq!(
+        sim.fillable_qty, Q1,
+        "cannot promise more than the book holds"
+    );
     assert_eq!(sim.cost, 50_000_000);
 }
 
@@ -505,7 +525,11 @@ fn a_resting_order_is_reported_with_its_new_level_total() {
         .iter()
         .find(|d| d.side == Side::Buy && d.price == P50K)
         .expect("the bid level must appear in the diff");
-    assert_eq!(bid.qty, Q1 + Q2, "diffs carry the level total, not the delta");
+    assert_eq!(
+        bid.qty,
+        Q1 + Q2,
+        "diffs carry the level total, not the delta"
+    );
 }
 
 // ───────────────────────── last traded price ─────────────────────────
@@ -519,7 +543,11 @@ fn the_last_traded_price_tracks_the_most_recent_fill() {
     b.place(limit(2, user(), Side::Sell, P50K, Q1));
     b.place(limit(3, user(), Side::Buy, P50K, Q1 * 2));
 
-    assert_eq!(b.last_price(), Some(P50K), "the last fill of the sweep wins");
+    assert_eq!(
+        b.last_price(),
+        Some(P50K),
+        "the last fill of the sweep wins"
+    );
 }
 
 #[test]

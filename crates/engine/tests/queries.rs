@@ -160,7 +160,10 @@ async fn a_balance_query_is_answered_on_the_response_channel() {
     .await;
 
     let responses = answer_queries(&mut runner, &mut sub, &[rid]).await;
-    assert_eq!(responses[0].request_id, rid, "reply must echo the request id");
+    assert_eq!(
+        responses[0].request_id, rid,
+        "reply must echo the request id"
+    );
 
     match body(&responses[0]) {
         cex_proto::ResponseBody::Balances(v) => {

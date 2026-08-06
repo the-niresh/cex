@@ -347,7 +347,11 @@ async fn a_crash_mid_stream_loses_nothing() {
     );
     drain(&mut recovered).await;
 
-    assert_eq!(recovered.state().seq(), control.state().seq(), "seq diverged");
+    assert_eq!(
+        recovered.state().seq(),
+        control.state().seq(),
+        "seq diverged"
+    );
     assert_eq!(balances(&recovered, alice), balances(&control, alice));
     assert_eq!(balances(&recovered, bob), balances(&control, bob));
     assert_eq!(depth(&recovered), depth(&control));

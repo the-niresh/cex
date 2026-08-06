@@ -95,7 +95,12 @@ mod tests {
     #[test]
     fn product_that_overflows_i64_still_computes() {
         // 1e18 * 1e8 overflows i64 as a product but the quotient fits.
-        let got = mul_div(1_000_000_000_000_000_000, 100_000_000, 100_000_000, Rounding::Down);
+        let got = mul_div(
+            1_000_000_000_000_000_000,
+            100_000_000,
+            100_000_000,
+            Rounding::Down,
+        );
         assert_eq!(got.unwrap(), 1_000_000_000_000_000_000);
     }
 
@@ -107,7 +112,10 @@ mod tests {
 
     #[test]
     fn divide_by_zero_is_an_error() {
-        assert_eq!(mul_div(1, 1, 0, Rounding::Down), Err(MathError::DivideByZero));
+        assert_eq!(
+            mul_div(1, 1, 0, Rounding::Down),
+            Err(MathError::DivideByZero)
+        );
     }
 
     #[test]

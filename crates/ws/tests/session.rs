@@ -15,7 +15,10 @@ use uuid::Uuid;
 const SYM: &str = "BTC_USDT";
 
 fn tokens() -> Tokens {
-    Tokens::new(b"a test secret that is long enough", Duration::from_secs(3600))
+    Tokens::new(
+        b"a test secret that is long enough",
+        Duration::from_secs(3600),
+    )
 }
 
 fn update(channel: Channel, audience: Option<Uuid>, seq: Seq) -> Update {
@@ -168,7 +171,8 @@ async fn an_unauthenticated_session_is_offered_no_private_update_even_if_subscri
 async fn a_public_update_reaches_an_authenticated_session_too() {
     let t = tokens();
     let mut s = Session::new();
-    s.authenticate(&t, &t.issue(Uuid::new_v4()).unwrap()).unwrap();
+    s.authenticate(&t, &t.issue(Uuid::new_v4()).unwrap())
+        .unwrap();
     s.subscribe(Channel::Trades(SYM.into())).unwrap();
 
     assert!(s.wants(&update(Channel::Trades(SYM.into()), None, 1)));

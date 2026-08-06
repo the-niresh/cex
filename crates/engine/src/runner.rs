@@ -148,7 +148,11 @@ impl Runner {
 
         let reply: Option<StreamReadReply> = self
             .conn
-            .xread_options(&[&self.cfg.commands_stream], &[&self.position.to_string()], &opts)
+            .xread_options(
+                &[&self.cfg.commands_stream],
+                &[&self.position.to_string()],
+                &opts,
+            )
             .await
             .context("reading the command stream")?;
 
@@ -268,7 +272,11 @@ impl Runner {
         };
         let res: redis::RedisResult<String> = self
             .conn
-            .xadd(&self.cfg.events_stream, "*", &[(FIELD_PAYLOAD, json.as_str())])
+            .xadd(
+                &self.cfg.events_stream,
+                "*",
+                &[(FIELD_PAYLOAD, json.as_str())],
+            )
             .await;
         if let Err(e) = res {
             // The command is already applied and is on the durable log, so the

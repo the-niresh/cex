@@ -25,11 +25,7 @@ pub enum EngineError {
     #[error("order notional is below the market minimum of {0}")]
     BelowMinNotional(i64),
     #[error("insufficient {asset}: need {need}, have {have}")]
-    InsufficientBalance {
-        asset: String,
-        need: i64,
-        have: i64,
-    },
+    InsufficientBalance { asset: String, need: i64, have: i64 },
     #[error("market order cannot be filled: book has only {available} of {requested}")]
     InsufficientLiquidity { requested: i64, available: i64 },
     #[error("snapshot: {0}")]

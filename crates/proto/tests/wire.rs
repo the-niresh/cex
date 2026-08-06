@@ -24,11 +24,14 @@ fn round_trip<T>(value: &T) -> T
 where
     T: serde::Serialize + serde::de::DeserializeOwned + std::fmt::Debug + PartialEq,
 {
-    let json = serde_json::to_string(value)
-        .unwrap_or_else(|e| panic!("failed to ENCODE {value:?}: {e}"));
-    let back: T = serde_json::from_str(&json)
-        .unwrap_or_else(|e| panic!("failed to DECODE {json}: {e}"));
-    assert_eq!(&back, value, "round trip changed the value\njson was: {json}");
+    let json =
+        serde_json::to_string(value).unwrap_or_else(|e| panic!("failed to ENCODE {value:?}: {e}"));
+    let back: T =
+        serde_json::from_str(&json).unwrap_or_else(|e| panic!("failed to DECODE {json}: {e}"));
+    assert_eq!(
+        &back, value,
+        "round trip changed the value\njson was: {json}"
+    );
     back
 }
 
@@ -79,7 +82,10 @@ fn ack_round_trips() {
 
 #[test]
 fn balances_round_trips() {
-    round_trip(&ResponseBody::Balances(vec![balance_view(), balance_view()]));
+    round_trip(&ResponseBody::Balances(vec![
+        balance_view(),
+        balance_view(),
+    ]));
 }
 
 #[test]

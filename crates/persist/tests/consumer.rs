@@ -12,9 +12,7 @@
 use cex_engine::config::Config as EngineConfig;
 use cex_engine::runner::Runner;
 use cex_persist::{Config, Consumer, HistoryStore};
-use cex_proto::{
-    Command, Event, EventBatch, OrderType, Side, TimeInForce, UserId, FIELD_PAYLOAD,
-};
+use cex_proto::{Command, Event, EventBatch, OrderType, Side, TimeInForce, UserId, FIELD_PAYLOAD};
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
 use uuid::Uuid;
@@ -439,7 +437,11 @@ async fn an_engine_running_ahead_while_the_persister_is_down_loses_nothing() {
     );
 
     let fills = c.store().fills_for_symbol(SYM, 1_000).await.unwrap();
-    assert_eq!(fills.len(), N, "every trade the engine printed was recorded");
+    assert_eq!(
+        fills.len(),
+        N,
+        "every trade the engine printed was recorded"
+    );
     assert!(fills.iter().all(|f| f.price == P50K));
     assert!(fills.iter().all(|f| f.maker_user_id == alice));
     assert!(fills.iter().all(|f| f.taker_user_id == bob));

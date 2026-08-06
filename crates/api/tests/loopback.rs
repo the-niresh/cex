@@ -157,7 +157,9 @@ async fn placing_an_order_returns_its_id_and_status() {
     let lb = Loopback::connect(lcfg).await.unwrap();
 
     let alice = Uuid::new_v4();
-    lb.command(deposit(alice, "USDT", 1_000_000_000)).await.unwrap();
+    lb.command(deposit(alice, "USDT", 1_000_000_000))
+        .await
+        .unwrap();
     let body = lb.command(limit(alice, Side::Buy, P50K, Q1)).await.unwrap();
 
     match body {
@@ -319,7 +321,10 @@ async fn a_reply_for_an_unknown_request_is_ignored() {
     });
     pump(&mut engine).await;
 
-    assert!(sent.await.unwrap().is_ok(), "subscriber died on an orphan reply");
+    assert!(
+        sent.await.unwrap().is_ok(),
+        "subscriber died on an orphan reply"
+    );
 }
 
 // ───────────────────────── request ids ─────────────────────────

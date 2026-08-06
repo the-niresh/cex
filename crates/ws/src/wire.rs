@@ -74,9 +74,15 @@ impl fmt::Display for Channel {
 pub enum ClientMessage {
     /// Attach an identity to this connection. Required before subscribing to
     /// any private channel.
-    Auth { token: String },
-    Subscribe { channels: Vec<String> },
-    Unsubscribe { channels: Vec<String> },
+    Auth {
+        token: String,
+    },
+    Subscribe {
+        channels: Vec<String>,
+    },
+    Unsubscribe {
+        channels: Vec<String>,
+    },
 }
 
 // ───────────────────────── server → client ─────────────────────────
@@ -85,9 +91,13 @@ pub enum ClientMessage {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum ServerMessage {
     /// Everything this connection is now subscribed to, after the change.
-    Subscribed { channels: Vec<String> },
+    Subscribed {
+        channels: Vec<String>,
+    },
     Authenticated,
-    Error { error: String },
+    Error {
+        error: String,
+    },
 }
 
 /// One market data or private update, as it reaches a client.

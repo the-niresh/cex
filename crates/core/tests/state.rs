@@ -250,9 +250,15 @@ fn the_taker_pays_the_taker_rate_and_the_maker_pays_the_maker_rate() {
     s.apply(limit(alice, Side::Buy, P50K, Q1)).unwrap();
 
     // Alice took liquidity: 5 bps, charged in the asset she received (BTC).
-    assert_eq!(s.balances().get(FEE_ACCOUNT, BTC).available, Q1 * 5 / 10_000);
+    assert_eq!(
+        s.balances().get(FEE_ACCOUNT, BTC).available,
+        Q1 * 5 / 10_000
+    );
     // Bob provided it: 2 bps, charged in the asset he received (USDT).
-    assert_eq!(s.balances().get(FEE_ACCOUNT, USDT).available, N1 * 2 / 10_000);
+    assert_eq!(
+        s.balances().get(FEE_ACCOUNT, USDT).available,
+        N1 * 2 / 10_000
+    );
 }
 
 #[test]
@@ -451,8 +457,14 @@ fn a_misaligned_price_or_quantity_is_rejected() {
     let mut s = state();
     let (alice, _) = funded(&mut s);
 
-    assert!(s.apply(limit(alice, Side::Buy, P50K + 1, Q1)).is_err(), "tick");
-    assert!(s.apply(limit(alice, Side::Buy, P50K, Q1 + 1)).is_err(), "lot");
+    assert!(
+        s.apply(limit(alice, Side::Buy, P50K + 1, Q1)).is_err(),
+        "tick"
+    );
+    assert!(
+        s.apply(limit(alice, Side::Buy, P50K, Q1 + 1)).is_err(),
+        "lot"
+    );
     s.check_invariants().unwrap();
 }
 
@@ -632,7 +644,9 @@ fn conservation_holds_across_a_long_mixed_command_sequence() {
     let mut trade_count = 0usize;
     let mut seed: u64 = 0x5eed;
     let mut next = || {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         (seed >> 33) as i64
     };
 
@@ -671,7 +685,10 @@ fn conservation_holds_across_a_long_mixed_command_sequence() {
                     trade_count += fills.len();
                 }
             }
-            if let ResponseBody::OrderPlaced { order_id, status, .. } = applied.response {
+            if let ResponseBody::OrderPlaced {
+                order_id, status, ..
+            } = applied.response
+            {
                 if !status.is_terminal() {
                     placed_ids.push(order_id);
                 }
@@ -744,7 +761,11 @@ fn a_full_round_trip_returns_every_atom_to_its_owner() {
 
     assert_eq!(s.balances().get(alice, USDT).available, FUND_USDT);
     assert_eq!(s.balances().get(bob, BTC).available, FUND_BTC);
-    assert_eq!(s.balances().get(FEE_ACCOUNT, USDT).total(), 0, "no fee on a cancel");
+    assert_eq!(
+        s.balances().get(FEE_ACCOUNT, USDT).total(),
+        0,
+        "no fee on a cancel"
+    );
 }
 
 // ───────────────────────── events ─────────────────────────

@@ -179,6 +179,39 @@ fn row_to_balance_change(row: PgRow) -> BalanceChangeRow {
     }
 }
 
+/// One OHLCV bar, aggregated from the fills in a time bucket.
+///
+/// A **display projection**, and only that. It is derived from `created_at` —
+/// when the persister wrote the row, not when the trade matched, because the
+/// engine owns no clock by design. Good enough to draw a chart with, and wrong
+/// for anything that prices, values or settles. Nothing but a chart may read it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandleRow {
+    /// Start of the bucket, epoch milliseconds.
+    pub time_ms: i64,
+    /// Quote atoms, like every other price on the wire. Never a float.
+    pub open: i64,
+    pub high: i64,
+    pub low: i64,
+    pub close: i64,
+    /// Base atoms traded in the bucket.
+    pub volume: i64,
+    /// How many fills went into the bar.
+    pub trades: i64,
+}
+
+fn row_to_candle(row: PgRow) -> CandleRow {
+    CandleRow {
+        time_ms: row.get::<i64, _>("bucket") * 1000,
+        open: row.get("open"),
+        high: row.get("high"),
+        low: row.get("low"),
+        close: row.get("close"),
+        volume: row.get("volume"),
+        trades: row.get("trades"),
+    }
+}
+
 const SCHEMA_SQL: &str = include_str!("../migrations/0002_history.sql");
 
 // ───────────────────────── the store ─────────────────────────
@@ -376,6 +409,60 @@ impl HistoryStore {
         .map_err(db)
     }
 
+    /// OHLCV bars for one market, **oldest first** — a chart draws left to
+    /// right, unlike the newest-first tape.
+    ///
+    /// `limit` keeps the newest buckets and drops the oldest, so asking for 500
+    /// gets the most recent 500 bars rather than the first 500 ever traded.
+    ///
+    /// Open and close are decided by `(seq, idx)`, the order the engine actually
+    /// applied the fills, not by timestamp: two fills written in the same
+    /// millisecond still have an unambiguous order, and that order is the one
+    /// the exchange really matched them in.
+    pub async fn candles(
+        &self,
+        symbol: &str,
+        bucket_seconds: i64,
+        limit: i64,
+    ) -> Result<Vec<CandleRow>, StoreError> {
+        // Guarded here rather than left to Postgres: the bucket is a divisor.
+        if bucket_seconds <= 0 {
+            return Err(StoreError::OutOfRange(format!(
+                "bucket of {bucket_seconds}s"
+            )));
+        }
+
+        let mut rows: Vec<CandleRow> = sqlx::query(
+            "SELECT bucket,
+                    (array_agg(price ORDER BY seq, idx))[1]           AS open,
+                    max(price)                                        AS high,
+                    min(price)                                        AS low,
+                    (array_agg(price ORDER BY seq DESC, idx DESC))[1] AS close,
+                    sum(qty)::BIGINT                                  AS volume,
+                    count(*)::BIGINT                                  AS trades
+             FROM (
+                 SELECT (floor(extract(epoch FROM created_at) / $2) * $2)::BIGINT AS bucket,
+                        price, qty, seq, idx
+                 FROM fills WHERE symbol = $1
+             ) bucketed
+             GROUP BY bucket
+             ORDER BY bucket DESC
+             LIMIT $3",
+        )
+        .bind(symbol)
+        .bind(bucket_seconds)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map(|rows| rows.into_iter().map(row_to_candle).collect())
+        .map_err(db)?;
+
+        // Taken newest-first so `LIMIT` keeps the recent end, handed back
+        // ascending because that is the only order a chart can draw.
+        rows.reverse();
+        Ok(rows)
+    }
+
     pub async fn balance_changes_for(
         &self,
         user_id: UserId,
@@ -418,7 +505,14 @@ async fn write_event(
             available,
         } => {
             insert_balance_change(
-                tx, seq, balance_idx, *user_id, asset, *available, None, "deposit",
+                tx,
+                seq,
+                balance_idx,
+                *user_id,
+                asset,
+                *available,
+                None,
+                "deposit",
                 Some(*amount),
             )
             .await?;
@@ -625,7 +719,9 @@ fn warn_if_untouched(rows: u64, order_id: OrderId, seq: i64, what: &str) {
     if rows == 0 {
         warn!(
             order_id,
-            seq, kind = what, "order {what} matched no row; older seq, or the order predates this persister"
+            seq,
+            kind = what,
+            "order {what} matched no row; older seq, or the order predates this persister"
         );
     }
 }

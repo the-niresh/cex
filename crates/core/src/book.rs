@@ -275,7 +275,9 @@ impl OrderBook {
 
             let mut level_qty = 0i64;
             for id in &level.queue {
-                let Some(o) = self.orders.get(id) else { continue };
+                let Some(o) = self.orders.get(id) else {
+                    continue;
+                };
                 if !o.is_live() || o.remaining() == 0 {
                     continue;
                 }
@@ -387,11 +389,15 @@ impl OrderBook {
                 break;
             }
 
-            let Some(level) = book.get_mut(&best) else { break };
+            let Some(level) = book.get_mut(&best) else {
+                break;
+            };
             let mut level_touched = false;
 
             while taker.remaining() > 0 {
-                let Some(&maker_id) = level.queue.front() else { break };
+                let Some(&maker_id) = level.queue.front() else {
+                    break;
+                };
 
                 let Some(maker) = orders.get_mut(&maker_id) else {
                     level.queue.pop_front();

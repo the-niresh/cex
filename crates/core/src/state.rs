@@ -551,11 +551,23 @@ impl State {
                 taker_user_id: user,
                 taker_side: side,
                 notional: cost,
-                maker_fee: if taker_is_buyer { seller_fee } else { buyer_fee },
-                taker_fee: if taker_is_buyer { buyer_fee } else { seller_fee },
+                maker_fee: if taker_is_buyer {
+                    seller_fee
+                } else {
+                    buyer_fee
+                },
+                taker_fee: if taker_is_buyer {
+                    buyer_fee
+                } else {
+                    seller_fee
+                },
             });
 
-            if let Some(m) = self.books.get(symbol).and_then(|b| b.order(raw.maker_order_id)) {
+            if let Some(m) = self
+                .books
+                .get(symbol)
+                .and_then(|b| b.order(raw.maker_order_id))
+            {
                 events.push(Event::OrderUpdated {
                     order_id: m.id,
                     user_id: m.user_id,
@@ -694,7 +706,11 @@ impl State {
     // ───────────────────────── reservation handling ─────────────────────────
 
     fn reduce_reservation(&mut self, symbol: &str, order_id: OrderId, amount: i64) {
-        if let Some(o) = self.books.get_mut(symbol).and_then(|b| b.order_mut(order_id)) {
+        if let Some(o) = self
+            .books
+            .get_mut(symbol)
+            .and_then(|b| b.order_mut(order_id))
+        {
             o.reserved_remaining = (o.reserved_remaining - amount).max(0);
         }
     }
@@ -747,7 +763,8 @@ impl State {
         // Never settle less than was actually spent, never more than was locked.
         let consumed = consumed.max(total_cost).min(reserved);
 
-        self.balances.settle_locked(user, &market.quote, total_cost)?;
+        self.balances
+            .settle_locked(user, &market.quote, total_cost)?;
         let improvement = consumed - total_cost;
         if improvement > 0 {
             self.balances.unlock(user, &market.quote, improvement)?;
@@ -759,7 +776,11 @@ impl State {
     /// Return an order's outstanding reservation to its owner's available balance.
     fn release_reservation(&mut self, symbol: &str, order_id: OrderId) -> Result<(), EngineError> {
         let market = self.markets.get(symbol)?.clone();
-        let Some(order) = self.books.get_mut(symbol).and_then(|b| b.order_mut(order_id)) else {
+        let Some(order) = self
+            .books
+            .get_mut(symbol)
+            .and_then(|b| b.order_mut(order_id))
+        else {
             return Ok(());
         };
 
@@ -841,7 +862,10 @@ impl State {
                 Ok(ResponseBody::Orders(out))
             }
             Query::Markets { .. } => Ok(ResponseBody::Markets(
-                self.markets.iter().map(Market::view).collect::<Vec<MarketView>>(),
+                self.markets
+                    .iter()
+                    .map(Market::view)
+                    .collect::<Vec<MarketView>>(),
             )),
         }
     }

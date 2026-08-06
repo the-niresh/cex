@@ -79,7 +79,10 @@ async fn engines_on_different_command_streams_do_not_collide() {
 async fn a_released_lock_can_be_taken_by_the_next_engine() {
     let s = stream();
     let mut first = acquire(&s, TTL).await.unwrap();
-    assert!(first.release().await.unwrap(), "we held it, so we released it");
+    assert!(
+        first.release().await.unwrap(),
+        "we held it, so we released it"
+    );
 
     acquire(&s, TTL).await.expect("the stream is free again");
 }
@@ -125,9 +128,15 @@ async fn refresh_is_only_due_once_a_third_of_the_lease_has_gone() {
     let s = stream();
     let mut lock = acquire(&s, Duration::from_millis(900)).await.unwrap();
 
-    assert!(!lock.refresh_if_due().await.unwrap(), "nothing has elapsed yet");
+    assert!(
+        !lock.refresh_if_due().await.unwrap(),
+        "nothing has elapsed yet"
+    );
     tokio::time::sleep(Duration::from_millis(350)).await;
-    assert!(lock.refresh_if_due().await.unwrap(), "a third of the lease has gone");
+    assert!(
+        lock.refresh_if_due().await.unwrap(),
+        "a third of the lease has gone"
+    );
 }
 
 /// The one that matters most.
@@ -269,7 +278,10 @@ async fn a_blocking_read_longer_than_the_lease_is_refused_at_boot() {
     cfg.lock_ttl_ms = 900;
 
     let booted = Runner::boot(cfg).await;
-    assert!(booted.is_err(), "a self-defeating configuration was accepted");
+    assert!(
+        booted.is_err(),
+        "a self-defeating configuration was accepted"
+    );
 }
 
 #[tokio::test]
@@ -282,7 +294,9 @@ async fn a_gracefully_stopped_engine_hands_the_stream_straight_over() {
     let mut leaving = Runner::boot(cfg.clone()).await.expect("engine boot");
     assert!(leaving.shutdown().await.unwrap(), "we still held it");
 
-    Runner::boot(cfg).await.expect("the replacement, with no wait at all");
+    Runner::boot(cfg)
+        .await
+        .expect("the replacement, with no wait at all");
 }
 
 #[tokio::test]

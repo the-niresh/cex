@@ -22,4 +22,4 @@ pub mod store;
 
 pub use config::Config;
 pub use consumer::Consumer;
-pub use store::{BalanceChangeRow, FillRow, HistoryStore, OrderRow, StoreError};
+pub use store::{BalanceChangeRow, CandleRow, FillRow, HistoryStore, OrderRow, StoreError};

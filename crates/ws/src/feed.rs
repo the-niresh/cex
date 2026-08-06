@@ -56,7 +56,9 @@ impl Feed {
             .xgroup_create_mkstream(&cfg.events_stream, &cfg.group, "$")
             .await;
         match created {
-            Ok(_) => info!(group = %cfg.group, stream = %cfg.events_stream, "consumer group created"),
+            Ok(_) => {
+                info!(group = %cfg.group, stream = %cfg.events_stream, "consumer group created")
+            }
             Err(e) if is_busy_group(&e) => {
                 debug!(group = %cfg.group, "consumer group already exists")
             }

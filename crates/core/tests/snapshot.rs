@@ -67,10 +67,10 @@ fn busy_session() -> (State, Uuid, Uuid) {
     s.apply(deposit(bob, BTC, 100_000_000)).unwrap();
     s.apply(deposit(bob, USDT, 1_000_000_000)).unwrap();
 
-    s.apply(limit(alice, Side::Buy, P49K, Q1)).unwrap();   // rests
-    s.apply(limit(bob, Side::Sell, P51K, Q1)).unwrap();    // rests
+    s.apply(limit(alice, Side::Buy, P49K, Q1)).unwrap(); // rests
+    s.apply(limit(bob, Side::Sell, P51K, Q1)).unwrap(); // rests
     s.apply(limit(bob, Side::Sell, P50K, Q1 * 2)).unwrap(); // rests
-    s.apply(limit(alice, Side::Buy, P50K, Q1)).unwrap();   // trades
+    s.apply(limit(alice, Side::Buy, P50K, Q1)).unwrap(); // trades
 
     (s, alice, bob)
 }
@@ -165,7 +165,9 @@ fn a_snapshot_round_trips_to_an_identical_state() {
     assert_eq!(balances_of(&after, bob), balances_of(&before, bob));
     assert_eq!(depth_of(&after), depth_of(&before));
     assert_eq!(after.seq(), before.seq());
-    after.check_invariants().expect("restored state is coherent");
+    after
+        .check_invariants()
+        .expect("restored state is coherent");
 }
 
 #[test]
@@ -178,7 +180,10 @@ fn a_restored_state_re_encodes_to_the_same_bytes() {
     let restored = Snapshot::decode(&bytes).unwrap();
     let again = Snapshot::of(&restored.state, "8000-0").encode().unwrap();
 
-    assert_eq!(bytes, again, "a field was dropped or reordered by the round trip");
+    assert_eq!(
+        bytes, again,
+        "a field was dropped or reordered by the round trip"
+    );
 }
 
 #[test]
@@ -220,7 +225,10 @@ fn a_restored_book_still_matches_new_orders_in_the_right_order() {
 
     // Bob's 50k ask has qty left after the fixture's trade; a new buy must hit it.
     let applied = after.apply(limit(alice, Side::Buy, P50K, Q1)).unwrap();
-    let traded = applied.events.iter().any(|e| matches!(e, cex_proto::Event::Trades { .. }));
+    let traded = applied
+        .events
+        .iter()
+        .any(|e| matches!(e, cex_proto::Event::Trades { .. }));
 
     assert!(traded, "the restored book did not match");
     let _ = bob;

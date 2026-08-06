@@ -84,7 +84,10 @@ fn saving_then_loading_returns_an_equivalent_snapshot() {
     let state = state_with_deposit(500);
 
     store.save(&Snapshot::of(&state, "100-0")).unwrap();
-    let loaded = store.load_latest().unwrap().expect("a snapshot should exist");
+    let loaded = store
+        .load_latest()
+        .unwrap()
+        .expect("a snapshot should exist");
 
     assert_eq!(loaded.last_stream_id, "100-0");
     assert_eq!(deposited(&loaded.state), 500);
@@ -105,7 +108,9 @@ fn a_missing_directory_is_created_on_first_save() {
     let nested = dir.path().join("data").join("snapshots");
     let store = SnapshotStore::new(&nested, 3);
 
-    store.save(&Snapshot::of(&state_with_deposit(1), "1-0")).unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(1), "1-0"))
+        .unwrap();
 
     assert!(nested.exists());
     assert!(store.load_latest().unwrap().is_some());
@@ -117,8 +122,12 @@ fn the_newest_snapshot_wins_even_when_text_ordering_disagrees() {
     let dir = tempfile::tempdir().unwrap();
     let store = SnapshotStore::new(dir.path(), 10);
 
-    store.save(&Snapshot::of(&state_with_deposit(900), "9-0")).unwrap();
-    store.save(&Snapshot::of(&state_with_deposit(1000), "10-0")).unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(900), "9-0"))
+        .unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(1000), "10-0"))
+        .unwrap();
 
     let loaded = store.load_latest().unwrap().unwrap();
 
@@ -131,8 +140,12 @@ fn saving_the_same_position_twice_overwrites_rather_than_accumulating() {
     let dir = tempfile::tempdir().unwrap();
     let store = SnapshotStore::new(dir.path(), 10);
 
-    store.save(&Snapshot::of(&state_with_deposit(1), "5-0")).unwrap();
-    store.save(&Snapshot::of(&state_with_deposit(2), "5-0")).unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(1), "5-0"))
+        .unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(2), "5-0"))
+        .unwrap();
 
     assert_eq!(store.list().unwrap().len(), 1);
     assert_eq!(deposited(&store.load_latest().unwrap().unwrap().state), 2);
@@ -147,8 +160,12 @@ fn a_corrupt_newest_snapshot_falls_back_to_the_previous_one() {
     let dir = tempfile::tempdir().unwrap();
     let store = SnapshotStore::new(dir.path(), 10);
 
-    store.save(&Snapshot::of(&state_with_deposit(100), "100-0")).unwrap();
-    let newest = store.save(&Snapshot::of(&state_with_deposit(200), "200-0")).unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(100), "100-0"))
+        .unwrap();
+    let newest = store
+        .save(&Snapshot::of(&state_with_deposit(200), "200-0"))
+        .unwrap();
 
     fs::write(&newest, b"{ this is not a snapshot").unwrap();
 
@@ -163,7 +180,9 @@ fn a_directory_of_only_corrupt_snapshots_yields_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let store = SnapshotStore::new(dir.path(), 10);
 
-    let path = store.save(&Snapshot::of(&state_with_deposit(1), "1-0")).unwrap();
+    let path = store
+        .save(&Snapshot::of(&state_with_deposit(1), "1-0"))
+        .unwrap();
     fs::write(&path, b"garbage").unwrap();
 
     assert!(store.load_latest().unwrap().is_none());
@@ -176,7 +195,9 @@ fn a_leftover_temp_file_is_never_loaded() {
     let dir = tempfile::tempdir().unwrap();
     let store = SnapshotStore::new(dir.path(), 10);
 
-    store.save(&Snapshot::of(&state_with_deposit(50), "50-0")).unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(50), "50-0"))
+        .unwrap();
     fs::write(dir.path().join("999-0.snapshot.tmp"), b"half written").unwrap();
 
     let loaded = store.load_latest().unwrap().unwrap();
@@ -188,7 +209,9 @@ fn unrelated_files_in_the_directory_are_ignored() {
     let dir = tempfile::tempdir().unwrap();
     let store = SnapshotStore::new(dir.path(), 10);
 
-    store.save(&Snapshot::of(&state_with_deposit(1), "1-0")).unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(1), "1-0"))
+        .unwrap();
     fs::write(dir.path().join("README.md"), b"notes").unwrap();
     fs::write(dir.path().join("not-an-id.snapshot"), b"{}").unwrap();
 
@@ -204,7 +227,9 @@ fn pruning_keeps_the_newest_n_and_deletes_the_rest() {
     let store = SnapshotStore::new(dir.path(), 2);
 
     for id in ["1-0", "2-0", "9-0", "10-0", "11-0"] {
-        store.save(&Snapshot::of(&state_with_deposit(1), id)).unwrap();
+        store
+            .save(&Snapshot::of(&state_with_deposit(1), id))
+            .unwrap();
     }
 
     let removed = store.prune().unwrap();
@@ -223,7 +248,9 @@ fn pruning_keeps_the_newest_n_and_deletes_the_rest() {
 fn pruning_a_directory_with_fewer_than_the_limit_removes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let store = SnapshotStore::new(dir.path(), 5);
-    store.save(&Snapshot::of(&state_with_deposit(1), "1-0")).unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(1), "1-0"))
+        .unwrap();
 
     assert_eq!(store.prune().unwrap(), 0);
     assert_eq!(store.list().unwrap().len(), 1);
@@ -239,7 +266,9 @@ fn a_saved_snapshot_reports_where_replay_should_resume() {
 
     assert_eq!(store.resume_position().unwrap(), StreamId::ZERO);
 
-    store.save(&Snapshot::of(&state_with_deposit(1), "4242-7")).unwrap();
+    store
+        .save(&Snapshot::of(&state_with_deposit(1), "4242-7"))
+        .unwrap();
 
     assert_eq!(
         store.resume_position().unwrap(),

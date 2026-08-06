@@ -384,7 +384,14 @@ async fn channel_names_round_trip() {
 
 #[tokio::test]
 async fn nonsense_channel_names_are_refused() {
-    for name in ["", "depth", "depth@", "book@BTC_USDT", "ORDERS", "@BTC_USDT"] {
+    for name in [
+        "",
+        "depth",
+        "depth@",
+        "book@BTC_USDT",
+        "ORDERS",
+        "@BTC_USDT",
+    ] {
         assert!(
             name.parse::<Channel>().is_err(),
             "{name:?} should not parse"

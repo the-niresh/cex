@@ -92,7 +92,10 @@ async fn logging_in_is_case_insensitive_on_the_username() {
     let username = name();
     s.register(&username, "password-one").await.unwrap();
 
-    assert!(s.authenticate(&username.to_uppercase(), "password-one").await.is_ok());
+    assert!(s
+        .authenticate(&username.to_uppercase(), "password-one")
+        .await
+        .is_ok());
 }
 
 #[tokio::test]
@@ -101,7 +104,10 @@ async fn the_wrong_password_is_refused() {
     let username = name();
     s.register(&username, "right-password").await.unwrap();
 
-    let err = s.authenticate(&username, "wrong-password").await.unwrap_err();
+    let err = s
+        .authenticate(&username, "wrong-password")
+        .await
+        .unwrap_err();
     assert!(matches!(err, UsersError::BadCredentials));
 }
 
@@ -112,8 +118,14 @@ async fn an_unknown_user_and_a_wrong_password_give_the_same_error() {
     let username = name();
     s.register(&username, "right-password").await.unwrap();
 
-    let wrong_password = s.authenticate(&username, "wrong-password").await.unwrap_err();
-    let no_such_user = s.authenticate("nobody-at-all", "wrong-password").await.unwrap_err();
+    let wrong_password = s
+        .authenticate(&username, "wrong-password")
+        .await
+        .unwrap_err();
+    let no_such_user = s
+        .authenticate("nobody-at-all", "wrong-password")
+        .await
+        .unwrap_err();
 
     assert_eq!(
         std::mem::discriminant(&wrong_password),

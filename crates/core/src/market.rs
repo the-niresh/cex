@@ -106,8 +106,8 @@ impl MarketRegistry {
             quote: "USDT".into(),
             base_decimals: 8,
             quote_decimals: 6,
-            tick_size: 10_000,      // 0.01 USDT
-            lot_size: 1_000,        // 0.00001 BTC
+            tick_size: 10_000,       // 0.01 USDT
+            lot_size: 1_000,         // 0.00001 BTC
             min_notional: 1_000_000, // 1 USDT
             maker_fee_bps: 2,
             taker_fee_bps: 5,
@@ -118,8 +118,8 @@ impl MarketRegistry {
             quote: "USDT".into(),
             base_decimals: 8,
             quote_decimals: 6,
-            tick_size: 1_000,       // 0.001 USDT
-            lot_size: 10_000,       // 0.0001 ETH
+            tick_size: 1_000, // 0.001 USDT
+            lot_size: 10_000, // 0.0001 ETH
             min_notional: 1_000_000,
             maker_fee_bps: 2,
             taker_fee_bps: 5,
@@ -130,8 +130,8 @@ impl MarketRegistry {
             quote: "USDT".into(),
             base_decimals: 8,
             quote_decimals: 6,
-            tick_size: 100,         // 0.0001 USDT
-            lot_size: 100_000,      // 0.001 SOL
+            tick_size: 100,    // 0.0001 USDT
+            lot_size: 100_000, // 0.001 SOL
             min_notional: 1_000_000,
             maker_fee_bps: 2,
             taker_fee_bps: 5,
@@ -184,14 +184,19 @@ mod tests {
     use super::*;
 
     fn btc() -> Market {
-        MarketRegistry::with_defaults().get("BTC_USDT").unwrap().clone()
+        MarketRegistry::with_defaults()
+            .get("BTC_USDT")
+            .unwrap()
+            .clone()
     }
 
     #[test]
     fn notional_matches_the_worked_example() {
         let m = btc();
         // 0.5 BTC at 65,000.50 USDT = 32,500.25 USDT
-        let n = m.notional(65_000_500_000, 50_000_000, Rounding::Down).unwrap();
+        let n = m
+            .notional(65_000_500_000, 50_000_000, Rounding::Down)
+            .unwrap();
         assert_eq!(n, 32_500_250_000);
     }
 

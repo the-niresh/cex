@@ -33,10 +33,19 @@ fn a_password_verifies_against_its_own_hash() {
 fn a_wrong_password_does_not_verify() {
     let hash = hash_password("correct horse battery staple").unwrap();
 
-    assert!(!verify_password("Correct horse battery staple", &hash), "case");
-    assert!(!verify_password("correct horse battery stapl", &hash), "truncated");
+    assert!(
+        !verify_password("Correct horse battery staple", &hash),
+        "case"
+    );
+    assert!(
+        !verify_password("correct horse battery stapl", &hash),
+        "truncated"
+    );
     assert!(!verify_password("", &hash), "empty");
-    assert!(!verify_password("something else entirely", &hash), "different");
+    assert!(
+        !verify_password("something else entirely", &hash),
+        "different"
+    );
 }
 
 #[test]
@@ -65,7 +74,10 @@ fn the_hash_records_the_algorithm_that_produced_it() {
     // Self-describing, so the parameters can be raised later without
     // invalidating every existing hash.
     let hash = hash_password("whatever").unwrap();
-    assert!(hash.starts_with("$argon2"), "unexpected hash format: {hash}");
+    assert!(
+        hash.starts_with("$argon2"),
+        "unexpected hash format: {hash}"
+    );
 }
 
 #[test]
@@ -90,7 +102,10 @@ fn a_long_password_is_accepted() {
 // ───────────────────────── tokens ─────────────────────────
 
 fn tokens() -> Tokens {
-    Tokens::new(b"a test secret that is long enough", Duration::from_secs(3600))
+    Tokens::new(
+        b"a test secret that is long enough",
+        Duration::from_secs(3600),
+    )
 }
 
 #[test]
@@ -129,7 +144,10 @@ fn a_tampered_payload_is_rejected() {
     let last = payload.pop().unwrap();
     payload.push(if last == 'A' { 'B' } else { 'A' });
 
-    assert!(t.verify(&parts.join(".")).is_err(), "tampering was not detected");
+    assert!(
+        t.verify(&parts.join(".")).is_err(),
+        "tampering was not detected"
+    );
 }
 
 #[test]
@@ -165,9 +183,8 @@ fn an_unsigned_token_is_rejected() {
     use base64::Engine;
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let header = b64.encode(br#"{"alg":"none","typ":"JWT"}"#);
-    let claims = b64.encode(
-        format!(r#"{{"sub":"{}","exp":{}}}"#, Uuid::new_v4(), now() + 3600).as_bytes(),
-    );
+    let claims =
+        b64.encode(format!(r#"{{"sub":"{}","exp":{}}}"#, Uuid::new_v4(), now() + 3600).as_bytes());
     let forged = format!("{header}.{claims}.");
 
     assert!(t.verify(&forged).is_err(), "an alg=none token was accepted");

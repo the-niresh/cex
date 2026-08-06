@@ -132,12 +132,7 @@ async fn one_batch_can_produce_several_addressed_updates() {
     let mut rx = f.subscribe();
     let alice = Uuid::new_v4();
 
-    publish(
-        &mut r,
-        &cfg,
-        &batch(1, vec![accepted(1, alice), depth(4)]),
-    )
-    .await;
+    publish(&mut r, &cfg, &batch(1, vec![accepted(1, alice), depth(4)])).await;
     drain(&mut f).await;
 
     let first = rx.try_recv().expect("the order update");
@@ -240,7 +235,11 @@ async fn a_republished_batch_is_not_broadcast_twice() {
     // again under a new stream id. A client that applied the delta once must
     // not be handed it a second time — its book would move twice on one trade.
     publish(&mut r, &cfg, &b).await;
-    assert_eq!(drain(&mut f).await, 1, "the entry was read and acknowledged");
+    assert_eq!(
+        drain(&mut f).await,
+        1,
+        "the entry was read and acknowledged"
+    );
     assert!(
         rx.try_recv().is_err(),
         "a replayed batch was broadcast to live subscribers"
@@ -291,7 +290,9 @@ async fn an_undecodable_entry_is_acknowledged_and_does_not_wedge_the_stream() {
 
     drain(&mut f).await;
     assert_eq!(
-        rx.try_recv().expect("the good batch behind the bad entry").seq,
+        rx.try_recv()
+            .expect("the good batch behind the bad entry")
+            .seq,
         1
     );
 }
@@ -330,6 +331,10 @@ async fn a_batch_with_nothing_to_broadcast_is_still_consumed() {
     )
     .await;
 
-    assert_eq!(drain(&mut f).await, 1, "the entry was read and acknowledged");
+    assert_eq!(
+        drain(&mut f).await,
+        1,
+        "the entry was read and acknowledged"
+    );
     assert!(rx.try_recv().is_err(), "but nothing was broadcast");
 }

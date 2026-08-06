@@ -138,11 +138,7 @@ impl UserStore {
             }),
             Err(e) => {
                 // 23505 is unique_violation — the case-insensitive index fired.
-                if e.as_database_error()
-                    .and_then(|db| db.code())
-                    .as_deref()
-                    == Some("23505")
-                {
+                if e.as_database_error().and_then(|db| db.code()).as_deref() == Some("23505") {
                     return Err(UsersError::UsernameTaken);
                 }
                 Err(UsersError::Db(e.to_string()))

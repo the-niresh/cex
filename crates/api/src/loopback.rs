@@ -18,9 +18,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cex_proto::{
-    Command, Query, RequestId, Response, ResponseBody, ResponseResult, FIELD_PAYLOAD,
-};
+use cex_proto::{Command, Query, RequestId, Response, ResponseBody, ResponseResult, FIELD_PAYLOAD};
 use futures_util::StreamExt;
 use redis::aio::MultiplexedConnection;
 use redis::AsyncCommands;
@@ -243,9 +241,7 @@ impl Loopback {
                 ResponseResult::Err { error } => Err(LoopbackError::Rejected(error)),
             },
             // The subscriber task dropped the sender: it died.
-            Ok(Err(_)) => Err(LoopbackError::Transport(
-                "response listener stopped".into(),
-            )),
+            Ok(Err(_)) => Err(LoopbackError::Transport("response listener stopped".into())),
             Err(_) => Err(LoopbackError::Timeout),
         }
     }

@@ -62,7 +62,11 @@ impl SnapshotStore {
         }
 
         fs::rename(&tmp_path, &final_path).with_context(|| {
-            format!("renaming {} to {}", tmp_path.display(), final_path.display())
+            format!(
+                "renaming {} to {}",
+                tmp_path.display(),
+                final_path.display()
+            )
         })?;
 
         Ok(final_path)

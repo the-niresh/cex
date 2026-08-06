@@ -99,10 +99,23 @@ Amounts are integers in atomic units — see [Scaling](#scaling).
 | `GET` | `/orders/open` | yes | your live orders |
 | `GET` | `/orders/history` | yes | your own fills, newest first (`?limit=`, max 500) |
 | `GET` | `/trades/:symbol` | — | recent trade prints, newest first (`?limit=`, max 500) |
+| `GET` | `/candles/:symbol` | — | OHLCV bars, **oldest first** (`?interval=1m\|5m\|15m\|1h\|4h\|1d`, `?limit=`, max 500) |
 
 `/trades/:symbol` is the public tape and names nobody. `/orders/history` is the same rows scoped
 to the caller and told from their side — their order id, their side, their role, the fee they
 paid — and still says nothing about who was on the other side of the trade.
+
+`/candles/:symbol` aggregates the same fills into OHLCV bars, and is **a display projection and
+nothing more**. It buckets on `created_at` — when the persister wrote the row, not when the trade
+matched, because the engine owns no clock by design. That is good enough to draw a chart with and
+wrong for anything that prices, values or settles, so nothing but a chart may read it. Open and
+close come from `(seq, idx)`, the order the engine really matched the fills in, rather than from
+the timestamp. Prices stay quote atoms and volume base atoms all the way to the wire; the chart
+divides for display, and design rule 2 does not bend for a chart.
+
+Bars come back oldest first — a chart draws left to right — while `limit` still keeps the *newest*
+buckets. Intervals are a fixed set rather than a parsed duration, because the value becomes a
+divisor inside the aggregate.
 
 A browser may call the API from the origins named in `CEX_CORS_ORIGINS` (comma-separated;
 unset means the Vite dev server). Listed explicitly, never `*`: a wildcard would hand a

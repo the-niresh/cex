@@ -247,6 +247,7 @@ pub fn build_router_with_cors(state: AppState, cors: CorsSettings) -> Router {
         .route("/markets", get(markets))
         .route("/depth/{symbol}", get(depth))
         .route("/trades/{symbol}", get(trades))
+        .route("/candles/{symbol}", get(candles))
         .merge(protected)
         // Outermost, so a preflight is answered here rather than routed into
         // `require_auth` — a browser never sends the token on an OPTIONS, so
@@ -359,7 +360,6 @@ async fn markets(State(state): State<AppState>) -> ApiResult<Json<serde_json::Va
     }
 }
 
-
 /// Namespace for deriving a request id from a caller's idempotency key.
 ///
 /// Fixed forever. Changing it would make every key a client has already used
@@ -411,6 +411,9 @@ fn request_id_for(user_id: Uuid, req: &Request) -> ApiResult<Uuid> {
 const MAX_TRADES: i64 = 500;
 const DEFAULT_TRADES: i64 = 50;
 
+/// The bar size a chart gets when it does not say.
+const DEFAULT_INTERVAL: &str = "1m";
+
 /// One trade, as the public is entitled to see it.
 ///
 /// Built field by field from a `FillRow` rather than by serialising it, so the
@@ -433,8 +436,14 @@ struct PublicTrade {
 /// the reasoning for the ceiling is the same on both, and two copies of it would
 /// eventually disagree.
 fn parse_limit(raw: Option<&str>) -> ApiResult<i64> {
+    parse_limit_with_default(raw, DEFAULT_TRADES)
+}
+
+/// Same validation and the same ceiling, with a caller-chosen default: a chart
+/// wants a few hundred bars where a tape wants the last fifty prints.
+fn parse_limit_with_default(raw: Option<&str>, default: i64) -> ApiResult<i64> {
     match raw {
-        None => Ok(DEFAULT_TRADES),
+        None => Ok(default),
         Some(raw) => raw
             .parse::<i64>()
             .ok()
@@ -442,6 +451,98 @@ fn parse_limit(raw: Option<&str>) -> ApiResult<i64> {
             .ok_or_else(|| ApiError::bad_request("limit must be a positive integer"))
             .map(|n| n.min(MAX_TRADES)),
     }
+}
+
+/// How many bars a chart gets when it does not say.
+const DEFAULT_CANDLES: i64 = 200;
+
+/// The intervals a chart may ask for, and the bucket each one means.
+///
+/// A fixed set rather than a parsed duration. The value ends up as a divisor
+/// inside the aggregate, and a number taken straight from a query string has no
+/// business reaching it.
+const INTERVALS: &[(&str, i64)] = &[
+    ("1m", 60),
+    ("5m", 300),
+    ("15m", 900),
+    ("1h", 3_600),
+    ("4h", 14_400),
+    ("1d", 86_400),
+];
+
+fn bucket_seconds(interval: &str) -> ApiResult<i64> {
+    INTERVALS
+        .iter()
+        .find(|(name, _)| *name == interval)
+        .map(|(_, seconds)| *seconds)
+        .ok_or_else(|| {
+            let known: Vec<&str> = INTERVALS.iter().map(|(n, _)| *n).collect();
+            ApiError::bad_request(format!("interval must be one of {}", known.join(", ")))
+        })
+}
+
+/// One OHLCV bar on the wire.
+///
+/// Prices are quote atoms and volume is base atoms, exactly like everywhere
+/// else — the chart divides for display. Money stays integers all the way out.
+#[derive(Debug, Serialize)]
+struct CandleView {
+    time_ms: i64,
+    open: i64,
+    high: i64,
+    low: i64,
+    close: i64,
+    volume: i64,
+    trades: i64,
+}
+
+async fn candles(
+    State(state): State<AppState>,
+    Path(symbol): Path<String>,
+    UrlQuery(params): UrlQuery<HashMap<String, String>>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let interval = params
+        .get("interval")
+        .map(|s| s.as_str())
+        .unwrap_or(DEFAULT_INTERVAL);
+    let bucket = bucket_seconds(interval)?;
+    let limit = parse_limit_with_default(params.get("limit").map(|s| s.as_str()), DEFAULT_CANDLES)?;
+
+    let rows = state
+        .inner
+        .history
+        .candles(&symbol, bucket, limit)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, symbol, interval, "reading candles failed");
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "could not read candles")
+        })?;
+
+    // Same ambiguity as the tape: a market nobody has traded looks exactly like
+    // a typo, so only an empty answer is worth the extra round trip.
+    if rows.is_empty() && !state.market_exists(&symbol).await? {
+        return Err(ApiError::bad_request("unknown market"));
+    }
+
+    let candles: Vec<CandleView> = rows
+        .into_iter()
+        .map(|c| CandleView {
+            time_ms: c.time_ms,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+            trades: c.trades,
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "symbol": symbol,
+        "interval": interval,
+        "limit": limit,
+        "candles": candles,
+    })))
 }
 
 /// One query parameter, for handlers that took the whole `Request` and so
@@ -469,7 +570,10 @@ async fn trades(
             // The caller gets nothing useful from a database error, and the
             // detail belongs in the log rather than in a public response.
             tracing::error!(error = %e, symbol, "reading trade history failed");
-            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "could not read trade history")
+            ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "could not read trade history",
+            )
         })?;
 
     // An empty result is ambiguous: a market that has not traded yet looks
@@ -792,8 +896,12 @@ async fn read_json<T: serde::de::DeserializeOwned>(req: Request) -> ApiResult<T>
         .await
         .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "could not read request body"))?;
 
-    serde_json::from_slice(&bytes)
-        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, format!("invalid request body: {e}")))
+    serde_json::from_slice(&bytes).map_err(|e| {
+        ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("invalid request body: {e}"),
+        )
+    })
 }
 
 /// The engine answered with a shape this endpoint does not expect. A bug on our

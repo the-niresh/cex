@@ -76,14 +76,15 @@ impl Harness {
             .await
             .expect("postgres — is `docker compose up -d` running?");
         let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
-        let tokens = Tokens::new(b"test secret for the route tests", Duration::from_secs(3600));
+        let tokens = Tokens::new(
+            b"test secret for the route tests",
+            Duration::from_secs(3600),
+        );
 
-        let history = cex_persist::HistoryStore::connect_to_schema(
-            &database_url(),
-            &format!("t{tag}"),
-        )
-        .await
-        .expect("postgres history schema");
+        let history =
+            cex_persist::HistoryStore::connect_to_schema(&database_url(), &format!("t{tag}"))
+                .await
+                .expect("postgres history schema");
 
         Harness {
             router: build_router(AppState::new(loopback, users, tokens, history.clone())),
@@ -255,7 +256,8 @@ impl Harness {
         if let Some(t) = token {
             b = b.header("authorization", format!("Bearer {t}"));
         }
-        self.call(b.body(Body::from(body.to_string())).unwrap()).await
+        self.call(b.body(Body::from(body.to_string())).unwrap())
+            .await
     }
 
     async fn send(
@@ -272,7 +274,8 @@ impl Harness {
         if let Some(t) = token {
             b = b.header("authorization", format!("Bearer {t}"));
         }
-        self.call(b.body(Body::from(body.to_string())).unwrap()).await
+        self.call(b.body(Body::from(body.to_string())).unwrap())
+            .await
     }
 
     /// Register a funded user and return their token.
@@ -687,8 +690,13 @@ async fn the_book_shows_resting_orders_from_every_user() {
     let alice = h.user("USDT", 10_000_000_000).await;
     let bob = h.user("BTC", 100_000_000).await;
 
-    h.send("POST", "/orders", Some(&alice), order("BUY", 49_000_000_000, Q1))
-        .await;
+    h.send(
+        "POST",
+        "/orders",
+        Some(&alice),
+        order("BUY", 49_000_000_000, Q1),
+    )
+    .await;
     h.send("POST", "/orders", Some(&bob), order("SELL", P50K, Q1))
         .await;
 
@@ -797,11 +805,12 @@ async fn an_unbounded_limit_is_capped_rather_than_served() {
 
     // Left unchecked this is a way to ask one HTTP request to drag the entire
     // trade history of the exchange through Postgres.
-    let (status, body) = h
-        .get(&format!("/trades/{SYM}?limit=100000000"), None)
-        .await;
+    let (status, body) = h.get(&format!("/trades/{SYM}?limit=100000000"), None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["limit"], 500, "the cap should be reported back: {body}");
+    assert_eq!(
+        body["limit"], 500,
+        "the cap should be reported back: {body}"
+    );
 }
 
 #[tokio::test]
@@ -823,10 +832,22 @@ async fn a_retried_order_with_the_same_key_places_one_order() {
     let token = h.user("USDT", 1_000_000_000).await;
 
     let (s1, b1) = h
-        .send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "abc-123")
+        .send_with_key(
+            "POST",
+            "/orders",
+            Some(&token),
+            order("BUY", P50K, Q1),
+            "abc-123",
+        )
         .await;
     let (s2, b2) = h
-        .send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "abc-123")
+        .send_with_key(
+            "POST",
+            "/orders",
+            Some(&token),
+            order("BUY", P50K, Q1),
+            "abc-123",
+        )
         .await;
 
     assert_eq!(s1, StatusCode::CREATED, "{b1}");
@@ -892,10 +913,22 @@ async fn two_users_may_choose_the_same_idempotency_key() {
     let bob = h.user("USDT", 1_000_000_000).await;
 
     let (sa, ba) = h
-        .send_with_key("POST", "/orders", Some(&alice), order("BUY", P50K, Q1), "same")
+        .send_with_key(
+            "POST",
+            "/orders",
+            Some(&alice),
+            order("BUY", P50K, Q1),
+            "same",
+        )
         .await;
     let (sb, bb) = h
-        .send_with_key("POST", "/orders", Some(&bob), order("BUY", P50K, Q1), "same")
+        .send_with_key(
+            "POST",
+            "/orders",
+            Some(&bob),
+            order("BUY", P50K, Q1),
+            "same",
+        )
         .await;
 
     assert_eq!(sa, StatusCode::CREATED, "{ba}");
@@ -916,10 +949,22 @@ async fn a_different_key_is_a_different_order() {
     let h = Harness::start().await;
     let token = h.user("USDT", 1_000_000_000).await;
 
-    h.send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "one")
-        .await;
-    h.send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "two")
-        .await;
+    h.send_with_key(
+        "POST",
+        "/orders",
+        Some(&token),
+        order("BUY", P50K, Q1),
+        "one",
+    )
+    .await;
+    h.send_with_key(
+        "POST",
+        "/orders",
+        Some(&token),
+        order("BUY", P50K, Q1),
+        "two",
+    )
+    .await;
 
     let (_, open) = h.get("/orders/open", Some(&token)).await;
     assert_eq!(open["orders"].as_array().unwrap().len(), 2);
@@ -932,7 +977,13 @@ async fn an_empty_idempotency_key_is_rejected() {
     let token = h.user("USDT", 1_000_000_000).await;
 
     let (status, _) = h
-        .send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), "   ")
+        .send_with_key(
+            "POST",
+            "/orders",
+            Some(&token),
+            order("BUY", P50K, Q1),
+            "   ",
+        )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
@@ -944,7 +995,13 @@ async fn an_over_long_idempotency_key_is_rejected() {
     let huge = "k".repeat(5_000);
 
     let (status, _) = h
-        .send_with_key("POST", "/orders", Some(&token), order("BUY", P50K, Q1), &huge)
+        .send_with_key(
+            "POST",
+            "/orders",
+            Some(&token),
+            order("BUY", P50K, Q1),
+            &huge,
+        )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
@@ -959,10 +1016,22 @@ async fn a_retried_cancel_is_harmless() {
     let id = placed["order_id"].as_u64().unwrap();
 
     let (s1, _) = h
-        .send_with_key("DELETE", &format!("/orders/{id}"), Some(&token), json!({}), "c-1")
+        .send_with_key(
+            "DELETE",
+            &format!("/orders/{id}"),
+            Some(&token),
+            json!({}),
+            "c-1",
+        )
         .await;
     let (s2, b2) = h
-        .send_with_key("DELETE", &format!("/orders/{id}"), Some(&token), json!({}), "c-1")
+        .send_with_key(
+            "DELETE",
+            &format!("/orders/{id}"),
+            Some(&token),
+            json!({}),
+            "c-1",
+        )
         .await;
 
     assert_eq!(s1, StatusCode::OK);
@@ -1194,7 +1263,10 @@ async fn order_history_tells_the_trade_from_the_callers_side() {
     let (_, body) = h.get("/orders/history", Some(&token)).await;
     let f = &body["fills"][0];
 
-    assert_eq!(f["side"], "SELL", "the maker is on the opposite side: {body}");
+    assert_eq!(
+        f["side"], "SELL",
+        "the maker is on the opposite side: {body}"
+    );
     assert_eq!(f["role"], "MAKER");
     assert_eq!(f["fee"], 500, "a maker pays the maker fee, not the taker's");
     assert_eq!(f["order_id"], 11, "her own order id, not the aggressor's");
@@ -1293,4 +1365,166 @@ async fn a_user_who_has_never_traded_gets_an_empty_history() {
 
     assert_eq!(status, StatusCode::OK);
     assert!(body["fills"].as_array().unwrap().is_empty());
+}
+
+// ───────────────────────── candles ─────────────────────────
+//
+// Public, like the tape it is derived from. Prices stay integers in atomic
+// units all the way to the wire — the chart divides for display and nothing
+// else may read these at all.
+
+/// Move a fill's write time so a test can put trades in chosen buckets. The
+/// engine owns no clock, which is exactly why the bucket is a property of the
+/// history table rather than of the exchange.
+async fn backdate_fill(h: &Harness, seq: u64, at: i64) {
+    sqlx::query("UPDATE fills SET created_at = to_timestamp($2) WHERE seq = $1")
+        .bind(seq as i64)
+        .bind(at as f64)
+        .execute(h.history.pool())
+        .await
+        .expect("backdating a fill");
+}
+
+/// On a 300-second boundary, so expected bar times are exact.
+const CANDLE_T0: i64 = 1_699_999_800;
+
+#[tokio::test]
+async fn candles_are_public() {
+    let h = Harness::start().await;
+
+    let (status, _) = h.get(&format!("/candles/{SYM}"), None).await;
+
+    assert_eq!(status, StatusCode::OK, "the tape is public, so this is too");
+}
+
+#[tokio::test]
+async fn candles_carry_ohlcv_in_atomic_units() {
+    let h = Harness::start().await;
+
+    h.record_trade(1, SYM, 50_100_000_000, Q1).await;
+    backdate_fill(&h, 1, CANDLE_T0 + 1).await;
+    h.record_trade(2, SYM, 50_300_000_000, Q1 * 2).await;
+    backdate_fill(&h, 2, CANDLE_T0 + 2).await;
+
+    let (status, body) = h.get(&format!("/candles/{SYM}?interval=1m"), None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    let c = &body["candles"][0];
+    assert_eq!(c["open"], 50_100_000_000i64, "quote atoms, never a float");
+    assert_eq!(c["high"], 50_300_000_000i64);
+    assert_eq!(c["low"], 50_100_000_000i64);
+    assert_eq!(c["close"], 50_300_000_000i64);
+    assert_eq!(c["volume"], Q1 * 3, "base atoms traded");
+    assert_eq!(c["trades"], 2);
+    assert_eq!(c["time_ms"], CANDLE_T0 * 1000);
+}
+
+#[tokio::test]
+async fn candles_are_oldest_first() {
+    let h = Harness::start().await;
+
+    for i in 0..3i64 {
+        let seq = i as u64 + 1;
+        h.record_trade(seq, SYM, 50_000_000_000, Q1).await;
+        backdate_fill(&h, seq, CANDLE_T0 + i * 60).await;
+    }
+
+    let (_, body) = h.get(&format!("/candles/{SYM}?interval=1m"), None).await;
+    let times: Vec<i64> = body["candles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["time_ms"].as_i64().unwrap())
+        .collect();
+
+    let mut sorted = times.clone();
+    sorted.sort_unstable();
+    assert_eq!(times, sorted, "a chart draws left to right");
+}
+
+#[tokio::test]
+async fn the_interval_widens_the_bucket() {
+    let h = Harness::start().await;
+
+    for i in 0..5i64 {
+        let seq = i as u64 + 1;
+        h.record_trade(seq, SYM, 50_000_000_000, Q1).await;
+        backdate_fill(&h, seq, CANDLE_T0 + i * 60).await;
+    }
+
+    let (_, one) = h.get(&format!("/candles/{SYM}?interval=1m"), None).await;
+    let (_, five) = h.get(&format!("/candles/{SYM}?interval=5m"), None).await;
+
+    assert_eq!(one["candles"].as_array().unwrap().len(), 5);
+    assert_eq!(five["candles"].as_array().unwrap().len(), 1);
+    assert_eq!(five["interval"], "5m");
+}
+
+#[tokio::test]
+async fn an_unknown_interval_is_a_client_error() {
+    let h = Harness::start().await;
+
+    let (status, _) = h.get(&format!("/candles/{SYM}?interval=7m"), None).await;
+
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "intervals come from a fixed set; an arbitrary one must not reach SQL"
+    );
+}
+
+#[tokio::test]
+async fn candles_for_an_unknown_market_is_a_client_error() {
+    let h = Harness::start().await;
+
+    let (status, _) = h.get("/candles/NOPE_USDT", None).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_market_that_has_never_traded_has_no_candles() {
+    let h = Harness::start().await;
+
+    let (status, body) = h.get(&format!("/candles/{SYM}"), None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["candles"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn candles_only_cover_the_market_asked_for() {
+    let h = Harness::start().await;
+
+    h.record_trade(1, SYM, 50_000_000_000, Q1).await;
+    backdate_fill(&h, 1, CANDLE_T0 + 1).await;
+    h.record_trade(2, "ETH_USDT", 2_980_000_000, Q1).await;
+    backdate_fill(&h, 2, CANDLE_T0 + 2).await;
+
+    let (_, body) = h.get(&format!("/candles/{SYM}?interval=1m"), None).await;
+
+    let candles = body["candles"].as_array().unwrap();
+    assert_eq!(candles.len(), 1);
+    assert_eq!(candles[0]["volume"], Q1);
+}
+
+#[tokio::test]
+async fn an_unbounded_candle_limit_is_capped_rather_than_served() {
+    let h = Harness::start().await;
+
+    let (status, body) = h
+        .get(&format!("/candles/{SYM}?limit=100000000"), None)
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["limit"], 500);
+}
+
+#[tokio::test]
+async fn a_nonsense_candle_limit_is_a_client_error() {
+    let h = Harness::start().await;
+
+    let (status, _) = h.get(&format!("/candles/{SYM}?limit=0"), None).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
