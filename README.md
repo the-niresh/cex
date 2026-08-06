@@ -26,8 +26,8 @@ price feed and three command types:
 | `cex-core` — matching, ledger, settlement, snapshots, idempotency | Built · 132 tests |
 | `cex-proto` — wire types | Built · 18 tests |
 | `engine` — stream consumer, snapshots, crash recovery, boot lock, concurrent query serving | Built · 56 tests |
-| `api` — loopback, auth, REST routes | Built · 74 tests |
-| `persist` — Postgres history writer | Built · 27 tests |
+| `api` — loopback, auth, REST routes | Built · 110 tests |
+| `persist` — Postgres history writer | Built · 43 tests |
 | `ws` — market data fan-out | Built · 52 tests |
 | Perpetuals | Not started |
 
@@ -101,7 +101,7 @@ npm run dev          # http://localhost:5173
 
 npm run typecheck    # tsc --noEmit
 npm run lint
-npm test             # unit: the number layer and the depth book
+npm test             # unit: the number layer, the depth book, dev-proxy coverage
 npm run e2e          # playwright, against the running stack
 ```
 
@@ -120,12 +120,32 @@ gives a book that stays wrong for the life of the connection and never looks wro
 **Connection state is visible.** A gap, a dropped socket, or simply no updates for a while dims
 the book and the tape, names the reason in a band across the ladder, and disables the ticket.
 
+**Nothing falls off the side.** Three columns want 1112px; a 1920 screen at 150% zoom gives you
+1280. Under 1112 the columns tighten to an 852px floor, and under ~880px the whole thing becomes
+an ordinary scrolling page. Panels move rather than disappear, and no arrangement ever leaves a
+control laid out past an edge that cannot scroll.
+
+**The day, and the cost of taking it.** The header states 24h change, high, low and volume —
+folded on the client out of `GET /candles?interval=1h&limit=24`, because there is no stats
+endpoint and those candles already carry the numbers exactly. Volume is quoted in the base asset,
+which is what a candle records; quoting it in the quote would mean multiplying each bucket by its
+own close, and that is an estimate rather than a figure. Hovering any level of the ladder answers
+what sweeping to it would cost — cumulative size, cumulative cash, and the blended average price —
+and the footer shows which side is holding more resting size. All of it comes off levels already
+on screen. The book and the tape share one column through the tabs in their panel head.
+
+**Nothing asks for an account until something moves money.** The book, the tape, the chart and
+the ticket are all usable signed out — the sign-in panel opens when BUY, SELL or CREDIT is
+pressed, not on arrival, and it can be dismissed. A page that demands credentials before it shows
+anything is a page most people close. Registering also asks for a name (`name` on `/register`,
+optional on the wire so an older client still registers), which is what the header greets you by.
+
 ## Endpoints
 
 | Method | Path | Auth | |
 |---|---|---|---|
 | `GET` | `/health` | — | liveness |
-| `POST` | `/register` | — | create an account, returns a token |
+| `POST` | `/register` | — | create an account (`username`, `password`, optional `name`), returns a token |
 | `POST` | `/login` | — | exchange credentials for a token |
 | `GET` | `/markets` | — | tradable pairs and their tick, lot and fee rules |
 | `GET` | `/depth/:symbol` | — | current order book |
@@ -173,7 +193,7 @@ Prices and quantities are integers, never floats.
 
 ```bash
 docker compose up -d      # redis on 6390, postgres on 5442
-cargo test                # 356 tests; the engine, api, persist and ws suites need both containers
+cargo test                # 411 tests; the engine, api, persist and ws suites need both containers
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -356,6 +376,14 @@ Named rather than buried, because each is a real thing to fix:
 * **A batch `persist` cannot write stalls history rather than skipping it.** The entries stay
   unacknowledged and are retried forever. That is the right failure — better a stalled writer that
   pages you than one that quietly drops trades — but it does need someone watching for it.
+* **A graceful restart leaves the old engine answering reads.** `main.rs` races `Runner::run`
+  against SIGTERM in a `tokio::select!`. When the signal wins, `run` is *cancelled* — so the
+  `handle.abort()` at the end of it never executes, and the query task is only stopped by
+  `Drop for Runner`, which fires after `snapshot()` and `shutdown()` have already run. The task
+  is a competing consumer on the shared queries queue, so once the lock is released a client's
+  read can be answered by the outgoing engine from state the incoming one has already moved past,
+  and two consecutive reads can show `seq` going backwards. The fix is to pass the stop signal
+  into `run` so its own cleanup always executes, rather than adding another call site to forget.
 
 ## Naming conventions
 
