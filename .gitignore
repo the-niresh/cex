@@ -6,7 +6,17 @@
 # local review-session tooling
 .agents/
 .lavish/
+.claude/
+skills-lock.json
 node_modules/
 frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
+
+# Documentation
+docs/superpowers/
+
+# Session scaffolding — briefs written to hand context to a new session, not
+# part of the exchange.
+frontend_prompt.md
+next_prompt.md
