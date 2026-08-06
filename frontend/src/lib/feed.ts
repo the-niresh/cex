@@ -1,7 +1,10 @@
 import { parseExact } from "./json";
 import type { DepthUpdate, OrderUpdate, TradeUpdate } from "./types";
 
-export const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:8081/ws";
+// Same-origin by default, same reasoning as API_URL in ./api — Vite's dev
+// proxy forwards /ws to the ws crate on 8081. Set VITE_WS_URL to override.
+const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+export const WS_URL = import.meta.env.VITE_WS_URL ?? `${wsProtocol}//${window.location.host}/ws`;
 
 export type FeedStatus = "connecting" | "live" | "reconnecting" | "closed";
 

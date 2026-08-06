@@ -14,7 +14,13 @@ import type {
   TimeInForce,
 } from "./types";
 
-export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
+// Same-origin by default so it always resolves against wherever the page was
+// actually loaded from (Vite's dev proxy forwards these paths to the API on
+// 8080) — "localhost:8080" would instead mean the browser's own machine,
+// which is wrong the moment the dev server is reached through SSH port
+// forwarding. Set VITE_API_URL to override, e.g. when the API is on a
+// different origin in production.
+export const API_URL = import.meta.env.VITE_API_URL ?? window.location.origin;
 
 /** A response the exchange refused, carrying the status it refused it with. */
 export class ApiError extends Error {
@@ -118,8 +124,8 @@ export async function candles(
 
 // ───────────────────────── auth ─────────────────────────
 
-export function register(username: string, password: string): Promise<Session> {
-  return request<Session>("/register", { method: "POST", body: { username, password } });
+export function register(username: string, name: string, password: string): Promise<Session> {
+  return request<Session>("/register", { method: "POST", body: { username, name, password } });
 }
 
 export function login(username: string, password: string): Promise<Session> {
