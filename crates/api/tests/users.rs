@@ -4,7 +4,7 @@
 //! usernames are unique case-insensitively, passwords are never stored, and a
 //! failed lookup is indistinguishable from a wrong password to the caller.
 
-use cex_api::users::{UserStore, UsersError};
+use cex_api::users::{NewUser, UserStore, UsersError};
 use uuid::Uuid;
 
 fn database_url() -> String {
@@ -24,12 +24,22 @@ fn name() -> String {
     format!("user_{}", Uuid::new_v4().simple())
 }
 
+/// A registration with no display name — what a client written before names
+/// existed sends, and what most of these tests are about.
+fn signup<'a>(username: &'a str, password: &'a str) -> NewUser<'a> {
+    NewUser {
+        username,
+        display_name: None,
+        password,
+    }
+}
+
 #[tokio::test]
 async fn a_registered_user_can_be_found_again() {
     let s = store().await;
     let username = name();
 
-    let created = s.register(&username, "hunter2000").await.unwrap();
+    let created = s.register(signup(&username, "hunter2000")).await.unwrap();
     let found = s.find_by_username(&username).await.unwrap().unwrap();
 
     assert_eq!(found.id, created.id);
@@ -46,7 +56,7 @@ async fn an_unknown_username_is_not_found() {
 async fn the_stored_row_holds_a_hash_and_never_the_password() {
     let s = store().await;
     let username = name();
-    s.register(&username, "hunter2000").await.unwrap();
+    s.register(signup(&username, "hunter2000")).await.unwrap();
 
     let found = s.find_by_username(&username).await.unwrap().unwrap();
     assert!(found.password_hash.starts_with("$argon2"));
@@ -57,9 +67,12 @@ async fn the_stored_row_holds_a_hash_and_never_the_password() {
 async fn a_duplicate_username_is_rejected() {
     let s = store().await;
     let username = name();
-    s.register(&username, "password-one").await.unwrap();
+    s.register(signup(&username, "password-one")).await.unwrap();
 
-    let err = s.register(&username, "password-two").await.unwrap_err();
+    let err = s
+        .register(signup(&username, "password-two"))
+        .await
+        .unwrap_err();
     assert!(matches!(err, UsersError::UsernameTaken));
 }
 
@@ -69,10 +82,13 @@ async fn usernames_collide_regardless_of_case() {
     // accounts that look like one to every human who sees them.
     let s = store().await;
     let username = name();
-    s.register(&username, "password-one").await.unwrap();
+    s.register(signup(&username, "password-one")).await.unwrap();
 
     let shouty = username.to_uppercase();
-    let err = s.register(&shouty, "password-two").await.unwrap_err();
+    let err = s
+        .register(signup(&shouty, "password-two"))
+        .await
+        .unwrap_err();
     assert!(matches!(err, UsersError::UsernameTaken));
 }
 
@@ -80,17 +96,20 @@ async fn usernames_collide_regardless_of_case() {
 async fn a_user_can_log_in_with_the_right_password() {
     let s = store().await;
     let username = name();
-    let created = s.register(&username, "correct horse").await.unwrap();
+    let created = s
+        .register(signup(&username, "correct horse"))
+        .await
+        .unwrap();
 
-    let id = s.authenticate(&username, "correct horse").await.unwrap();
-    assert_eq!(id, created.id);
+    let signed_in = s.authenticate(&username, "correct horse").await.unwrap();
+    assert_eq!(signed_in.id, created.id);
 }
 
 #[tokio::test]
 async fn logging_in_is_case_insensitive_on_the_username() {
     let s = store().await;
     let username = name();
-    s.register(&username, "password-one").await.unwrap();
+    s.register(signup(&username, "password-one")).await.unwrap();
 
     assert!(s
         .authenticate(&username.to_uppercase(), "password-one")
@@ -102,7 +121,9 @@ async fn logging_in_is_case_insensitive_on_the_username() {
 async fn the_wrong_password_is_refused() {
     let s = store().await;
     let username = name();
-    s.register(&username, "right-password").await.unwrap();
+    s.register(signup(&username, "right-password"))
+        .await
+        .unwrap();
 
     let err = s
         .authenticate(&username, "wrong-password")
@@ -116,7 +137,9 @@ async fn an_unknown_user_and_a_wrong_password_give_the_same_error() {
     // Distinguishing them tells an attacker which usernames exist.
     let s = store().await;
     let username = name();
-    s.register(&username, "right-password").await.unwrap();
+    s.register(signup(&username, "right-password"))
+        .await
+        .unwrap();
 
     let wrong_password = s
         .authenticate(&username, "wrong-password")
@@ -137,8 +160,8 @@ async fn an_unknown_user_and_a_wrong_password_give_the_same_error() {
 #[tokio::test]
 async fn two_users_get_distinct_ids() {
     let s = store().await;
-    let a = s.register(&name(), "password-one").await.unwrap();
-    let b = s.register(&name(), "password-one").await.unwrap();
+    let a = s.register(signup(&name(), "password-one")).await.unwrap();
+    let b = s.register(signup(&name(), "password-one")).await.unwrap();
 
     assert_ne!(a.id, b.id);
 }
@@ -147,11 +170,11 @@ async fn two_users_get_distinct_ids() {
 async fn an_empty_username_is_rejected() {
     let s = store().await;
     assert!(matches!(
-        s.register("", "password-one").await.unwrap_err(),
+        s.register(signup("", "password-one")).await.unwrap_err(),
         UsersError::InvalidUsername
     ));
     assert!(matches!(
-        s.register("   ", "password-one").await.unwrap_err(),
+        s.register(signup("   ", "password-one")).await.unwrap_err(),
         UsersError::InvalidUsername
     ));
 }
@@ -160,9 +183,109 @@ async fn an_empty_username_is_rejected() {
 async fn a_short_password_is_rejected() {
     let s = store().await;
     assert!(matches!(
-        s.register(&name(), "short").await.unwrap_err(),
+        s.register(signup(&name(), "short")).await.unwrap_err(),
         UsersError::WeakPassword
     ));
+}
+
+// ───────────────────────── display names ─────────────────────────
+
+#[tokio::test]
+async fn a_name_given_at_registration_is_stored_and_read_back() {
+    let s = store().await;
+    let username = name();
+
+    let created = s
+        .register(NewUser {
+            username: &username,
+            display_name: Some("Ada Lovelace"),
+            password: "password-one",
+        })
+        .await
+        .unwrap();
+    assert_eq!(created.display_name.as_deref(), Some("Ada Lovelace"));
+
+    let found = s.find_by_username(&username).await.unwrap().unwrap();
+    assert_eq!(found.display_name.as_deref(), Some("Ada Lovelace"));
+}
+
+#[tokio::test]
+async fn signing_in_returns_the_name() {
+    // The screen greets people by name, so login has to carry it — otherwise
+    // a returning user is anonymous until they register again.
+    let s = store().await;
+    let username = name();
+    s.register(NewUser {
+        username: &username,
+        display_name: Some("Ada Lovelace"),
+        password: "password-one",
+    })
+    .await
+    .unwrap();
+
+    let signed_in = s.authenticate(&username, "password-one").await.unwrap();
+    assert_eq!(signed_in.display_name.as_deref(), Some("Ada Lovelace"));
+}
+
+#[tokio::test]
+async fn a_name_is_trimmed_before_it_is_stored() {
+    let s = store().await;
+    let username = name();
+
+    let created = s
+        .register(NewUser {
+            username: &username,
+            display_name: Some("  Ada  "),
+            password: "password-one",
+        })
+        .await
+        .unwrap();
+    assert_eq!(created.display_name.as_deref(), Some("Ada"));
+}
+
+#[tokio::test]
+async fn a_blank_name_is_rejected_rather_than_stored() {
+    // Absent means "this client does not know about names". Whitespace means
+    // the user was asked and gave nothing, which is worth saying out loud.
+    let s = store().await;
+    assert!(matches!(
+        s.register(NewUser {
+            username: &name(),
+            display_name: Some("   "),
+            password: "password-one",
+        })
+        .await
+        .unwrap_err(),
+        UsersError::BlankDisplayName
+    ));
+}
+
+#[tokio::test]
+async fn an_over_long_name_is_rejected() {
+    let s = store().await;
+    let too_long = "a".repeat(65);
+    assert!(matches!(
+        s.register(NewUser {
+            username: &name(),
+            display_name: Some(&too_long),
+            password: "password-one",
+        })
+        .await
+        .unwrap_err(),
+        UsersError::DisplayNameTooLong
+    ));
+}
+
+#[tokio::test]
+async fn an_account_registered_without_a_name_still_works() {
+    // The column is nullable forever: rows written before it existed have no
+    // name and must still authenticate.
+    let s = store().await;
+    let username = name();
+    s.register(signup(&username, "password-one")).await.unwrap();
+
+    let signed_in = s.authenticate(&username, "password-one").await.unwrap();
+    assert_eq!(signed_in.display_name, None);
 }
 
 #[tokio::test]

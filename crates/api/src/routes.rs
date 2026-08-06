@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::auth::Tokens;
 use crate::loopback::{Loopback, LoopbackError};
-use crate::users::{UserStore, UsersError};
+use crate::users::{NewUser, UserStore, UsersError};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderName, HeaderValue, Method};
 use cex_persist::HistoryStore;
@@ -131,7 +131,10 @@ impl From<UsersError> for ApiError {
     fn from(e: UsersError) -> Self {
         let status = match e {
             UsersError::UsernameTaken => StatusCode::CONFLICT,
-            UsersError::InvalidUsername | UsersError::WeakPassword => StatusCode::BAD_REQUEST,
+            UsersError::InvalidUsername
+            | UsersError::BlankDisplayName
+            | UsersError::DisplayNameTooLong
+            | UsersError::WeakPassword => StatusCode::BAD_REQUEST,
             UsersError::BadCredentials => StatusCode::UNAUTHORIZED,
             UsersError::Db(_) | UsersError::Hash(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
@@ -298,20 +301,40 @@ struct Credentials {
     password: String,
 }
 
+/// Registration carries one more field than signing in does.
+///
+/// `name` is optional on the wire so a client written before it existed still
+/// registers successfully. The screen asks for it; the protocol does not
+/// insist on it.
+#[derive(Deserialize)]
+struct Registration {
+    username: String,
+    #[serde(default)]
+    name: Option<String>,
+    password: String,
+}
+
 #[derive(Serialize)]
 struct Session {
     user_id: Uuid,
     token: String,
+    /// What to call this person. `None` for accounts that registered before
+    /// names existed, so a client must be able to render without one.
+    name: Option<String>,
 }
 
 async fn register(
     State(state): State<AppState>,
-    Json(body): Json<Credentials>,
+    Json(body): Json<Registration>,
 ) -> ApiResult<(StatusCode, Json<Session>)> {
     let user = state
         .inner
         .users
-        .register(&body.username, &body.password)
+        .register(NewUser {
+            username: &body.username,
+            display_name: body.name.as_deref(),
+            password: &body.password,
+        })
         .await?;
     let token = state
         .inner
@@ -324,6 +347,7 @@ async fn register(
         Json(Session {
             user_id: user.id,
             token,
+            name: user.display_name,
         }),
     ))
 }
@@ -332,7 +356,7 @@ async fn login(
     State(state): State<AppState>,
     Json(body): Json<Credentials>,
 ) -> ApiResult<Json<Session>> {
-    let user_id = state
+    let user = state
         .inner
         .users
         .authenticate(&body.username, &body.password)
@@ -340,10 +364,14 @@ async fn login(
     let token = state
         .inner
         .tokens
-        .issue(user_id)
+        .issue(user.id)
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error"))?;
 
-    Ok(Json(Session { user_id, token }))
+    Ok(Json(Session {
+        user_id: user.id,
+        token,
+        name: user.display_name,
+    }))
 }
 
 async fn markets(State(state): State<AppState>) -> ApiResult<Json<serde_json::Value>> {

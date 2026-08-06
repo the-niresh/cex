@@ -463,6 +463,72 @@ async fn logging_in_with_the_wrong_password_is_unauthorised() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+async fn a_name_given_at_registration_comes_back_on_every_sign_in() {
+    let h = Harness::start().await;
+    let username = format!("u{}", Uuid::new_v4().simple());
+
+    let (status, body) = h
+        .send(
+            "POST",
+            "/register",
+            None,
+            json!({"username": username, "name": "Ada Lovelace", "password": "a-good-password"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["name"].as_str(), Some("Ada Lovelace"));
+
+    let (status, body) = h
+        .send(
+            "POST",
+            "/login",
+            None,
+            json!({"username": username, "password": "a-good-password"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["name"].as_str(), Some("Ada Lovelace"));
+}
+
+#[tokio::test]
+async fn registering_without_a_name_still_works_and_reports_none() {
+    // The field was added after the fact. A client that does not send it must
+    // keep registering, or every older caller breaks on deploy.
+    let h = Harness::start().await;
+    let username = format!("u{}", Uuid::new_v4().simple());
+
+    let (status, body) = h
+        .send(
+            "POST",
+            "/register",
+            None,
+            json!({"username": username, "password": "a-good-password"}),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(body["name"].is_null(), "expected a null name, got {body}");
+}
+
+#[tokio::test]
+async fn a_blank_name_is_rejected() {
+    let h = Harness::start().await;
+    let username = format!("u{}", Uuid::new_v4().simple());
+
+    let (status, body) = h
+        .send(
+            "POST",
+            "/register",
+            None,
+            json!({"username": username, "name": "   ", "password": "a-good-password"}),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("name"));
+}
+
 // ───────────────────────── auth middleware ─────────────────────────
 
 #[tokio::test]
