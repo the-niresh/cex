@@ -6,3 +6,7 @@
 # local review-session tooling
 .agents/
 .lavish/
+node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
