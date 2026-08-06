@@ -83,6 +83,46 @@ cargo run -p cex-ws --example tail -- --token "$TOKEN" orders
 
 Amounts are integers in atomic units — see [Scaling](#scaling).
 
+## The screen
+
+![The spot trading screen](docs/screen.png)
+
+One trading screen, in `frontend/` — TypeScript, React and Vite, talking to the same four
+processes as everything else. No mock backend anywhere, including in its tests.
+
+Everything above is live: the ladder is this engine's book, `MINE` is the caller's own resting
+size at each level, and the locked balances are what those orders are holding. The chart is thin
+because a freshly started test exchange has genuinely only traded a handful of times.
+
+```bash
+cd frontend
+npm install
+npm run dev          # http://localhost:5173
+
+npm run typecheck    # tsc --noEmit
+npm run lint
+npm test             # unit: the number layer and the depth book
+npm run e2e          # playwright, against the running stack
+```
+
+The engine must be started with **`CEX_BLOCK_MS=200`** or every snapshot fetch takes five seconds
+— see [Known gaps](#known-gaps).
+
+Three things it does that are easy to get wrong:
+
+**Money never becomes a float.** `JSON.parse` rounds a 64-bit integer to a double *before* any
+reviver can see it, so the parser reads the source text and hands back `bigint`, and the serialiser
+uses `JSON.rawJSON` on the way out. Formatting slices digits rather than dividing. The one place a
+number is produced is the chart, at the very edge, for pixels.
+
+**The depth feed resyncs on a gap.** `depth_seq` is monotonic per symbol; anything other than
+exactly one past the last is refused, the book is marked stale, and nothing is applied again until
+a fresh `GET /depth/:symbol` arrives. Applying the next delta onto a book that is already wrong
+gives a book that stays wrong for the life of the connection and never looks wrong.
+
+**Connection state is visible.** A gap, a dropped socket, or simply no updates for a while dims
+the book and the tape, names the reason in a band across the ladder, and disables the ticket.
+
 ## Endpoints
 
 | Method | Path | Auth | |
@@ -312,6 +352,14 @@ Named rather than buried, because each is a real thing to fix:
 * **Replay republishes events.** Recovery re-applies commands after the snapshot, so downstream
   consumers see duplicates and must deduplicate on `seq`. `persist` does it against a table and
   `ws` against an in-memory high-water mark; anything new must do it too.
+* **A read waits for the command loop.** The engine answers queries between blocking stream
+  reads — `poll_queries()` drains, then `step()` sits in `XREAD BLOCK` for `CEX_BLOCK_MS`. When the
+  command stream is idle, a read therefore waits up to a full block: measured at **5.0s on the
+  5000ms default, 0.2s at 200ms**. That is invisible to a batch client and ruinous for a screen,
+  where every snapshot refetch stalls. `CEX_BLOCK_MS=200` makes it usable and is what the frontend
+  and its tests assume, but it is a mitigation, not a fix — latency still tracks the block. The
+  real fix is to stop serialising reads behind the blocking read: give queries their own
+  connection and `BRPOP`, with the state behind a lock so commands stay strictly ordered.
 * **A batch `persist` cannot write stalls history rather than skipping it.** The entries stay
   unacknowledged and are retried forever. That is the right failure — better a stalled writer that
   pages you than one that quietly drops trades — but it does need someone watching for it.
