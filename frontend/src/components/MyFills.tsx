@@ -30,47 +30,50 @@ export function MyFills({ fills, markets }: { fills: MyFill[]; markets: Market[]
           </span>
         )}
       </div>
-      <div className="chead">
-        <span>Time</span>
-        <span>Market</span>
-        <span>Side</span>
-        <span>Price</span>
-        <span>Qty</span>
-        <span>Fee</span>
-      </div>
-      <div className="scroll">
-        {fills.length === 0 ? (
-          <div className="empty">no fills yet</div>
-        ) : (
-          fills.map((fill) => {
-            const market = bySymbol.get(fill.symbol);
-            const priceDp = market ? decimalsForStep(market.tick_size, market.quote_decimals) : 2;
-            const qtyDp = market ? decimalsForStep(market.lot_size, market.base_decimals) : 5;
-            return (
-              <div
-                key={`${fill.seq}-${fill.idx}`}
-                className={`fl ${fill.side.toLowerCase()}`}
-              >
-                <span className="t">{clock(fill.timestamp_ms)}</span>
-                <span className="mkt">{fill.symbol}</span>
-                <span className="side">
-                  {fill.side} <span className="role">{fill.role === "MAKER" ? "M" : "T"}</span>
-                </span>
-                <span className="num p">
-                  {market && (
-                    <Num atoms={fill.price} decimals={market.quote_decimals} places={priceDp} />
-                  )}
-                </span>
-                <span className="num q">
-                  {market && <Num atoms={fill.qty} decimals={market.base_decimals} places={qtyDp} />}
-                </span>
-                <span className="num f">
-                  {market && <Num atoms={fill.fee} decimals={market.quote_decimals} />}
-                </span>
-              </div>
-            );
-          })
-        )}
+      {/* One scroller for headings and rows together — see OpenOrders. */}
+      <div className="tbl">
+        <div className="chead">
+          <span>Time</span>
+          <span>Market</span>
+          <span>Side</span>
+          <span>Price</span>
+          <span>Qty</span>
+          <span>Fee</span>
+        </div>
+        <div className="scroll">
+          {fills.length === 0 ? (
+            <div className="empty">no fills yet</div>
+          ) : (
+            fills.map((fill) => {
+              const market = bySymbol.get(fill.symbol);
+              const priceDp = market ? decimalsForStep(market.tick_size, market.quote_decimals) : 2;
+              const qtyDp = market ? decimalsForStep(market.lot_size, market.base_decimals) : 5;
+              return (
+                <div
+                  key={`${fill.seq}-${fill.idx}`}
+                  className={`fl ${fill.side.toLowerCase()}`}
+                >
+                  <span className="t">{clock(fill.timestamp_ms)}</span>
+                  <span className="mkt">{fill.symbol}</span>
+                  <span className="side">
+                    {fill.side} <span className="role">{fill.role === "MAKER" ? "M" : "T"}</span>
+                  </span>
+                  <span className="num p">
+                    {market && (
+                      <Num atoms={fill.price} decimals={market.quote_decimals} places={priceDp} />
+                    )}
+                  </span>
+                  <span className="num q">
+                    {market && <Num atoms={fill.qty} decimals={market.base_decimals} places={qtyDp} />}
+                  </span>
+                  <span className="num f">
+                    {market && <Num atoms={fill.fee} decimals={market.quote_decimals} />}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </section>
   );

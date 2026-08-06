@@ -10,7 +10,13 @@ interface Props {
   onPriceChange(price: string): void;
   bestBid: bigint | null;
   bestAsk: bigint | null;
-  disabled: boolean;
+  signedIn: boolean;
+  /**
+   * Called instead of submitting when nobody is signed in. Trading is the
+   * first thing that actually needs an account — looking never does — so this
+   * is where the sign-in panel gets opened, not on the way into the app.
+   */
+  onRequireSignIn(): void;
   onSubmit(request: PlaceOrderRequest): Promise<void>;
 }
 
@@ -23,7 +29,8 @@ export function Ticket({
   onPriceChange,
   bestBid,
   bestAsk,
-  disabled,
+  signedIn,
+  onRequireSignIn,
   onSubmit,
 }: Props) {
   const [side, setSide] = useState<Side>("BUY");
@@ -42,6 +49,22 @@ export function Ticket({
    * The engine decides the real one; this must never be sent as a limit.
    */
   const referencePrice = kind === "LIMIT" ? priceAtoms : side === "BUY" ? bestAsk : bestBid;
+
+  /** The middle of the spread, snapped down to a tick the engine will accept. */
+  const midPrice = useMemo(() => {
+    if (!market || bestBid === null || bestAsk === null) return null;
+    const mid = (bestBid + bestAsk) / 2n;
+    return mid - (mid % market.tick_size);
+  }, [market, bestBid, bestAsk]);
+
+  /** The best price on the side you are trading — join the queue, don't cross. */
+  const bboPrice = side === "BUY" ? bestBid : bestAsk;
+
+  /** Put an exact price into the field the user edits, in the field's own format. */
+  function setPriceFrom(atoms: bigint | null) {
+    if (!market || atoms === null) return;
+    onPriceChange(formatAtoms(atoms, market.quote_decimals, { places: priceDp, group: false }));
+  }
 
   const quote = useMemo(() => {
     if (!market || qtyAtoms === null || qtyAtoms <= 0n || referencePrice === null) return null;
@@ -79,7 +102,6 @@ export function Ticket({
   const spendDecimals = market ? (side === "BUY" ? market.quote_decimals : market.base_decimals) : 8n;
 
   const ready =
-    !disabled &&
     !sending &&
     market !== null &&
     problem === null &&
@@ -88,6 +110,13 @@ export function Ticket({
     (kind === "MARKET" || (priceAtoms !== null && priceAtoms > 0n));
 
   async function submit() {
+    // The gate is here rather than on a disabled button on purpose: a signed
+    // out visitor has to be able to *press* BUY to find out an account is
+    // needed. A dead button teaches them nothing.
+    if (!signedIn) {
+      onRequireSignIn();
+      return;
+    }
     if (!market || !ready || qtyAtoms === null) return;
     setSending(true);
     try {
@@ -162,6 +191,19 @@ export function Ticket({
         <div className="field">
           <div className="flabel">
             <span className="k">Price</span>
+            {market && kind === "LIMIT" && (bestBid !== null || bestAsk !== null) && (
+              // Two prices worth one click each: the middle of the spread, and
+              // the best price already showing on your own side of it. Both
+              // come off the book already on screen.
+              <span className="picks">
+                <button type="button" onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
+                  MID
+                </button>
+                <button type="button" onClick={() => setPriceFrom(bboPrice)} disabled={bboPrice === null}>
+                  BBO
+                </button>
+              </span>
+            )}
             {market && (
               <span className="rule">
                 tick {formatAtoms(market.tick_size, market.quote_decimals, { places: priceDp })}
@@ -243,10 +285,16 @@ export function Ticket({
 
         <button
           className={`submit${side === "SELL" ? " sell" : ""}`}
-          disabled={!ready}
+          disabled={signedIn && !ready}
           onClick={() => void submit()}
         >
-          {sending ? "SENDING…" : qty ? `${side} ${qty} ${market?.base ?? ""}`.trim() : side}
+          {!signedIn
+            ? `LOG IN TO ${side}`
+            : sending
+              ? "SENDING…"
+              : qty
+                ? `${side} ${qty} ${market?.base ?? ""}`.trim()
+                : side}
         </button>
 
         <div className="avail">

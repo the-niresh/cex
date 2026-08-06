@@ -1,16 +1,18 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Auth } from "./components/Auth";
 import { Balances } from "./components/Balances";
 import { Chart } from "./components/Chart";
 import { MyFills } from "./components/MyFills";
 import { OpenOrders } from "./components/OpenOrders";
 import { OrderBook } from "./components/OrderBook";
+import type { BookTab } from "./components/PanelTabs";
 import { Tape } from "./components/Tape";
 import { Ticket } from "./components/Ticket";
 import { TopBar } from "./components/TopBar";
 import { API_URL } from "./lib/api";
 import { WS_URL } from "./lib/feed";
 import { decimalsForStep, formatAtoms } from "./lib/num";
+import type { AuthMode, Credentials } from "./lib/types";
 import { useExchange } from "./useExchange";
 
 /** After this long without an update the book is called stale, not live. */
@@ -20,6 +22,23 @@ export default function App() {
   const x = useExchange();
   const [price, setPrice] = useState("");
   const [now, setNow] = useState(() => Date.now());
+
+  // The book and the tape share a column; this decides which is showing.
+  const [bookTab, setBookTab] = useState<BookTab>("book");
+
+  // The screen is public. Nothing asks for an account until something is
+  // about to move money, and then this opens — never on arrival.
+  const [authOpen, setAuthOpen] = useState(false);
+  const openAuth = useCallback(() => setAuthOpen(true), []);
+  const closeAuth = useCallback(() => setAuthOpen(false), []);
+
+  // Not memoised: the panel only calls this from its submit handler, never
+  // from a dependency array, so a stable identity would buy nothing.
+  async function signIn(mode: AuthMode, credentials: Credentials) {
+    // Only reached on success — a failure throws and the panel shows why.
+    await x.signIn(mode, credentials);
+    setAuthOpen(false);
+  }
 
   // A book nobody has updated for a while is not necessarily broken, but the
   // user must be able to tell. Ticking drives that readout.
@@ -56,7 +75,9 @@ export default function App() {
           lastSide={lastPrint?.taker_side ?? null}
           status={x.status}
           stale={x.bookStale}
+          day={x.day}
           session={x.session}
+          onSignIn={openAuth}
           onSignOut={x.signOut}
         />
 
@@ -67,29 +88,34 @@ export default function App() {
           onInterval={x.setInterval}
         />
 
-        <OrderBook
-          market={x.market}
-          bids={x.bids}
-          asks={x.asks}
-          spread={x.spread}
-          depthSeq={x.depthSeq}
-          stale={looksStale}
-          staleReason={staleReason}
-          mine={x.mine}
-          lastPrice={lastPrint?.price ?? null}
-          lastSide={lastPrint?.taker_side ?? null}
-          onPickPrice={(picked) => {
-            if (!x.market) return;
-            setPrice(
-              formatAtoms(picked, x.market.quote_decimals, {
-                places: decimalsForStep(x.market.tick_size, x.market.quote_decimals),
-                group: false,
-              }),
-            );
-          }}
-        />
-
-        <Tape market={x.market} prints={x.tape} />
+        {/* One column, two readings of the same market. */}
+        {bookTab === "book" ? (
+          <OrderBook
+            market={x.market}
+            bids={x.bids}
+            asks={x.asks}
+            spread={x.spread}
+            depthSeq={x.depthSeq}
+            stale={looksStale}
+            staleReason={staleReason}
+            mine={x.mine}
+            lastPrice={lastPrint?.price ?? null}
+            lastSide={lastPrint?.taker_side ?? null}
+            tab={bookTab}
+            onTab={setBookTab}
+            onPickPrice={(picked) => {
+              if (!x.market) return;
+              setPrice(
+                formatAtoms(picked, x.market.quote_decimals, {
+                  places: decimalsForStep(x.market.tick_size, x.market.quote_decimals),
+                  group: false,
+                }),
+              );
+            }}
+          />
+        ) : (
+          <Tape market={x.market} prints={x.tape} tab={bookTab} onTab={setBookTab} />
+        )}
 
         <section className="panel ticket bal">
           <Ticket
@@ -99,10 +125,17 @@ export default function App() {
             onPriceChange={setPrice}
             bestBid={bestBid}
             bestAsk={bestAsk}
-            disabled={x.session === null}
+            signedIn={x.session !== null}
+            onRequireSignIn={openAuth}
             onSubmit={x.submitOrder}
           />
-          <Balances balances={x.balances} markets={x.markets} onDeposit={x.credit} />
+          <Balances
+            balances={x.balances}
+            markets={x.markets}
+            signedIn={x.session !== null}
+            onRequireSignIn={openAuth}
+            onDeposit={x.credit}
+          />
         </section>
 
         <OpenOrders orders={x.openOrders} markets={x.markets} onCancel={(id) => void x.cancel(id)} />
@@ -132,7 +165,7 @@ export default function App() {
         </footer>
       </div>
 
-      {x.session === null && <Auth onSubmit={x.signIn} />}
+      {authOpen && x.session === null && <Auth onSubmit={signIn} onClose={closeAuth} />}
 
       {x.error && (
         <div className="toast" role="alert">

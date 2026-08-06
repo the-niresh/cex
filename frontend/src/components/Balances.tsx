@@ -6,6 +6,9 @@ import { Num } from "./format";
 interface Props {
   balances: Balance[];
   markets: Market[];
+  signedIn: boolean;
+  /** Same reasoning as the ticket's: crediting an account needs an account. */
+  onRequireSignIn(): void;
   onDeposit(asset: string, amount: bigint): Promise<void>;
 }
 
@@ -18,7 +21,7 @@ function decimalsFor(asset: string, markets: Market[]): bigint {
   return 8n;
 }
 
-export function Balances({ balances, markets, onDeposit }: Props) {
+export function Balances({ balances, markets, signedIn, onRequireSignIn, onDeposit }: Props) {
   const assets = [...new Set(markets.flatMap((m) => [m.quote, m.base]))];
   const [asset, setAsset] = useState("USDT");
   const [amount, setAmount] = useState("10000");
@@ -29,6 +32,10 @@ export function Balances({ balances, markets, onDeposit }: Props) {
   const ready = !sending && parsed !== null && parsed > 0n;
 
   async function credit() {
+    if (!signedIn) {
+      onRequireSignIn();
+      return;
+    }
     if (!ready || parsed === null) return;
     setSending(true);
     try {
@@ -51,7 +58,9 @@ export function Balances({ balances, markets, onDeposit }: Props) {
       </div>
       <div className="scroll">
         {balances.length === 0 ? (
-          <div className="empty">no balances — deposit below</div>
+          <div className="empty">
+            {signedIn ? "no balances — deposit below" : "sign in to hold a balance"}
+          </div>
         ) : (
           balances.map((balance) => {
             const dp = decimalsFor(balance.asset, markets);
@@ -91,8 +100,8 @@ export function Balances({ balances, markets, onDeposit }: Props) {
               onChange={(e) => setAmount(e.target.value)}
             />
           </div>
-          <button className="ghost" disabled={!ready} onClick={() => void credit()}>
-            {sending ? "…" : "CREDIT"}
+          <button className="ghost" disabled={signedIn && !ready} onClick={() => void credit()}>
+            {!signedIn ? "LOG IN" : sending ? "…" : "CREDIT"}
           </button>
         </div>
         {parsed !== null && (

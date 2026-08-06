@@ -1,6 +1,6 @@
 import type { FeedStatus } from "../lib/feed";
-import { decimalsForStep, formatAtoms } from "../lib/num";
-import type { Market, Session } from "../lib/types";
+import { decimalsForStep } from "../lib/num";
+import type { DayStats, Market, Session } from "../lib/types";
 import { Num } from "./format";
 
 interface Props {
@@ -12,7 +12,9 @@ interface Props {
   lastSide: "BUY" | "SELL" | null;
   status: FeedStatus;
   stale: boolean;
+  day: DayStats | null;
   session: Session | null;
+  onSignIn(): void;
   onSignOut(): void;
 }
 
@@ -32,10 +34,14 @@ export function TopBar({
   lastSide,
   status,
   stale,
+  day,
   session,
+  onSignIn,
   onSignOut,
 }: Props) {
   const degraded = stale || status !== "live";
+  const priceDp = market ? decimalsForStep(market.tick_size, market.quote_decimals) : 2;
+  const qtyDp = market ? decimalsForStep(market.lot_size, market.base_decimals) : 5;
 
   return (
     <header className="panel topbar">
@@ -66,6 +72,10 @@ export function TopBar({
       </nav>
 
       {market && (
+        /* The day, not the rule book. Tick, lot and fees used to live here and
+           are all still stated where they bite — beside the price and quantity
+           inputs, and in the ticket's fee readout — whereas nothing on the
+           screen said what the market had actually done since yesterday. */
         <div className="ticker">
           <div className="field">
             <span className="k">last</span>
@@ -73,34 +83,64 @@ export function TopBar({
               {lastPrice === null ? (
                 "—"
               ) : (
-                <Num
-                  atoms={lastPrice}
-                  decimals={market.quote_decimals}
-                  places={decimalsForStep(market.tick_size, market.quote_decimals)}
-                />
+                <Num atoms={lastPrice} decimals={market.quote_decimals} places={priceDp} />
               )}
             </span>
           </div>
           <div className="field">
-            <span className="k">tick</span>
-            <span className="v">
-              {formatAtoms(market.tick_size, market.quote_decimals, {
-                places: decimalsForStep(market.tick_size, market.quote_decimals),
-              })}
+            <span className="k">24h change</span>
+            <span className={`v chg${day === null ? "" : day.change < 0n ? " dn" : " up"}`}>
+              {day === null ? (
+                "—"
+              ) : (
+                <>
+                  {day.change < 0n ? "−" : "+"}
+                  <Num
+                    atoms={day.change < 0n ? -day.change : day.change}
+                    decimals={market.quote_decimals}
+                    places={priceDp}
+                  />
+                  {day.changePct !== null && (
+                    <span className="pct">
+                      {day.changePct < 0 ? "" : "+"}
+                      {day.changePct.toFixed(2)}%
+                    </span>
+                  )}
+                </>
+              )}
             </span>
           </div>
           <div className="field">
-            <span className="k">lot</span>
+            <span className="k">24h high</span>
             <span className="v">
-              {formatAtoms(market.lot_size, market.base_decimals, {
-                places: decimalsForStep(market.lot_size, market.base_decimals),
-              })}
+              {day === null ? (
+                "—"
+              ) : (
+                <Num atoms={day.high} decimals={market.quote_decimals} places={priceDp} />
+              )}
             </span>
           </div>
           <div className="field">
-            <span className="k">fees mkr/tkr</span>
+            <span className="k">24h low</span>
             <span className="v">
-              {String(market.maker_fee_bps)} / {String(market.taker_fee_bps)} <span className="d">bps</span>
+              {day === null ? (
+                "—"
+              ) : (
+                <Num atoms={day.low} decimals={market.quote_decimals} places={priceDp} />
+              )}
+            </span>
+          </div>
+          <div className="field">
+            <span className="k">24h volume</span>
+            <span className="v">
+              {day === null ? (
+                "—"
+              ) : (
+                <>
+                  <Num atoms={day.volume} decimals={market.base_decimals} places={qtyDp} />{" "}
+                  <span className="d">{market.base}</span>
+                </>
+              )}
             </span>
           </div>
         </div>
@@ -114,8 +154,9 @@ export function TopBar({
       </div>
 
       <div className="who">
+        {session?.name && <span className="name">{session.name}</span>}
         <span className="id">{session ? `${session.user_id.slice(0, 8)}…` : "signed out"}</span>
-        {session && <button onClick={onSignOut}>LOG OUT</button>}
+        <button onClick={session ? onSignOut : onSignIn}>{session ? "LOG OUT" : "LOG IN"}</button>
       </div>
     </header>
   );

@@ -2,12 +2,20 @@ import { decimalsForStep } from "../lib/num";
 import type { Market } from "../lib/types";
 import type { TapePrint } from "../useExchange";
 import { Num, clockMs } from "./format";
+import { PanelTabs, type BookTab } from "./PanelTabs";
 
-export function Tape({ market, prints }: { market: Market | null; prints: TapePrint[] }) {
+interface Props {
+  market: Market | null;
+  prints: TapePrint[];
+  tab: BookTab;
+  onTab(next: BookTab): void;
+}
+
+export function Tape({ market, prints, tab, onTab }: Props) {
   return (
     <section className="panel tape">
       <div className="phead">
-        <h2>Tape</h2>
+        <PanelTabs tab={tab} onTab={onTab} />
         <span className="meta">
           last <b>{prints.length}</b>
         </span>

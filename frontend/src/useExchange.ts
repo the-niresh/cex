@@ -4,8 +4,11 @@ import { DepthBook, type Level } from "./lib/book";
 import { Feed, type FeedStatus } from "./lib/feed";
 import { clearSession, loadSession, saveSession } from "./lib/session";
 import type {
+  AuthMode,
   Balance,
   Candle,
+  Credentials,
+  DayStats,
   Interval,
   Market,
   MyFill,
@@ -69,6 +72,8 @@ export interface Exchange {
   candles: Candle[];
   interval: Interval;
   setInterval(interval: Interval): void;
+  /** The last 24 hours, for the header strip. `null` until the first load. */
+  day: DayStats | null;
 
   balances: Balance[];
   openOrders: Order[];
@@ -80,7 +85,7 @@ export interface Exchange {
   error: string | null;
   clearError(): void;
 
-  signIn(username: string, password: string, mode: "login" | "register"): Promise<void>;
+  signIn(mode: AuthMode, credentials: Credentials): Promise<void>;
   signOut(): void;
   submitOrder(request: api.PlaceOrderRequest): Promise<void>;
   cancel(orderId: bigint): Promise<void>;
@@ -97,6 +102,9 @@ export function useExchange(): Exchange {
   const [book, setBook] = useState<BookView>(EMPTY_BOOK);
   const [tape, setTape] = useState<TapePrint[]>([]);
   const [candles, setCandles] = useState<Candle[]>([]);
+  // Kept apart from `candles`: those follow whichever interval the chart is
+  // showing, and the header strip always means the last 24 hours.
+  const [dayCandles, setDayCandles] = useState<Candle[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
   const [fills, setFills] = useState<MyFill[]>([]);
@@ -282,7 +290,51 @@ export function useExchange(): Exchange {
     return () => controller.abort();
   }, [symbol, interval, failed, resyncs]);
 
+  // 24 hourly buckets, whatever the chart happens to be showing.
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .candles(symbol, "1h", 24, controller.signal)
+      .then(setDayCandles)
+      .catch((e: unknown) => {
+        if (!controller.signal.aborted) failed(e);
+      });
+    return () => controller.abort();
+  }, [symbol, failed, resyncs]);
+
   // ── derived ───────────────────────────────────────────────────────────
+
+  /** Fold the day's buckets into the one line the header reads from. */
+  const day = useMemo<DayStats | null>(() => {
+    const first = dayCandles[0];
+    const last = dayCandles[dayCandles.length - 1];
+    if (!first || !last) return null;
+
+    let high = first.high;
+    let low = first.low;
+    let volume = 0n;
+    let trades = 0n;
+    for (const candle of dayCandles) {
+      if (candle.high > high) high = candle.high;
+      if (candle.low < low) low = candle.low;
+      volume += candle.volume;
+      trades += candle.trades;
+    }
+
+    const change = last.close - first.open;
+    return {
+      open: first.open,
+      close: last.close,
+      high,
+      low,
+      volume,
+      trades,
+      change,
+      // Basis points first, so the division stays in integers until the very
+      // last step — the same reason nothing else here touches a float.
+      changePct: first.open > 0n ? Number((change * 10_000n) / first.open) / 100 : null,
+    };
+  }, [dayCandles]);
 
   const market = useMemo(
     () => markets.find((m) => m.symbol === symbol) ?? null,
@@ -303,14 +355,15 @@ export function useExchange(): Exchange {
 
   // ── actions ───────────────────────────────────────────────────────────
 
-  const signIn = useCallback(
-    async (username: string, password: string, mode: "login" | "register") => {
-      const next = mode === "register" ? await api.register(username, password) : await api.login(username, password);
-      saveSession(next);
-      setSession(next);
-    },
-    [],
-  );
+  const signIn = useCallback(async (mode: AuthMode, credentials: Credentials) => {
+    const { username, name, password } = credentials;
+    const next =
+      mode === "register"
+        ? await api.register(username, name, password)
+        : await api.login(username, password);
+    saveSession(next);
+    setSession(next);
+  }, []);
 
   const signOut = useCallback(() => {
     clearSession();
@@ -389,6 +442,7 @@ export function useExchange(): Exchange {
     mine,
     tape,
     candles,
+    day,
     interval,
     setInterval: setIntervalState,
     balances,

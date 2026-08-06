@@ -132,9 +132,46 @@ export interface Candle {
 
 export type Interval = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
+/**
+ * The last 24 hours of a market, folded out of 24 hourly candles.
+ *
+ * Derived on the client rather than served: the exchange has no 24h stats
+ * endpoint, and `GET /candles?interval=1h&limit=24` already carries every
+ * number this needs exactly. Volume is in **base** atoms because that is what
+ * a candle records — quoting it in the quote asset would mean multiplying each
+ * bucket by its own close, which is an estimate, not a figure.
+ */
+export interface DayStats {
+  open: bigint;
+  close: bigint;
+  high: bigint;
+  low: bigint;
+  /** Base atoms traded across the window. */
+  volume: bigint;
+  trades: bigint;
+  /** `close - open`, in quote atoms. */
+  change: bigint;
+  /** Percent, or `null` when the window opened at zero. */
+  changePct: number | null;
+}
+
+export type AuthMode = "login" | "register";
+
+/** What the sign-in panel collects. `name` only matters when registering. */
+export interface Credentials {
+  username: string;
+  name: string;
+  password: string;
+}
+
 export interface Session {
   user_id: string;
   token: string;
+  /**
+   * What to call this person on screen. `null` for accounts registered before
+   * the API asked for a name, so every reader has to cope without one.
+   */
+  name: string | null;
 }
 
 // ───────────────────────── the private feed ─────────────────────────

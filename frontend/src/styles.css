@@ -42,7 +42,13 @@ body{
   font-size:var(--data);
   font-variant-numeric:tabular-nums;
   -webkit-font-smoothing:antialiased;
-  overflow:hidden;
+  /* Horizontal is `auto`, not `hidden`, on purpose. `hidden` propagates to the
+     viewport and takes the scrollbar *and* the wheel with it, so anything past
+     the right edge stops existing rather than being one swipe away. The layout
+     below is meant to never need this; it is here so that when it is needed,
+     the user is inconvenienced rather than locked out. */
+  overflow-x:auto;
+  overflow-y:hidden;
 }
 /* Grain. 2% — you should never notice it, only miss it if removed. */
 body::after{
@@ -55,8 +61,14 @@ body::after{
 .screen{
   height:100vh;
   display:grid;
-  grid-template-columns:minmax(420px,1fr) 370px 240px 320px;
-  grid-template-rows:36px minmax(0,1fr) 170px 22px;
+  /* chart · book-or-trades · ticket. The book and the tape share a column
+     through the tabs in their panel head, which is what took the floor from
+     1353px down to 1112px — most of the width problem solved by showing one
+     of two things that were never read at the same moment. */
+  grid-template-columns:minmax(420px,1fr) 370px 320px;
+  /* The first row is `auto`, not `36px`: the topbar wraps rather than clips
+     (see `.topbar`), and a wrapped topbar needs the row to grow with it. */
+  grid-template-rows:auto minmax(0,1fr) 170px 22px;
   gap:1px;
   background:var(--rule);
 }
@@ -66,7 +78,51 @@ body::after{
 /* Placed explicitly. Auto-placement would push the fills panel below the
    full-width open orders row instead of into the column beside the ticket. */
 .open-orders{grid-column:1/3;grid-row:3}
-.fills{grid-column:3/5;grid-row:3}
+.fills{grid-column:3/4;grid-row:3}
+
+/* ─────────────────────────── responsive ───────────────────────────
+
+   Three columns want 1112px (420+370+320 and two hairlines). Below that
+   the ticket column would fall off the side of a screen that cannot
+   scroll, taking BUY, SELL and LOG OUT with it — and a 1280px viewport
+   is exactly what a 1920 screen at 150% zoom gives you, which is not an
+   exotic setup.
+
+   Two narrower bands. Neither hides anything: columns give ground until
+   they cannot, and below the width where any grid works at all the whole
+   thing becomes an ordinary scrolling page. */
+
+/* ── the same three columns, tightened, down to a 852px floor. */
+@media (max-width:1111px){
+  .screen{
+    grid-template-columns:minmax(260px,1fr) minmax(300px,370px) minmax(290px,320px);
+  }
+  .open-orders{grid-column:1/2;grid-row:3}
+  .fills{grid-column:2/4;grid-row:3}
+}
+
+/* ── one column, and the page scrolls.
+      Under ~880px no side-by-side arrangement leaves the ladder or the
+      ticket a usable width, so stop pretending: stack them, give each a
+      height it can actually show something in, and let the document
+      scroll like any other page. */
+@media (max-width:879px){
+  body{overflow-x:auto;overflow-y:auto}
+  .screen{
+    height:auto;min-height:100vh;
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:none;
+    grid-auto-rows:auto;
+  }
+  /* Every panel is its own row; the explicit placements above would
+     otherwise pin them into columns that no longer exist. */
+  .open-orders,.fills{grid-column:1/-1;grid-row:auto}
+  .chart{min-height:300px}
+  .book{min-height:430px}
+  .tape{min-height:240px}
+  .open-orders,.fills{min-height:190px}
+  .statusbar{height:auto;min-height:22px;flex-wrap:wrap;row-gap:2px}
+}
 
 /* ─────────────────────────── panel chrome ─────────────────────────── */
 
@@ -103,10 +159,23 @@ body::after{
 
 /* ─────────────────────────── topbar ─────────────────────────── */
 
+/* Wraps rather than clips, at every width. The row is brand · markets ·
+   ticker · connection · account, which needs about 1100px; below that the
+   account block used to be the child that fell off the end of a panel with
+   `overflow:hidden`, taking LOG OUT with it. Wrapping costs a second 36px
+   row on narrow screens and loses nothing, and because it is driven by the
+   content rather than a breakpoint there is no width where it guesses wrong. */
 .topbar{
   background:var(--panel-hi);
-  display:flex;flex-direction:row;align-items:stretch;
+  display:flex;flex-direction:row;align-items:stretch;flex-wrap:wrap;
+  min-height:36px;
 }
+/* Each wrapped line still stands 36px tall. */
+.topbar > *{min-height:36px}
+/* The tabs are the widest single block, so they give ground first and take
+   their own scrollbar instead of pushing everything after them off the row. */
+.markets{min-width:0;overflow-x:auto;scrollbar-width:none}
+.markets::-webkit-scrollbar{display:none}
 .brand{
   display:flex;align-items:center;gap:8px;padding:0 14px 0 12px;
   border-right:1px solid var(--rule);
@@ -134,7 +203,13 @@ body::after{
 .markets .up{color:var(--buy)}
 .markets .dn{color:var(--sell)}
 
-.ticker{display:flex;align-items:center;gap:22px;padding:0 18px;margin-left:4px}
+/* Wraps internally as well as being wrappable itself: five readouts do not fit
+   on one line of a phone, and the topbar wrapping alone would only move the
+   whole block down rather than letting it fold. */
+.ticker{
+  display:flex;align-items:center;flex-wrap:wrap;min-width:0;
+  column-gap:22px;row-gap:2px;padding:6px 18px;margin-left:4px;
+}
 .ticker .field{display:flex;flex-direction:column;gap:1px;line-height:1.15}
 .ticker .k{
   font-family:var(--chrome);font-size:8px;font-weight:500;letter-spacing:.14em;
@@ -143,6 +218,11 @@ body::after{
 .ticker .v{font-size:11.5px;color:var(--ink-2)}
 .ticker .last{font-size:15px;font-weight:500;color:var(--buy);letter-spacing:-.01em}
 .ticker .last::after{content:' ▲';font-size:9px;vertical-align:2px}
+/* The day's move is the one number here that carries a direction, so it is
+   the only one that carries a colour. */
+.ticker .chg.up{color:var(--buy)}
+.ticker .chg.dn{color:var(--sell)}
+.ticker .chg .pct{margin-left:6px;opacity:.75}
 
 .conn{
   margin-left:auto;display:flex;align-items:center;gap:9px;
@@ -154,10 +234,15 @@ body::after{
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 .who{display:flex;align-items:center;gap:10px;padding:0 12px;border-left:1px solid var(--rule)}
+.who .name{font-size:10.5px;color:var(--ink);max-width:14ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .who .id{font-size:10px;color:var(--ink-3)}
+/* 24px is the floor for a pointer target (WCAG 2.2 target size). This one
+   was 11px tall — the single hardest thing on the screen to click, and it
+   is the control that signs you out. */
 .who button{
   all:unset;cursor:pointer;font-family:var(--chrome);font-size:8.5px;font-weight:500;
   letter-spacing:.12em;color:var(--ink-4);
+  display:flex;align-items:center;min-height:24px;padding:0 4px;
 }
 .who button:hover{color:var(--ink-2)}
 
@@ -166,7 +251,8 @@ body::after{
    canvas and resizes properly; this one is drawn to the 1440 column
    width, so the axis labels condense slightly at other widths. */
 
-.tfs{display:flex;flex:0 0 24px;background:var(--panel-hi);border-bottom:1px solid var(--rule)}
+/* 26px so each timeframe button clears the 24px target floor. */
+.tfs{display:flex;flex:0 0 26px;background:var(--panel-hi);border-bottom:1px solid var(--rule)}
 .tfs button{
   all:unset;cursor:pointer;display:flex;align-items:center;padding:0 13px;
   border-right:1px solid var(--rule);
@@ -219,7 +305,42 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .book .chead,.book .lvl{grid-template-columns:1fr 92px 74px 82px;column-gap:8px}
 .book .chead span,.book .lvl span{text-align:right}
 
-.ladder{display:flex;flex-direction:column;flex:1;min-height:0}
+/* `relative` so the sweep card can be placed against a hovered row's offset. */
+.ladder{display:flex;flex-direction:column;flex:1;min-height:0;position:relative}
+
+/* What taking everything down to the hovered level would cost. It parks in
+   the half you are *not* pointing at — hovering a bid puts it up among the
+   asks and vice versa — so it never covers the rows being read and never
+   chases the cursor. */
+.sweep{
+  position:absolute;right:9px;z-index:3;pointer-events:none;
+  min-width:172px;padding:5px 8px;
+  background:var(--panel-hi);
+  box-shadow:inset 0 0 0 1px var(--rule-hi),0 6px 18px rgb(0 0 0/.45);
+}
+.sweep.high{top:6px}
+.sweep.low{bottom:6px}
+.sweep .r{display:flex;align-items:baseline;gap:12px;line-height:1.5}
+.sweep .k{
+  font-family:var(--chrome);font-size:8px;font-weight:500;letter-spacing:.13em;
+  color:var(--ink-4);text-transform:uppercase;
+}
+.sweep .v{margin-left:auto;font-size:10.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* Resting size, bids against asks. Reads as one bar, not two panels. */
+.imbalance{
+  display:flex;flex:0 0 16px;height:16px;
+  border-top:1px solid var(--rule);font-size:9px;letter-spacing:.06em;
+}
+.imbalance > *{display:flex;align-items:center;min-width:0;overflow:hidden}
+.imbalance .b{
+  justify-content:flex-start;padding-left:9px;
+  background:color-mix(in oklab,var(--buy) 22%,transparent);color:var(--buy);
+}
+.imbalance .s{
+  justify-content:flex-end;padding-right:9px;
+  background:color-mix(in oklab,var(--sell) 22%,transparent);color:var(--sell);
+}
 /* Scoped to the ladder on purpose: `side` also names the buy/sell cell in the
    fills and open-orders rows, and an unscoped flex column here silently turned
    those cells into column containers. */
@@ -297,6 +418,16 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 
 /* Ticket, balances and deposit share one column and stack. The ticket keeps
    its natural height, balances absorb the slack, deposit pins to the bottom. */
+
+/* Three panels in one column need ~545px. Under that — a 1366×768 laptop
+   once the browser has taken its chrome — the deposit block used to fall
+   out of the bottom of a container with `overflow:hidden`, so funding an
+   account became impossible on a short screen. Scroll instead of clip. */
+.ticket{overflow-y:auto}
+/* So the balances list yields height to the panels around it but never
+   collapses to a sliver of itself on the way. */
+.bal .scroll{min-height:56px}
+
 .ticket .body{padding:9px;display:flex;flex-direction:column;gap:9px;flex:none}
 .ticket .body > *{flex:none}
 .ticket .phead + .phead,.ticket .phead ~ .phead{border-top:1px solid var(--rule)}
@@ -307,6 +438,8 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
   background:var(--panel-hi);
   font-family:var(--chrome);font-size:9px;font-weight:700;letter-spacing:.16em;
   color:var(--ink-4);transition:color .1s,background .1s;
+  /* BUY/SELL and LIMIT/MARKET; 23px before, one short of the target floor. */
+  min-height:24px;display:flex;align-items:center;justify-content:center;
 }
 .seg button:hover{color:var(--ink-2)}
 .seg.side button[aria-selected="true"]{
@@ -319,6 +452,18 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 }
 .seg.kind button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule-hi)}
 
+/* The BOOK / TRADES pair sits in a panel head where a title used to, so it is
+   sized like a title rather than like the ticket's full-width controls. */
+.seg.tabs{
+  grid-template-columns:auto auto;gap:0;background:transparent;
+  margin:0 -9px 0 0;align-self:stretch;
+}
+.seg.tabs button{
+  padding:0 10px;background:transparent;min-height:24px;
+  font-size:8.5px;letter-spacing:.14em;color:var(--ink-4);
+}
+.seg.tabs button[aria-selected="true"]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink-2)}
+
 .field{display:flex;flex-direction:column;gap:3px}
 .field .flabel{display:flex;align-items:baseline}
 .field .flabel .k{
@@ -326,13 +471,27 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
   color:var(--ink-3);text-transform:uppercase;
 }
 .field .flabel .rule{margin-left:auto;font-size:9.5px;color:var(--ink-4)}
+
+/* MID / BBO — one click each, straight off the book. Sits between the label
+   and the tick rule, so the reference values stay where the eye expects. */
+.field .flabel .picks{display:flex;gap:1px;margin-left:10px}
+.field .flabel .picks button{
+  all:unset;cursor:pointer;padding:2px 6px;min-height:20px;
+  display:flex;align-items:center;
+  font-family:var(--chrome);font-size:8px;font-weight:700;letter-spacing:.12em;
+  color:var(--ink-3);box-shadow:inset 0 0 0 1px var(--rule-hi);
+}
+.field .flabel .picks button:hover{color:var(--ink);background:var(--panel-hi)}
+.field .flabel .picks button:disabled{color:var(--ink-4);cursor:default;box-shadow:inset 0 0 0 1px var(--rule)}
 .input{
   display:flex;align-items:center;background:#080a0c;
   border:1px solid var(--rule-hi);
 }
 .input:focus-within{border-color:var(--ink-3)}
 .input input{
-  all:unset;flex:1;padding:6px 8px;font-family:var(--mono);font-size:13px;
+  /* `min-width:0` for the same reason as the deposit row: a flex item's
+     default `min-width:auto` refuses to go below an input's intrinsic width. */
+  all:unset;flex:1;min-width:0;padding:6px 8px;font-family:var(--mono);font-size:13px;
   color:var(--ink);font-variant-numeric:tabular-nums;
 }
 .input .unit{
@@ -345,6 +504,8 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .pcts button{
   all:unset;cursor:pointer;text-align:center;padding:4px 0;background:var(--panel-hi);
   font-size:10px;color:var(--ink-3);
+  /* 21px before; see the note on .who button. */
+  min-height:24px;display:flex;align-items:center;justify-content:center;
 }
 .pcts button:hover{background:#161b22;color:var(--ink)}
 
@@ -386,11 +547,16 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .brow .lock.zero{color:var(--ink-4)}
 
 .deposit{padding:9px;display:flex;flex-direction:column;gap:7px}
-.deposit .row{display:grid;grid-template-columns:1fr 118px;gap:7px}
+/* `minmax(0,1fr)`, not `1fr`. A bare `1fr` floors at the column's min-content
+   width, and this column holds a text input whose intrinsic width is ~180px —
+   so on a narrow ticket the row silently grew past the panel and pushed the
+   CREDIT button off the side. */
+.deposit .row{display:grid;grid-template-columns:minmax(0,1fr) 118px;gap:7px}
 .assets{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule)}
 .assets button{
   all:unset;cursor:pointer;text-align:center;padding:5px 0;background:var(--panel-hi);
   font-size:10px;letter-spacing:.06em;color:var(--ink-4);
+  min-height:24px;display:flex;align-items:center;justify-content:center;
 }
 .assets button:hover{color:var(--ink-2)}
 .assets button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule-hi)}
@@ -403,13 +569,32 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 
 /* ─────────────────────────── open orders + fills ─────────────────────────── */
 
-/* id age market side type tif | price qty filled remaining notional | prog status ✕ slack */
+/* Headings and rows in one horizontal scroller, so they cannot drift apart
+   and a panel narrower than the table scrolls instead of clipping. `.scroll`
+   keeps owning the vertical axis inside it. */
+.tbl{flex:1;min-height:0;display:flex;flex-direction:column;overflow-x:auto}
+.tbl .chead,.tbl .scroll{min-width:var(--tbl-min,0)}
+/* An empty panel has no columns to hold in alignment, so it fills the panel
+   and centres its message there — rather than centring inside a width the
+   user would have to scroll sideways to read. */
+.tbl:has(.empty) .chead,.tbl:has(.empty) .scroll{min-width:0}
+.tbl::-webkit-scrollbar{height:6px}
+.tbl::-webkit-scrollbar-thumb{background:var(--rule-hi)}
+.tbl::-webkit-scrollbar-track{background:transparent}
+
+/* id age market side type | price qty filled | prog status ✕
+   Eleven columns, which is what the rows actually render — the template used
+   to declare fifteen (tif, remaining, notional, slack), so every heading from
+   Price rightwards sat over the wrong column and the table claimed 130px more
+   width than the panel had. Progress takes the slack; the rest are fixed so
+   the numbers stay in tabular alignment. */
+.open-orders{--tbl-min:824px}
 .open-orders .chead,.oo{
-  grid-template-columns:56px 56px 92px 46px 52px 38px 100px 92px 92px 92px 108px 72px 76px 24px 1fr;
+  grid-template-columns:56px 56px 92px 46px 52px 100px 92px 92px minmax(40px,1fr) 76px 24px;
   column-gap:8px;
 }
-.open-orders .chead span:nth-child(n+7),.oo span:nth-child(n+7){text-align:right}
-.open-orders .chead span:nth-child(14),.oo span:nth-child(14){text-align:center}
+.open-orders .chead span:nth-child(n+6),.oo span:nth-child(n+6){text-align:right}
+.open-orders .chead span:nth-child(11),.oo span:nth-child(11){text-align:center}
 .oo{display:grid;align-items:center;height:21px;padding:0 9px;border-left:2px solid transparent}
 .oo:hover{background:#12161c}
 .oo .id{color:var(--ink-4)}
@@ -427,12 +612,17 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .oo .prog{height:3px;background:var(--rule);position:relative;margin-left:12px}
 .oo .prog i{position:absolute;inset:0 auto 0 0;background:var(--ink-3)}
 .oo.buy .prog i{background:color-mix(in oklab,var(--buy) 80%,transparent)}
+/* The cancel button. 11px of glyph in a 21px row; the row is as tall as it
+   gets, so the target is widened instead to keep it clickable. */
 .oo .x{
   all:unset;cursor:pointer;text-align:center;color:var(--ink-4);font-size:11px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  min-width:24px;align-self:stretch;
 }
 .oo .x:hover{color:var(--sell)}
 
-.fills .chead,.fl{grid-template-columns:66px 92px 56px 1fr 80px 88px;column-gap:8px}
+.fills{--tbl-min:470px}
+.fills .chead,.fl{grid-template-columns:66px 92px 56px minmax(72px,1fr) 80px 88px;column-gap:8px}
 .fills .chead span:nth-child(n+4),.fl span:nth-child(n+4){text-align:right}
 .fills .chead span:nth-child(-n+3),.fl span:nth-child(-n+3){text-align:left}
 .fl{display:grid;align-items:center;height:19px;padding:0 9px}
@@ -496,17 +686,26 @@ body.stale .submit{
 .auth{
   position:fixed;inset:0;z-index:50;
   display:flex;align-items:center;justify-content:center;
-  /* Translucent on purpose: the book and the tape are public and already
-     streaming, so the exchange should visibly be alive before you sign in. */
+  /* Translucent on purpose: this only opens when someone tries to trade, and
+     the book behind it is public and still streaming while it is up. */
   background:color-mix(in oklab,var(--bg) 78%,transparent);
   backdrop-filter:blur(2px);
 }
+/* Covers the screen so a click anywhere outside the form dismisses it. The
+   form sits above it, so its own clicks never reach this. */
+.auth .scrim{position:absolute;inset:0}
 .auth form{
+  position:relative;
   width:320px;background:var(--panel);
   box-shadow:inset 0 0 0 1px var(--rule);
   display:flex;flex-direction:column;
 }
 .auth .phead{border-bottom:1px solid var(--rule)}
+.auth .phead .close{
+  all:unset;cursor:pointer;margin-left:auto;padding:0 2px;
+  font-size:11px;line-height:1;color:var(--ink-4);
+}
+.auth .phead .close:hover{color:var(--ink)}
 .auth .body{padding:14px;display:flex;flex-direction:column;gap:10px}
 .auth .seg{grid-template-columns:1fr 1fr}
 .auth .note{font-size:10px;color:var(--ink-4);line-height:1.5}

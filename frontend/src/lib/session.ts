@@ -16,7 +16,13 @@ export function loadSession(): Session | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<Session>;
     if (typeof parsed.token !== "string" || typeof parsed.user_id !== "string") return null;
-    return { token: parsed.token, user_id: parsed.user_id };
+    // The name is a label, so a stored session that predates it is still a
+    // valid session — missing it must not sign anyone out.
+    return {
+      token: parsed.token,
+      user_id: parsed.user_id,
+      name: typeof parsed.name === "string" ? parsed.name : null,
+    };
   } catch {
     return null;
   }
