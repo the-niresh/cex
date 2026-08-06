@@ -52,8 +52,7 @@ async fn subscriber(cfg: &Config) -> redis::aio::PubSub {
 }
 
 #[tokio::test]
-async fn a_query_is_answered_quickly_even_though_the_command_stream_is_idle_and_block_ms_is_huge()
-{
+async fn a_query_is_answered_quickly_even_though_the_command_stream_is_idle_and_block_ms_is_huge() {
     let dir = tempfile::tempdir().unwrap();
     let cfg = test_config(dir.path());
     let mut c = conn(&cfg).await;
@@ -215,7 +214,10 @@ async fn commands_and_queries_interleaved_under_load_land_on_the_exact_expected_
             user_id: alice,
         })
         .unwrap();
-        let _: i64 = query_conn.lpush(&cfg.queries_queue, query_json).await.unwrap();
+        let _: i64 = query_conn
+            .lpush(&cfg.queries_queue, query_json)
+            .await
+            .unwrap();
     }
 
     // Wait for every deposit to be acked before asking for the final total —
@@ -224,7 +226,10 @@ async fn commands_and_queries_interleaved_under_load_land_on_the_exact_expected_
     let mut stream = sub.on_message();
     let started = std::time::Instant::now();
     while !pending.is_empty() {
-        assert!(started.elapsed() < deadline, "commands did not all ack in time");
+        assert!(
+            started.elapsed() < deadline,
+            "commands did not all ack in time"
+        );
         let msg = tokio::time::timeout(deadline, stream.next())
             .await
             .expect("timed out waiting for acks")
@@ -241,7 +246,10 @@ async fn commands_and_queries_interleaved_under_load_land_on_the_exact_expected_
         user_id: alice,
     })
     .unwrap();
-    let _: i64 = query_conn.lpush(&cfg.queries_queue, query_json).await.unwrap();
+    let _: i64 = query_conn
+        .lpush(&cfg.queries_queue, query_json)
+        .await
+        .unwrap();
     let answer = wait_for(&mut sub, query_rid, Duration::from_secs(5)).await;
 
     match answer.result {
