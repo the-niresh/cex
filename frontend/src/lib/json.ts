@@ -30,3 +30,25 @@ export function parseExact(text: string): unknown {
     return /^-?\d+$/.test(source) ? BigInt(source) : value;
   });
 }
+
+/**
+ * Serialise, emitting every `bigint` as an exact JSON number.
+ *
+ * `JSON.stringify` throws on a bigint, and the obvious workaround — a replacer
+ * returning `Number(value)` — reintroduces the very rounding the rest of this
+ * file exists to prevent, silently, on the way *out*. `JSON.rawJSON` is the
+ * one mechanism that writes the digits verbatim.
+ */
+export function stringifyExact(value: unknown): string {
+  return JSON.stringify(value, (_key: string, v: unknown) => {
+    if (typeof v !== "bigint") return v;
+
+    const raw = (JSON as { rawJSON?: (text: string) => unknown }).rawJSON;
+    if (!raw) {
+      throw new Error(
+        "this runtime cannot emit exact 64-bit integers in JSON; a recent browser is required",
+      );
+    }
+    return raw(v.toString());
+  });
+}
