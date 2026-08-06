@@ -27,6 +27,16 @@ export interface TapePrint {
 }
 
 const TAPE_LIMIT = 60;
+
+/**
+ * A counter for tape row keys.
+ *
+ * `seq` alone is not unique: one command can produce several fills — a taker
+ * sweeping two makers is one seq with two prints — and `GET /trades/:symbol`
+ * does not return the index within the batch. Duplicate keys make React drop
+ * or duplicate rows, which on a tape means prints that silently never appear.
+ */
+let nextPrintKey = 0;
 const BOOK_DEPTH = 14;
 
 /** The ladder as the screen renders it — plain data, not the live book. */
@@ -143,7 +153,7 @@ export function useExchange(): Exchange {
       publishBook();
       setTape(
         recent.map((t: PublicTrade) => ({
-          key: `${t.seq}`,
+          key: `s${t.seq}-${nextPrintKey++}`,
           price: t.price,
           qty: t.qty,
           taker_side: t.taker_side,
@@ -211,7 +221,7 @@ export function useExchange(): Exchange {
         if (update.symbol !== symbolRef.current) return;
         setTape((current) => {
           const print: TapePrint = {
-            key: `live-${Date.now()}-${current.length}-${update.price}`,
+            key: `live-${nextPrintKey++}`,
             price: update.price,
             qty: update.qty,
             taker_side: update.taker_side,
