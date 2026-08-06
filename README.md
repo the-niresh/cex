@@ -25,7 +25,7 @@ price feed and three command types:
 |---|---|
 | `cex-core` — matching, ledger, settlement, snapshots, idempotency | Built · 132 tests |
 | `cex-proto` — wire types | Built · 18 tests |
-| `engine` — stream consumer, snapshots, crash recovery, boot lock | Built · 53 tests |
+| `engine` — stream consumer, snapshots, crash recovery, boot lock, concurrent query serving | Built · 56 tests |
 | `api` — loopback, auth, REST routes | Built · 74 tests |
 | `persist` — Postgres history writer | Built · 27 tests |
 | `ws` — market data fan-out | Built · 52 tests |
@@ -104,9 +104,6 @@ npm run lint
 npm test             # unit: the number layer and the depth book
 npm run e2e          # playwright, against the running stack
 ```
-
-The engine must be started with **`CEX_BLOCK_MS=200`** or every snapshot fetch takes five seconds
-— see [Known gaps](#known-gaps).
 
 Three things it does that are easy to get wrong:
 
@@ -269,7 +266,11 @@ replay silently produces different state than the original run.
 
 **3. Reads are not logged.** State-changing requests are `Command` and go on the durable stream.
 Read-only requests are `Query` and travel on a separate channel. Logging reads would bloat the
-log and slow every replay for no benefit.
+log and slow every replay for no benefit. Queries are answered by a task of their own — its own
+Redis connection, `BRPOP`ing that channel — running concurrently with the command loop's blocking
+`XREAD`, so a read is never held up by the command stream being idle. The two share the engine's
+state behind a lock, so a read is still exact: it always reflects every command already applied,
+never a half-applied one.
 
 **4. Locked balances are real.** Funds backing a resting order move from `available` to `locked`
 and are released exactly, never recomputed. `check_invariants()` asserts after every command that
@@ -352,14 +353,6 @@ Named rather than buried, because each is a real thing to fix:
 * **Replay republishes events.** Recovery re-applies commands after the snapshot, so downstream
   consumers see duplicates and must deduplicate on `seq`. `persist` does it against a table and
   `ws` against an in-memory high-water mark; anything new must do it too.
-* **A read waits for the command loop.** The engine answers queries between blocking stream
-  reads — `poll_queries()` drains, then `step()` sits in `XREAD BLOCK` for `CEX_BLOCK_MS`. When the
-  command stream is idle, a read therefore waits up to a full block: measured at **5.0s on the
-  5000ms default, 0.2s at 200ms**. That is invisible to a batch client and ruinous for a screen,
-  where every snapshot refetch stalls. `CEX_BLOCK_MS=200` makes it usable and is what the frontend
-  and its tests assume, but it is a mitigation, not a fix — latency still tracks the block. The
-  real fix is to stop serialising reads behind the blocking read: give queries their own
-  connection and `BRPOP`, with the state behind a lock so commands stay strictly ordered.
 * **A batch `persist` cannot write stalls history rather than skipping it.** The entries stay
   unacknowledged and are retried forever. That is the right failure — better a stalled writer that
   pages you than one that quietly drops trades — but it does need someone watching for it.
