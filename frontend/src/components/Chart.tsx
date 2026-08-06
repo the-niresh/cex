@@ -40,7 +40,7 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     const chart = createChart(container, {
       layout: {
         background: { color: "transparent" },
-        textColor: "#545d69",
+        textColor: "#818d9c",
         fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
         fontSize: 10,
       },
@@ -49,10 +49,19 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
         horzLines: { color: "#171b21" },
       },
       rightPriceScale: { borderColor: "#232a33" },
-      timeScale: { borderColor: "#232a33", timeVisible: true, secondsVisible: false },
+      timeScale: {
+        borderColor: "#232a33",
+        timeVisible: true,
+        secondsVisible: false,
+        // `fitContent` below spreads whatever bars exist across the panel. On a
+        // young market that is a dozen bars over 900px, and a candle 100px wide
+        // stops reading as a candle. Capping the spacing keeps them the shape
+        // of candles; the panel is simply not full yet, which is the truth.
+        maxBarSpacing: 18,
+      },
       crosshair: {
-        vertLine: { color: "#545d69", width: 1, style: 2, labelBackgroundColor: "#101317" },
-        horzLine: { color: "#545d69", width: 1, style: 2, labelBackgroundColor: "#101317" },
+        vertLine: { color: "#818d9c", width: 1, style: 2, labelBackgroundColor: "#101317" },
+        horzLine: { color: "#818d9c", width: 1, style: 2, labelBackgroundColor: "#101317" },
       },
       autoSize: true,
     });

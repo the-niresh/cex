@@ -2,7 +2,11 @@
    cex — spot trading terminal.
 
    Rules this look is built on:
-     · hue is reserved for buy and sell. Everything else is grey.
+     · green and red mean *side*, and nothing else. A third hue — azure —
+       means *control*: it marks what can be pressed or focused, and never
+       carries data. Everything else is grey.
+     · every grey is solved for a contrast ratio, not chosen by eye. The
+       ramp bottoms out at 4.5:1, and nothing on the screen sits below it.
      · no radius, no shadow, no gradient except depth bars.
      · every number is tabular; the decimals are dimmed so the eye lands
        on the magnitude first.
@@ -16,18 +20,38 @@
   --rule:      #171b21;
   --rule-hi:   #232a33;
 
-  --ink:       #d7dce3;
-  --ink-2:     #8892a0;
-  --ink-3:     #545d69;
-  --ink-4:     #363d47;
+  /* Four steps, each solved for a contrast ratio against `--panel` rather than
+     picked by eye. The old ramp bottomed out at 1.8:1 and 2.9:1 — below the
+     point at which text is reliably visible — and those two carried every
+     column heading and field label on the screen. The structure was being
+     drawn in a colour you could not see, which is why the whole thing read as
+     a dark void with a few bright numbers floating in it.
+
+     The two lower steps are solved against `--panel-hi`, not `--panel`: panel
+     heads, the topbar and the spread strip all sit on the lighter surface, so
+     solving against the darker one leaves them a fraction short exactly where
+     the labels live. Ratios below are the worst case, on `--panel-hi`. */
+  --ink:       #d7dbe0;   /* 13.4:1 — the numbers themselves */
+  --ink-2:     #9ea7b3;   /*  7.6:1 — secondary values */
+  --ink-3:     #818d9c;   /*  5.5:1 — labels, dimmed data */
+  --ink-4:     #717e8f;   /*  4.5:1 — column headings, meta. WCAG floor. */
 
   --buy:       #17b98a;
   --sell:      #e2504f;
   --warn:      #d99a2b;
+  /* A third hue, for controls. Green and red mean *side* here and nothing
+     else, so without this every button competed with the data for the same
+     two colours and nothing on the screen read as "you can press me".
+     Azure at 212° is 49° clear of buy and further from sell and warn. */
+  --accent:    #6099da;
+  --accent-dim:#4c7eb6;
 
   --row:       19px;
   --data:      11.5px;
-  --label:     9.5px;
+  /* Was 9.5px, with 8px and 8.5px hardcoded in a dozen places. Small type at
+     the bottom of the ramp is the pairing that fails hardest, so the floor
+     went up as the contrast did. */
+  --label:     10px;
 
   --mono:      'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --chrome:    'Martian Mono', var(--mono);
@@ -133,18 +157,22 @@ body::after{
   background:var(--panel-hi);
   border-bottom:1px solid var(--rule);
 }
+/* A panel head names the panel; it should win against the meta beside it and
+   against the column headings below it, so the eye can find the edges of a
+   region before it starts reading numbers. Previously all three were within
+   one step of each other and the hierarchy was flat. */
 .phead h2{
   font-family:var(--chrome);font-weight:700;font-size:var(--label);
-  letter-spacing:.14em;color:var(--ink-2);text-transform:uppercase;
+  letter-spacing:.14em;color:var(--ink);text-transform:uppercase;
 }
 .phead .meta{margin-left:auto;color:var(--ink-4);font-size:10px;letter-spacing:.04em}
-.phead .meta b{color:var(--ink-3);font-weight:500}
+.phead .meta b{color:var(--ink-2);font-weight:500}
 
 /* Column headings inside a table panel. */
 .chead{
-  display:grid;height:18px;flex:0 0 18px;align-items:center;
+  display:grid;height:20px;flex:0 0 20px;align-items:center;
   padding:0 9px;
-  font-family:var(--chrome);font-size:8.5px;font-weight:500;letter-spacing:.12em;
+  font-family:var(--chrome);font-size:10px;font-weight:500;letter-spacing:.12em;
   color:var(--ink-4);text-transform:uppercase;
   border-bottom:1px solid var(--rule);
 }
@@ -184,7 +212,7 @@ body::after{
   font-family:var(--chrome);font-weight:700;font-size:11px;letter-spacing:.24em;
   color:var(--ink);
 }
-.brand .build{font-size:9px;color:var(--ink-4);letter-spacing:.06em}
+.brand .build{font-size:10px;color:var(--ink-4);letter-spacing:.06em}
 
 .markets{display:flex}
 .markets button{
@@ -197,7 +225,7 @@ body::after{
 .markets button:hover{background:#141920}
 .markets .sym{font-size:10.5px;letter-spacing:.06em;color:var(--ink-3)}
 .markets .lp{font-size:10px;color:var(--ink-4)}
-.markets button[aria-selected="true"]{background:var(--panel);box-shadow:inset 0 -2px 0 var(--ink-2)}
+.markets button[aria-selected="true"]{background:var(--panel);box-shadow:inset 0 -2px 0 var(--accent)}
 .markets button[aria-selected="true"] .sym{color:var(--ink)}
 .markets button[aria-selected="true"] .lp{color:var(--ink-3)}
 .markets .up{color:var(--buy)}
@@ -212,12 +240,12 @@ body::after{
 }
 .ticker .field{display:flex;flex-direction:column;gap:1px;line-height:1.15}
 .ticker .k{
-  font-family:var(--chrome);font-size:8px;font-weight:500;letter-spacing:.14em;
+  font-family:var(--chrome);font-size:9.5px;font-weight:500;letter-spacing:.14em;
   color:var(--ink-4);text-transform:uppercase;
 }
 .ticker .v{font-size:11.5px;color:var(--ink-2)}
-.ticker .last{font-size:15px;font-weight:500;color:var(--buy);letter-spacing:-.01em}
-.ticker .last::after{content:' ▲';font-size:9px;vertical-align:2px}
+.ticker .last{font-size:20px;font-weight:500;color:var(--buy);letter-spacing:-.015em;line-height:1.1}
+.ticker .last::after{content:' ▲';font-size:11px;vertical-align:3px}
 /* The day's move is the one number here that carries a direction, so it is
    the only one that carries a colour. */
 .ticker .chg.up{color:var(--buy)}
@@ -229,7 +257,7 @@ body::after{
   padding:0 12px;border-left:1px solid var(--rule);
 }
 .conn .dot{width:6px;height:6px;background:var(--buy);animation:pulse 2.4s ease-in-out infinite}
-.conn .txt{font-family:var(--chrome);font-size:8.5px;font-weight:700;letter-spacing:.16em;color:var(--ink-2)}
+.conn .txt{font-family:var(--chrome);font-size:10px;font-weight:700;letter-spacing:.16em;color:var(--ink-2)}
 .conn .rtt{font-size:10px;color:var(--ink-4)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
@@ -240,7 +268,7 @@ body::after{
    was 11px tall — the single hardest thing on the screen to click, and it
    is the control that signs you out. */
 .who button{
-  all:unset;cursor:pointer;font-family:var(--chrome);font-size:8.5px;font-weight:500;
+  all:unset;cursor:pointer;font-family:var(--chrome);font-size:10px;font-weight:500;
   letter-spacing:.12em;color:var(--ink-4);
   display:flex;align-items:center;min-height:24px;padding:0 4px;
 }
@@ -256,11 +284,11 @@ body::after{
 .tfs button{
   all:unset;cursor:pointer;display:flex;align-items:center;padding:0 13px;
   border-right:1px solid var(--rule);
-  font-family:var(--chrome);font-size:8.5px;font-weight:500;letter-spacing:.12em;
+  font-family:var(--chrome);font-size:10px;font-weight:500;letter-spacing:.12em;
   color:var(--ink-4);transition:color .1s linear;
 }
 .tfs button:hover{color:var(--ink-2)}
-.tfs button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink-3)}
+.tfs button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
 
 .ohlc{
   display:flex;align-items:center;gap:4px;
@@ -268,7 +296,7 @@ body::after{
   font-size:10.5px;border-bottom:1px solid var(--rule);
 }
 .ohlc .k{
-  font-family:var(--chrome);font-size:8px;font-weight:700;letter-spacing:.1em;
+  font-family:var(--chrome);font-size:9.5px;font-weight:700;letter-spacing:.1em;
   color:var(--ink-4);margin-left:9px;
 }
 .ohlc .k:first-child{margin-left:0}
@@ -281,7 +309,7 @@ body::after{
 /* Hairlines stay hairlines however the viewBox is scaled. */
 .plot line{vector-effect:non-scaling-stroke}
 .plot .g{stroke:var(--rule);stroke-width:1}
-.plot .ax{fill:var(--ink-4);font-family:var(--mono);font-size:9px;text-anchor:start}
+.plot .ax{fill:var(--ink-4);font-family:var(--mono);font-size:10px;text-anchor:start}
 .plot .ax.tm{text-anchor:middle}
 .plot .b.up,.plot .v.up{fill:var(--buy)}
 .plot .b.dn,.plot .v.dn{fill:var(--sell)}
@@ -292,7 +320,7 @@ body::after{
 .plot .w.dn{stroke:var(--sell)}
 .plot .last{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3}
 .plot .tag{fill:var(--panel-hi);stroke:var(--rule-hi);stroke-width:1;vector-effect:non-scaling-stroke}
-.plot .tagt{fill:var(--ink);font-family:var(--mono);font-size:9px;text-anchor:start}
+.plot .tagt{fill:var(--ink);font-family:var(--mono);font-size:10px;text-anchor:start}
 .plot .x{stroke:var(--ink-4);stroke-width:1;stroke-dasharray:2 4}
 
 /* The chart is data too: it goes flat and grey the moment the feed does. */
@@ -322,7 +350,7 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .sweep.low{bottom:6px}
 .sweep .r{display:flex;align-items:baseline;gap:12px;line-height:1.5}
 .sweep .k{
-  font-family:var(--chrome);font-size:8px;font-weight:500;letter-spacing:.13em;
+  font-family:var(--chrome);font-size:9.5px;font-weight:500;letter-spacing:.13em;
   color:var(--ink-4);text-transform:uppercase;
 }
 .sweep .v{margin-left:auto;font-size:10.5px;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -330,7 +358,7 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 /* Resting size, bids against asks. Reads as one bar, not two panels. */
 .imbalance{
   display:flex;flex:0 0 16px;height:16px;
-  border-top:1px solid var(--rule);font-size:9px;letter-spacing:.06em;
+  border-top:1px solid var(--rule);font-size:10px;letter-spacing:.06em;
 }
 .imbalance > *{display:flex;align-items:center;min-width:0;overflow:hidden}
 .imbalance .b{
@@ -378,15 +406,15 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .lvl:hover .price{text-decoration:underline;text-underline-offset:3px}
 
 .spread{
-  flex:0 0 32px;display:flex;align-items:center;gap:14px;padding:0 9px;
+  flex:0 0 38px;display:flex;align-items:center;gap:14px;padding:0 9px;
   background:var(--panel-hi);
   border-top:1px solid var(--rule-hi);border-bottom:1px solid var(--rule-hi);
 }
-.spread .last{font-size:15px;font-weight:500;color:var(--buy)}
-.spread .last::after{content:' ▲';font-size:9px;vertical-align:2px}
+.spread .last{font-size:18px;font-weight:500;color:var(--buy);letter-spacing:-.01em}
+.spread .last::after{content:' ▲';font-size:10px;vertical-align:2px}
 .spread .gap{margin-left:auto;text-align:right;line-height:1.2}
 .spread .gap .k{
-  font-family:var(--chrome);font-size:8px;font-weight:500;letter-spacing:.14em;
+  font-family:var(--chrome);font-size:9.5px;font-weight:500;letter-spacing:.14em;
   color:var(--ink-4);text-transform:uppercase;display:block;
 }
 .spread .gap .v{font-size:11px;color:var(--ink-2)}
@@ -436,7 +464,7 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .seg button{
   all:unset;cursor:pointer;text-align:center;padding:6px 0;
   background:var(--panel-hi);
-  font-family:var(--chrome);font-size:9px;font-weight:700;letter-spacing:.16em;
+  font-family:var(--chrome);font-size:10px;font-weight:700;letter-spacing:.16em;
   color:var(--ink-4);transition:color .1s,background .1s;
   /* BUY/SELL and LIMIT/MARKET; 23px before, one short of the target floor. */
   min-height:24px;display:flex;align-items:center;justify-content:center;
@@ -450,7 +478,7 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
   background:color-mix(in oklab,var(--sell) 16%,var(--panel));
   color:var(--sell);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--sell) 40%,transparent);
 }
-.seg.kind button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule-hi)}
+.seg.kind button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--accent-dim)}
 
 /* The BOOK / TRADES pair sits in a panel head where a title used to, so it is
    sized like a title rather than like the ticket's full-width controls. */
@@ -460,14 +488,14 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 }
 .seg.tabs button{
   padding:0 10px;background:transparent;min-height:24px;
-  font-size:8.5px;letter-spacing:.14em;color:var(--ink-4);
+  font-size:10px;letter-spacing:.14em;color:var(--ink-4);
 }
-.seg.tabs button[aria-selected="true"]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink-2)}
+.seg.tabs button[aria-selected="true"]{color:var(--ink);box-shadow:inset 0 -2px 0 var(--accent)}
 
 .field{display:flex;flex-direction:column;gap:3px}
 .field .flabel{display:flex;align-items:baseline}
 .field .flabel .k{
-  font-family:var(--chrome);font-size:8.5px;font-weight:500;letter-spacing:.14em;
+  font-family:var(--chrome);font-size:10px;font-weight:500;letter-spacing:.14em;
   color:var(--ink-3);text-transform:uppercase;
 }
 .field .flabel .rule{margin-left:auto;font-size:9.5px;color:var(--ink-4)}
@@ -478,7 +506,7 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .field .flabel .picks button{
   all:unset;cursor:pointer;padding:2px 6px;min-height:20px;
   display:flex;align-items:center;
-  font-family:var(--chrome);font-size:8px;font-weight:700;letter-spacing:.12em;
+  font-family:var(--chrome);font-size:9.5px;font-weight:700;letter-spacing:.12em;
   color:var(--ink-3);box-shadow:inset 0 0 0 1px var(--rule-hi);
 }
 .field .flabel .picks button:hover{color:var(--ink);background:var(--panel-hi)}
@@ -487,7 +515,7 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
   display:flex;align-items:center;background:#080a0c;
   border:1px solid var(--rule-hi);
 }
-.input:focus-within{border-color:var(--ink-3)}
+.input:focus-within{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-dim)}
 .input input{
   /* `min-width:0` for the same reason as the deposit row: a flex item's
      default `min-width:auto` refuses to go below an input's intrinsic width. */
@@ -516,7 +544,7 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 }
 .readout .r:last-child{border-bottom:0}
 .readout .k{
-  font-family:var(--chrome);font-size:8.5px;font-weight:500;letter-spacing:.13em;
+  font-family:var(--chrome);font-size:10px;font-weight:500;letter-spacing:.13em;
   color:var(--ink-4);text-transform:uppercase;
 }
 .readout .v{margin-left:auto;color:var(--ink-2)}
@@ -559,11 +587,11 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
   min-height:24px;display:flex;align-items:center;justify-content:center;
 }
 .assets button:hover{color:var(--ink-2)}
-.assets button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--rule-hi)}
+.assets button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--accent-dim)}
 .ghost{
   all:unset;cursor:pointer;text-align:center;padding:6px 0;
   box-shadow:inset 0 0 0 1px var(--rule-hi);color:var(--ink-2);
-  font-family:var(--chrome);font-size:9px;font-weight:700;letter-spacing:.14em;
+  font-family:var(--chrome);font-size:10px;font-weight:700;letter-spacing:.14em;
 }
 .ghost:hover{background:var(--panel-hi);color:var(--ink)}
 
@@ -633,7 +661,7 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 .fl.sell .side,.fl.sell .p{color:var(--sell)}
 .fl .q{color:var(--ink-2)}
 /* maker/taker rides on the side cell rather than paying for a column of its own */
-.fl .role{color:var(--ink-4);font-size:9px;letter-spacing:.04em}
+.fl .role{color:var(--ink-4);font-size:10px;letter-spacing:.04em}
 
 /* ─────────────────────────── status bar ─────────────────────────── */
 
@@ -663,7 +691,7 @@ body.stale .conn .rtt{visibility:hidden}
 body.stale .staleband{
   display:flex;align-items:center;gap:8px;
   flex:0 0 20px;padding:0 9px;
-  color:var(--warn);font-family:var(--chrome);font-size:8.5px;font-weight:700;letter-spacing:.13em;
+  color:var(--warn);font-family:var(--chrome);font-size:10px;font-weight:700;letter-spacing:.13em;
   background:repeating-linear-gradient(-45deg,
     color-mix(in oklab,var(--warn) 11%,transparent) 0 6px,
     transparent 6px 12px);
@@ -730,7 +758,7 @@ body.stale .submit{
   font-size:10.5px;color:var(--ink);line-height:1.45;
 }
 .toast .k{
-  font-family:var(--chrome);font-size:8px;font-weight:700;letter-spacing:.14em;
+  font-family:var(--chrome);font-size:9.5px;font-weight:700;letter-spacing:.14em;
   color:var(--sell);flex:none;padding-top:1px;
 }
 .toast button{all:unset;cursor:pointer;color:var(--ink-4);margin-left:auto;flex:none}
