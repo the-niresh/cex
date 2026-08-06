@@ -64,7 +64,7 @@ body::after{
 .screen{
   height:100vh;
   display:grid;
-  grid-template-columns:minmax(440px,1fr) 320px 320px 340px;
+  grid-template-columns:minmax(420px,1fr) 370px 240px 320px;
   grid-template-rows:36px minmax(0,1fr) 170px 22px;
   gap:1px;
   background:var(--rule);
@@ -74,8 +74,8 @@ body::after{
 .panel{background:var(--panel);min-width:0;display:flex;flex-direction:column;overflow:hidden}
 /* Placed explicitly. Auto-placement would push the fills panel below the
    full-width open orders row instead of into the column beside the ticket. */
-.fills{grid-column:4;grid-row:2}
-.open-orders{grid-column:1/-1;grid-row:3}
+.open-orders{grid-column:1/3;grid-row:3}
+.fills{grid-column:3/5;grid-row:3}
 
 /* ─────────────────────────── panel chrome ─────────────────────────── */
 
@@ -170,11 +170,62 @@ body::after{
 }
 .who button:hover{color:var(--ink-2)}
 
+/* ─────────────────────────── chart ───────────────────────────
+   Static SVG standing in for lightweight-charts. The real one is a
+   canvas and resizes properly; this one is drawn to the 1440 column
+   width, so the axis labels condense slightly at other widths. */
+
+.tfs{display:flex;flex:0 0 24px;background:var(--panel-hi);border-bottom:1px solid var(--rule)}
+.tfs button{
+  all:unset;cursor:pointer;display:flex;align-items:center;padding:0 13px;
+  border-right:1px solid var(--rule);
+  font-family:var(--chrome);font-size:8.5px;font-weight:500;letter-spacing:.12em;
+  color:var(--ink-4);transition:color .1s linear;
+}
+.tfs button:hover{color:var(--ink-2)}
+.tfs button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 -2px 0 var(--ink-3)}
+
+.ohlc{
+  display:flex;align-items:center;gap:4px;
+  height:20px;flex:0 0 20px;padding:0 9px;
+  font-size:10.5px;border-bottom:1px solid var(--rule);
+}
+.ohlc .k{
+  font-family:var(--chrome);font-size:8px;font-weight:700;letter-spacing:.1em;
+  color:var(--ink-4);margin-left:9px;
+}
+.ohlc .k:first-child{margin-left:0}
+.ohlc .up{color:var(--buy)}
+.ohlc .dn{color:var(--sell)}
+.ohlc .n{color:var(--ink-2)}
+
+.plot{flex:1;min-height:0;position:relative}
+.plot svg{position:absolute;inset:0;width:100%;height:100%}
+/* Hairlines stay hairlines however the viewBox is scaled. */
+.plot line{vector-effect:non-scaling-stroke}
+.plot .g{stroke:var(--rule);stroke-width:1}
+.plot .ax{fill:var(--ink-4);font-family:var(--mono);font-size:9px;text-anchor:start}
+.plot .ax.tm{text-anchor:middle}
+.plot .b.up,.plot .v.up{fill:var(--buy)}
+.plot .b.dn,.plot .v.dn{fill:var(--sell)}
+/* Volume is context, not the subject — it must never outshout the candles. */
+.plot .v{opacity:.32}
+.plot .w{stroke-width:1}
+.plot .w.up{stroke:var(--buy)}
+.plot .w.dn{stroke:var(--sell)}
+.plot .last{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3}
+.plot .tag{fill:var(--panel-hi);stroke:var(--rule-hi);stroke-width:1;vector-effect:non-scaling-stroke}
+.plot .tagt{fill:var(--ink);font-family:var(--mono);font-size:9px;text-anchor:start}
+.plot .x{stroke:var(--ink-4);stroke-width:1;stroke-dasharray:2 4}
+
+/* The chart is data too: it goes flat and grey the moment the feed does. */
+body.stale .plot{filter:saturate(.15) brightness(.62)}
+
 /* ─────────────────────────── order book ─────────────────────────── */
 
 /* Numbers cluster right in one tight block; the left is left to the depth
    histogram, so bar and figure never fight for the same pixels. */
-.book .chead,.book .lvl{grid-template-columns:1fr 108px 100px 112px;column-gap:10px}
+.book .chead,.book .lvl{grid-template-columns:1fr 92px 74px 82px;column-gap:8px}
 .book .chead span,.book .lvl span{text-align:right}
 
 .ladder{display:flex;flex-direction:column;flex:1;min-height:0}
@@ -230,7 +281,7 @@ body::after{
 
 /* ─────────────────────────── tape ─────────────────────────── */
 
-.tape .chead,.tape .print{grid-template-columns:78px 1fr 84px}
+.tape .chead,.tape .print{grid-template-columns:76px 1fr 58px;column-gap:6px}
 .tape .chead span:nth-child(n+2),.tape .print span:nth-child(n+2){text-align:right}
 .tape .chead span:first-child,.tape .print span:first-child{text-align:left}
 
@@ -390,9 +441,9 @@ body::after{
 }
 .oo .x:hover{color:var(--sell)}
 
-.fills .chead,.fl{grid-template-columns:54px 46px 1fr 56px 62px;column-gap:8px}
-.fills .chead span:nth-child(n+3),.fl span:nth-child(n+3){text-align:right}
-.fills .chead span:nth-child(-n+2),.fl span:nth-child(-n+2){text-align:left}
+.fills .chead,.fl{grid-template-columns:66px 92px 56px 1fr 80px 88px;column-gap:8px}
+.fills .chead span:nth-child(n+4),.fl span:nth-child(n+4){text-align:right}
+.fills .chead span:nth-child(-n+3),.fl span:nth-child(-n+3){text-align:left}
 .fl{display:grid;align-items:center;height:19px;padding:0 9px}
 .fl:hover{background:#12161c}
 .fl .t{color:var(--ink-4);font-size:10.5px}
@@ -484,6 +535,234 @@ body.stale .submit{
       <button>LOG OUT</button>
     </div>
   </header>
+
+  <!-- ═══════════════════════ chart ═══════════════════════ -->
+  <section class="panel chart">
+    <div class="phead">
+      <h2>Chart</h2>
+      <span class="meta">BTC_USDT · <b>1m</b> · 60 bars</span>
+    </div>
+    <div class="tfs">
+      <button aria-selected="true">1m</button><button>5m</button><button>15m</button>
+      <button>1h</button><button>4h</button><button>1D</button>
+    </div>
+    <div class="ohlc"><span class="k">O</span><span class="up">50,157.80</span><span class="k">H</span><span class="up">50,164.11</span><span class="k">L</span><span class="dn">50,151.00</span><span class="k">C</span><span class="up">50,162.07</span><span class="k">V</span><span class="n">1.48110</span></div>
+    <div class="plot">
+      <svg viewBox="0 0 507 600" preserveAspectRatio="none" role="img" aria-label="BTC_USDT one minute candles">
+      <line class="g" x1="4" y1="450.0" x2="448" y2="450.0"/>
+      <text class="ax" x="452" y="453.2">50,130.07</text>
+      <line class="g" x1="4" y1="376.7" x2="448" y2="376.7"/>
+      <line class="g" x1="4" y1="303.3" x2="448" y2="303.3"/>
+      <text class="ax" x="452" y="306.5">50,152.91</text>
+      <line class="g" x1="4" y1="230.0" x2="448" y2="230.0"/>
+      <text class="ax" x="452" y="233.2">50,164.33</text>
+      <line class="g" x1="4" y1="156.7" x2="448" y2="156.7"/>
+      <text class="ax" x="452" y="159.9">50,175.75</text>
+      <line class="g" x1="4" y1="83.3" x2="448" y2="83.3"/>
+      <text class="ax" x="452" y="86.5">50,187.17</text>
+      <line class="g" x1="4" y1="10.0" x2="448" y2="10.0"/>
+      <text class="ax" x="452" y="13.2">50,198.59</text>
+      <line class="g" x1="4.0" y1="10" x2="4.0" y2="552"/>
+      <line class="g" x1="78.0" y1="10" x2="78.0" y2="552"/>
+      <text class="ax tm" x="78.0" y="572">08:52</text>
+      <line class="g" x1="152.0" y1="10" x2="152.0" y2="552"/>
+      <text class="ax tm" x="152.0" y="572">09:02</text>
+      <line class="g" x1="226.0" y1="10" x2="226.0" y2="552"/>
+      <text class="ax tm" x="226.0" y="572">09:12</text>
+      <line class="g" x1="300.0" y1="10" x2="300.0" y2="552"/>
+      <text class="ax tm" x="300.0" y="572">09:22</text>
+      <line class="g" x1="374.0" y1="10" x2="374.0" y2="552"/>
+      <text class="ax tm" x="374.0" y="572">09:32</text>
+      <line class="g" x1="448.0" y1="10" x2="448.0" y2="552"/>
+      <text class="ax tm" x="448.0" y="572">09:42</text>
+      <rect class="v dn" x="5.3" y="548.5" width="4.9" height="3.5"/>
+      <rect class="v up" x="12.7" y="496.7" width="4.9" height="55.3"/>
+      <rect class="v up" x="20.1" y="525.1" width="4.9" height="26.9"/>
+      <rect class="v up" x="27.5" y="528.1" width="4.9" height="23.9"/>
+      <rect class="v up" x="34.9" y="531.9" width="4.9" height="20.1"/>
+      <rect class="v dn" x="42.3" y="523.3" width="4.9" height="28.7"/>
+      <rect class="v dn" x="49.7" y="545.9" width="4.9" height="6.1"/>
+      <rect class="v up" x="57.1" y="525.8" width="4.9" height="26.2"/>
+      <rect class="v dn" x="64.5" y="535.9" width="4.9" height="16.1"/>
+      <rect class="v up" x="71.9" y="550.5" width="4.9" height="1.5"/>
+      <rect class="v dn" x="79.3" y="486.5" width="4.9" height="65.5"/>
+      <rect class="v dn" x="86.7" y="540.5" width="4.9" height="11.5"/>
+      <rect class="v up" x="94.1" y="509.2" width="4.9" height="42.8"/>
+      <rect class="v dn" x="101.5" y="524.7" width="4.9" height="27.3"/>
+      <rect class="v dn" x="108.9" y="523.1" width="4.9" height="28.9"/>
+      <rect class="v dn" x="116.3" y="530.5" width="4.9" height="21.5"/>
+      <rect class="v dn" x="123.7" y="483.7" width="4.9" height="68.3"/>
+      <rect class="v dn" x="131.1" y="530.9" width="4.9" height="21.1"/>
+      <rect class="v dn" x="138.5" y="528.9" width="4.9" height="23.1"/>
+      <rect class="v dn" x="145.9" y="504.1" width="4.9" height="47.9"/>
+      <rect class="v up" x="153.3" y="510.0" width="4.9" height="42.0"/>
+      <rect class="v dn" x="160.7" y="547.9" width="4.9" height="4.1"/>
+      <rect class="v dn" x="168.1" y="523.9" width="4.9" height="28.1"/>
+      <rect class="v dn" x="175.5" y="513.3" width="4.9" height="38.7"/>
+      <rect class="v dn" x="182.9" y="539.6" width="4.9" height="12.4"/>
+      <rect class="v dn" x="190.3" y="528.5" width="4.9" height="23.5"/>
+      <rect class="v up" x="197.7" y="493.4" width="4.9" height="58.6"/>
+      <rect class="v up" x="205.1" y="507.0" width="4.9" height="45.0"/>
+      <rect class="v up" x="212.5" y="476.7" width="4.9" height="75.3"/>
+      <rect class="v up" x="219.9" y="516.8" width="4.9" height="35.2"/>
+      <rect class="v dn" x="227.3" y="526.8" width="4.9" height="25.2"/>
+      <rect class="v up" x="234.7" y="532.7" width="4.9" height="19.3"/>
+      <rect class="v dn" x="242.1" y="517.9" width="4.9" height="34.1"/>
+      <rect class="v up" x="249.5" y="534.1" width="4.9" height="17.9"/>
+      <rect class="v up" x="256.9" y="524.8" width="4.9" height="27.2"/>
+      <rect class="v dn" x="264.3" y="502.2" width="4.9" height="49.8"/>
+      <rect class="v up" x="271.7" y="472.0" width="4.9" height="80.0"/>
+      <rect class="v up" x="279.1" y="550.2" width="4.9" height="1.8"/>
+      <rect class="v dn" x="286.5" y="491.7" width="4.9" height="60.3"/>
+      <rect class="v up" x="293.9" y="517.5" width="4.9" height="34.5"/>
+      <rect class="v dn" x="301.3" y="512.8" width="4.9" height="39.2"/>
+      <rect class="v up" x="308.7" y="531.8" width="4.9" height="20.2"/>
+      <rect class="v up" x="316.1" y="503.5" width="4.9" height="48.5"/>
+      <rect class="v up" x="323.5" y="548.9" width="4.9" height="3.1"/>
+      <rect class="v dn" x="330.9" y="550.7" width="4.9" height="1.3"/>
+      <rect class="v dn" x="338.3" y="537.5" width="4.9" height="14.5"/>
+      <rect class="v dn" x="345.7" y="494.9" width="4.9" height="57.1"/>
+      <rect class="v dn" x="353.1" y="550.7" width="4.9" height="1.3"/>
+      <rect class="v dn" x="360.5" y="521.8" width="4.9" height="30.2"/>
+      <rect class="v up" x="367.9" y="519.9" width="4.9" height="32.1"/>
+      <rect class="v up" x="375.3" y="506.4" width="4.9" height="45.6"/>
+      <rect class="v dn" x="382.7" y="489.1" width="4.9" height="62.9"/>
+      <rect class="v dn" x="390.1" y="535.1" width="4.9" height="16.9"/>
+      <rect class="v up" x="397.5" y="491.8" width="4.9" height="60.2"/>
+      <rect class="v dn" x="404.9" y="481.3" width="4.9" height="70.7"/>
+      <rect class="v dn" x="412.3" y="531.8" width="4.9" height="20.2"/>
+      <rect class="v dn" x="419.7" y="500.8" width="4.9" height="51.2"/>
+      <rect class="v up" x="427.1" y="508.1" width="4.9" height="43.9"/>
+      <rect class="v dn" x="434.5" y="549.4" width="4.9" height="2.6"/>
+      <rect class="v dn" x="441.9" y="481.6" width="4.9" height="70.4"/>
+      <line class="w dn" x1="7.7" y1="190.2" x2="7.7" y2="271.4"/>
+      <rect class="b dn" x="5.3" y="244.5" width="4.9" height="5.5"/>
+      <line class="w up" x1="15.1" y1="233.3" x2="15.1" y2="262.3"/>
+      <rect class="b up" x="12.7" y="239.9" width="4.9" height="10.1"/>
+      <line class="w up" x1="22.5" y1="221.8" x2="22.5" y2="250.9"/>
+      <rect class="b up" x="20.1" y="224.9" width="4.9" height="15.0"/>
+      <line class="w up" x1="29.9" y1="178.5" x2="29.9" y2="227.5"/>
+      <rect class="b up" x="27.5" y="189.1" width="4.9" height="35.8"/>
+      <line class="w up" x1="37.3" y1="96.8" x2="37.3" y2="197.3"/>
+      <rect class="b up" x="34.9" y="133.3" width="4.9" height="55.7"/>
+      <line class="w dn" x1="44.7" y1="123.3" x2="44.7" y2="198.3"/>
+      <rect class="b dn" x="42.3" y="133.3" width="4.9" height="56.1"/>
+      <line class="w dn" x1="52.1" y1="189.1" x2="52.1" y2="231.5"/>
+      <rect class="b dn" x="49.7" y="189.4" width="4.9" height="35.8"/>
+      <line class="w up" x1="59.5" y1="179.4" x2="59.5" y2="261.7"/>
+      <rect class="b up" x="57.1" y="185.6" width="4.9" height="39.6"/>
+      <line class="w dn" x1="66.9" y1="170.8" x2="66.9" y2="209.9"/>
+      <rect class="b dn" x="64.5" y="185.6" width="4.9" height="1.0"/>
+      <line class="w up" x1="74.3" y1="40.3" x2="74.3" y2="207.3"/>
+      <rect class="b up" x="71.9" y="128.3" width="4.9" height="57.3"/>
+      <line class="w dn" x1="81.7" y1="125.6" x2="81.7" y2="170.7"/>
+      <rect class="b dn" x="79.3" y="128.3" width="4.9" height="21.4"/>
+      <line class="w dn" x1="89.1" y1="131.0" x2="89.1" y2="175.7"/>
+      <rect class="b dn" x="86.7" y="149.7" width="4.9" height="11.5"/>
+      <line class="w up" x1="96.5" y1="107.8" x2="96.5" y2="161.9"/>
+      <rect class="b up" x="94.1" y="108.3" width="4.9" height="52.9"/>
+      <line class="w dn" x1="103.9" y1="53.7" x2="103.9" y2="137.4"/>
+      <rect class="b dn" x="101.5" y="108.3" width="4.9" height="3.5"/>
+      <line class="w dn" x1="111.3" y1="81.1" x2="111.3" y2="193.5"/>
+      <rect class="b dn" x="108.9" y="111.7" width="4.9" height="49.4"/>
+      <line class="w dn" x1="118.7" y1="150.2" x2="118.7" y2="222.6"/>
+      <rect class="b dn" x="116.3" y="161.1" width="4.9" height="19.4"/>
+      <line class="w dn" x1="126.1" y1="180.2" x2="126.1" y2="236.5"/>
+      <rect class="b dn" x="123.7" y="180.4" width="4.9" height="44.2"/>
+      <line class="w dn" x1="133.5" y1="207.7" x2="133.5" y2="287.9"/>
+      <rect class="b dn" x="131.1" y="224.6" width="4.9" height="37.3"/>
+      <line class="w dn" x1="140.9" y1="260.3" x2="140.9" y2="311.1"/>
+      <rect class="b dn" x="138.5" y="261.9" width="4.9" height="35.8"/>
+      <line class="w dn" x1="148.3" y1="287.6" x2="148.3" y2="311.5"/>
+      <rect class="b dn" x="145.9" y="297.6" width="4.9" height="9.2"/>
+      <line class="w up" x1="155.7" y1="245.1" x2="155.7" y2="327.4"/>
+      <rect class="b up" x="153.3" y="252.3" width="4.9" height="54.4"/>
+      <line class="w dn" x1="163.1" y1="240.6" x2="163.1" y2="287.0"/>
+      <rect class="b dn" x="160.7" y="252.3" width="4.9" height="12.2"/>
+      <line class="w dn" x1="170.5" y1="246.8" x2="170.5" y2="312.0"/>
+      <rect class="b dn" x="168.1" y="264.6" width="4.9" height="46.2"/>
+      <line class="w dn" x1="177.9" y1="266.6" x2="177.9" y2="333.4"/>
+      <rect class="b dn" x="175.5" y="310.8" width="4.9" height="19.8"/>
+      <line class="w dn" x1="185.3" y1="313.9" x2="185.3" y2="387.4"/>
+      <rect class="b dn" x="182.9" y="330.5" width="4.9" height="47.4"/>
+      <line class="w dn" x1="192.7" y1="363.2" x2="192.7" y2="411.9"/>
+      <rect class="b dn" x="190.3" y="377.9" width="4.9" height="5.4"/>
+      <line class="w up" x1="200.1" y1="363.8" x2="200.1" y2="395.5"/>
+      <rect class="b up" x="197.7" y="374.7" width="4.9" height="8.6"/>
+      <line class="w up" x1="207.5" y1="291.7" x2="207.5" y2="374.8"/>
+      <rect class="b up" x="205.1" y="338.0" width="4.9" height="36.7"/>
+      <line class="w up" x1="214.9" y1="294.5" x2="214.9" y2="344.2"/>
+      <rect class="b up" x="212.5" y="310.3" width="4.9" height="27.7"/>
+      <line class="w up" x1="222.3" y1="281.9" x2="222.3" y2="320.9"/>
+      <rect class="b up" x="219.9" y="298.3" width="4.9" height="12.0"/>
+      <line class="w dn" x1="229.7" y1="279.9" x2="229.7" y2="356.1"/>
+      <rect class="b dn" x="227.3" y="298.3" width="4.9" height="53.3"/>
+      <line class="w up" x1="237.1" y1="295.2" x2="237.1" y2="369.2"/>
+      <rect class="b up" x="234.7" y="314.2" width="4.9" height="37.4"/>
+      <line class="w dn" x1="244.5" y1="312.4" x2="244.5" y2="361.3"/>
+      <rect class="b dn" x="242.1" y="314.2" width="4.9" height="37.5"/>
+      <line class="w up" x1="251.9" y1="278.4" x2="251.9" y2="367.4"/>
+      <rect class="b up" x="249.5" y="311.0" width="4.9" height="40.7"/>
+      <line class="w up" x1="259.3" y1="261.4" x2="259.3" y2="315.5"/>
+      <rect class="b up" x="256.9" y="262.8" width="4.9" height="48.2"/>
+      <line class="w dn" x1="266.7" y1="235.1" x2="266.7" y2="324.6"/>
+      <rect class="b dn" x="264.3" y="262.8" width="4.9" height="50.8"/>
+      <line class="w up" x1="274.1" y1="288.7" x2="274.1" y2="331.5"/>
+      <rect class="b up" x="271.7" y="305.2" width="4.9" height="8.3"/>
+      <line class="w up" x1="281.5" y1="241.5" x2="281.5" y2="317.5"/>
+      <rect class="b up" x="279.1" y="287.1" width="4.9" height="18.1"/>
+      <line class="w dn" x1="288.9" y1="282.3" x2="288.9" y2="329.7"/>
+      <rect class="b dn" x="286.5" y="287.1" width="4.9" height="41.6"/>
+      <line class="w up" x1="296.3" y1="253.8" x2="296.3" y2="364.9"/>
+      <rect class="b up" x="293.9" y="275.2" width="4.9" height="53.5"/>
+      <line class="w dn" x1="303.7" y1="272.4" x2="303.7" y2="299.6"/>
+      <rect class="b dn" x="301.3" y="275.2" width="4.9" height="2.1"/>
+      <line class="w up" x1="311.1" y1="271.9" x2="311.1" y2="281.7"/>
+      <rect class="b up" x="308.7" y="271.9" width="4.9" height="5.3"/>
+      <line class="w up" x1="318.5" y1="231.4" x2="318.5" y2="315.6"/>
+      <rect class="b up" x="316.1" y="244.5" width="4.9" height="27.4"/>
+      <line class="w up" x1="325.9" y1="210.9" x2="325.9" y2="286.7"/>
+      <rect class="b up" x="323.5" y="223.1" width="4.9" height="21.4"/>
+      <line class="w dn" x1="333.3" y1="210.2" x2="333.3" y2="282.3"/>
+      <rect class="b dn" x="330.9" y="223.1" width="4.9" height="9.6"/>
+      <line class="w dn" x1="340.7" y1="216.8" x2="340.7" y2="276.8"/>
+      <rect class="b dn" x="338.3" y="232.7" width="4.9" height="13.6"/>
+      <line class="w dn" x1="348.1" y1="194.2" x2="348.1" y2="357.2"/>
+      <rect class="b dn" x="345.7" y="246.3" width="4.9" height="48.5"/>
+      <line class="w dn" x1="355.5" y1="266.4" x2="355.5" y2="310.9"/>
+      <rect class="b dn" x="353.1" y="294.8" width="4.9" height="12.9"/>
+      <line class="w dn" x1="362.9" y1="302.0" x2="362.9" y2="323.7"/>
+      <rect class="b dn" x="360.5" y="307.7" width="4.9" height="6.9"/>
+      <line class="w up" x1="370.3" y1="296.5" x2="370.3" y2="333.0"/>
+      <rect class="b up" x="367.9" y="302.9" width="4.9" height="11.7"/>
+      <line class="w up" x1="377.7" y1="244.5" x2="377.7" y2="303.5"/>
+      <rect class="b up" x="375.3" y="279.9" width="4.9" height="22.9"/>
+      <line class="w dn" x1="385.1" y1="270.5" x2="385.1" y2="348.6"/>
+      <rect class="b dn" x="382.7" y="279.9" width="4.9" height="56.5"/>
+      <line class="w dn" x1="392.5" y1="309.4" x2="392.5" y2="419.7"/>
+      <rect class="b dn" x="390.1" y="336.4" width="4.9" height="34.4"/>
+      <line class="w up" x1="399.9" y1="302.1" x2="399.9" y2="388.5"/>
+      <rect class="b up" x="397.5" y="325.5" width="4.9" height="45.3"/>
+      <line class="w dn" x1="407.3" y1="283.3" x2="407.3" y2="379.9"/>
+      <rect class="b dn" x="404.9" y="325.5" width="4.9" height="34.9"/>
+      <line class="w dn" x1="414.7" y1="333.2" x2="414.7" y2="393.2"/>
+      <rect class="b dn" x="412.3" y="360.4" width="4.9" height="13.4"/>
+      <line class="w dn" x1="422.1" y1="324.8" x2="422.1" y2="416.9"/>
+      <rect class="b dn" x="419.7" y="373.7" width="4.9" height="42.1"/>
+      <line class="w up" x1="429.5" y1="330.8" x2="429.5" y2="418.4"/>
+      <rect class="b up" x="427.1" y="363.8" width="4.9" height="52.0"/>
+      <line class="w dn" x1="436.9" y1="361.0" x2="436.9" y2="387.1"/>
+      <rect class="b dn" x="434.5" y="363.8" width="4.9" height="5.7"/>
+      <line class="w dn" x1="444.3" y1="350.9" x2="444.3" y2="389.8"/>
+      <rect class="b dn" x="441.9" y="369.5" width="4.9" height="1.0"/>
+      <line class="last" x1="4" y1="370.2" x2="448" y2="370.2"/>
+      <rect class="tag" x="448" y="363.2" width="53" height="14"/>
+      <text class="tagt" x="452" y="373.4">50,142.50</text>
+      <line class="x" x1="318.5" y1="10" x2="318.5" y2="552"/>
+      <line class="x" x1="4" y1="244.5" x2="448" y2="244.5"/>
+      </svg>
+    </div>
+  </section>
 
   <!-- ═══════════════════════ order book ═══════════════════════ -->
   <section class="panel book">
@@ -657,44 +936,40 @@ body.stale .submit{
       <span class="meta">4 live · <b>1,253.53 USDT</b> + <b>0.03750 BTC</b> locked</span>
     </div>
     <div class="chead">
-      <span>ID</span><span>Age</span><span>Market</span><span>Side</span><span>Type</span><span>TIF</span>
-      <span>Price</span><span>Qty</span><span>Filled</span><span>Remaining</span><span>Notional</span>
+      <span>ID</span><span>Age</span><span>Market</span><span>Side</span><span>Type</span>
+      <span>Price</span><span>Qty</span><span>Filled</span>
       <span>Progress</span><span>Status</span><span></span>
     </div>
     <div class="scroll">
       <div class="oo buy">
         <span class="id">#4821</span><span class="age">2m14s</span><span class="mkt">BTC_USDT</span>
-        <span class="side">BUY</span><span class="kind">LIMIT</span><span class="kind">GTC</span>
+        <span class="side">BUY</span><span class="kind">LIMIT</span>
         <span class="num">50,141.<span class="d">00</span></span><span class="num">0.<span class="d">02500</span></span>
-        <span class="num filled">0.<span class="d">01250</span></span><span class="num">0.<span class="d">01250</span></span>
-        <span class="num">1,253.<span class="d">525000</span></span>
+        <span class="num filled">0.<span class="d">01250</span></span>
         <span class="prog"><i style="width:50%"></i></span>
         <span class="st partial">PARTIAL</span><button class="x">✕</button>
       </div>
       <div class="oo buy">
         <span class="id">#4817</span><span class="age">6m02s</span><span class="mkt">BTC_USDT</span>
-        <span class="side">BUY</span><span class="kind">LIMIT</span><span class="kind">GTC</span>
+        <span class="side">BUY</span><span class="kind">LIMIT</span>
         <span class="num">50,135.<span class="d">00</span></span><span class="num">0.<span class="d">02000</span></span>
-        <span class="num filled">0.<span class="d">00000</span></span><span class="num">0.<span class="d">02000</span></span>
-        <span class="num">1,002.<span class="d">700000</span></span>
+        <span class="num filled">0.<span class="d">00000</span></span>
         <span class="prog"><i style="width:0%"></i></span>
         <span class="st">OPEN</span><button class="x">✕</button>
       </div>
       <div class="oo sell">
         <span class="id">#4809</span><span class="age">9m41s</span><span class="mkt">BTC_USDT</span>
-        <span class="side">SELL</span><span class="kind">LIMIT</span><span class="kind">GTC</span>
+        <span class="side">SELL</span><span class="kind">LIMIT</span>
         <span class="num">50,147.<span class="d">50</span></span><span class="num">0.<span class="d">02500</span></span>
-        <span class="num filled">0.<span class="d">00000</span></span><span class="num">0.<span class="d">02500</span></span>
-        <span class="num">1,253.<span class="d">687500</span></span>
+        <span class="num filled">0.<span class="d">00000</span></span>
         <span class="prog"><i style="width:0%"></i></span>
         <span class="st">OPEN</span><button class="x">✕</button>
       </div>
       <div class="oo sell">
         <span class="id">#4790</span><span class="age">18m07s</span><span class="mkt">ETH_USDT</span>
-        <span class="side">SELL</span><span class="kind">LIMIT</span><span class="kind">GTC</span>
+        <span class="side">SELL</span><span class="kind">LIMIT</span>
         <span class="num">2,980.<span class="d">500</span></span><span class="num">1.<span class="d">5000</span></span>
-        <span class="num filled">0.<span class="d">7500</span></span><span class="num">0.<span class="d">7500</span></span>
-        <span class="num">4,470.<span class="d">750000</span></span>
+        <span class="num filled">0.<span class="d">7500</span></span>
         <span class="prog"><i style="width:50%"></i></span>
         <span class="st partial">PARTIAL</span><button class="x">✕</button>
       </div>
@@ -707,15 +982,15 @@ body.stale .submit{
       <h2>My fills</h2>
       <span class="meta">fees <b>25.04 USDT</b></span>
     </div>
-    <div class="chead"><span>Time</span><span>Side</span><span>Price</span><span>Qty</span><span>Fee</span></div>
+    <div class="chead"><span>Time</span><span>Market</span><span>Side</span><span>Price</span><span>Qty</span><span>Fee</span></div>
     <div class="scroll">
-      <div class="fl buy"><span class="t">09:41:22</span><span class="side">BUY <span class="role">T</span></span><span class="num p">50,142.<span class="d">50</span></span><span class="num q">0.<span class="d">00500</span></span><span class="num f">0.<span class="d">125357</span></span></div>
-      <div class="fl buy"><span class="t">09:41:17</span><span class="side">BUY <span class="role">M</span></span><span class="num p">50,141.<span class="d">00</span></span><span class="num q">0.<span class="d">01250</span></span><span class="num f">0.<span class="d">125353</span></span></div>
-      <div class="fl sell"><span class="t">09:40:51</span><span class="side">SELL <span class="role">T</span></span><span class="num p">50,136.<span class="d">00</span></span><span class="num q">0.<span class="d">09000</span></span><span class="num f">2.<span class="d">256120</span></span></div>
-      <div class="fl sell"><span class="t">09:38:14</span><span class="side">SELL <span class="role">M</span></span><span class="num p">50,128.<span class="d">50</span></span><span class="num q">0.<span class="d">02000</span></span><span class="num f">0.<span class="d">200514</span></span></div>
-      <div class="fl buy"><span class="t">09:36:02</span><span class="side">BUY <span class="role">T</span></span><span class="num p">50,110.<span class="d">00</span></span><span class="num q">0.<span class="d">12500</span></span><span class="num f">3.<span class="d">131875</span></span></div>
-      <div class="fl buy"><span class="t">09:31:47</span><span class="side">BUY <span class="role">M</span></span><span class="num p">50,098.<span class="d">50</span></span><span class="num q">0.<span class="d">04000</span></span><span class="num f">0.<span class="d">400788</span></span></div>
-      <div class="fl sell"><span class="t">09:28:33</span><span class="side">SELL <span class="role">T</span></span><span class="num p">50,140.<span class="d">00</span></span><span class="num q">0.<span class="d">75000</span></span><span class="num f">18.<span class="d">802500</span></span></div>
+      <div class="fl buy"><span class="t">09:41:22</span><span class="mkt">BTC_USDT</span><span class="side">BUY <span class="role">T</span></span><span class="num p">50,142.<span class="d">50</span></span><span class="num q">0.<span class="d">00500</span></span><span class="num f">0.<span class="d">125357</span></span></div>
+      <div class="fl buy"><span class="t">09:41:17</span><span class="mkt">BTC_USDT</span><span class="side">BUY <span class="role">M</span></span><span class="num p">50,141.<span class="d">00</span></span><span class="num q">0.<span class="d">01250</span></span><span class="num f">0.<span class="d">125353</span></span></div>
+      <div class="fl sell"><span class="t">09:40:51</span><span class="mkt">BTC_USDT</span><span class="side">SELL <span class="role">T</span></span><span class="num p">50,136.<span class="d">00</span></span><span class="num q">0.<span class="d">09000</span></span><span class="num f">2.<span class="d">256120</span></span></div>
+      <div class="fl sell"><span class="t">09:38:14</span><span class="mkt">BTC_USDT</span><span class="side">SELL <span class="role">M</span></span><span class="num p">50,128.<span class="d">50</span></span><span class="num q">0.<span class="d">02000</span></span><span class="num f">0.<span class="d">200514</span></span></div>
+      <div class="fl buy"><span class="t">09:36:02</span><span class="mkt">BTC_USDT</span><span class="side">BUY <span class="role">T</span></span><span class="num p">50,110.<span class="d">00</span></span><span class="num q">0.<span class="d">12500</span></span><span class="num f">3.<span class="d">131875</span></span></div>
+      <div class="fl buy"><span class="t">09:31:47</span><span class="mkt">BTC_USDT</span><span class="side">BUY <span class="role">M</span></span><span class="num p">50,098.<span class="d">50</span></span><span class="num q">0.<span class="d">04000</span></span><span class="num f">0.<span class="d">400788</span></span></div>
+      <div class="fl sell"><span class="t">09:28:33</span><span class="mkt">BTC_USDT</span><span class="side">SELL <span class="role">T</span></span><span class="num p">50,140.<span class="d">00</span></span><span class="num q">0.<span class="d">75000</span></span><span class="num f">18.<span class="d">802500</span></span></div>
     </div>
   </section>
 
