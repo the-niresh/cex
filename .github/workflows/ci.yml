@@ -79,7 +79,7 @@ jobs:
       # part; everything else is seconds. Keyed on the lockfile and the
       # toolchain pin, so a dependency or compiler change invalidates it.
       - name: Cache cargo and target
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/index
