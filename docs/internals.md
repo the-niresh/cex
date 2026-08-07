@@ -221,6 +221,9 @@ than let that happen quietly.
 ## Naming conventions
 
 
+> Perpetuals are **not built** — spot is the whole of the working system. What follows is the
+> naming reserved for them, kept so that adding them later does not mean renaming what exists.
+
 Spot and perpetuals share this repository, this engine, and this order book. The conventions
 below keep them distinguishable without duplicating anything.
 
@@ -277,9 +280,29 @@ Perpetual-only commands are named for what they do, not for the product: `SetMar
 | atom | The smallest indivisible unit of an asset. All money is counted in these. |
 | base / quote | In `BTC_USDT`, BTC is the base (what you buy), USDT the quote (what you pay with). |
 
-## Perpetuals — the plan
+## Known limitations
 
-Not started. It reuses all of the above — same order book, same matching loop, same recovery —
-adding a price feed and three command types:
+Named rather than buried, because each is a real thing to fix:
 
-![Perps architecture](perps-architecture.jpeg)
+* **The engine lock is a lease, not a hard guarantee.** It reliably stops the accidental second
+  start, which is the thing that actually happens. It cannot make double-application impossible: a
+  process paused past its lease may not notice until it wakes, and another engine can legitimately
+  hold the stream by then. Closing that window completely needs a fencing token checked on every
+  write to the command log.
+* **Idempotency only reaches back as far as the log.** The engine remembers the last 50,000
+  command ids; a retry that arrives after its command has been pushed out of that window is applied
+  as a new one. Ample for a client retry, not a substitute for reconciliation after a long outage.
+* **Replay republishes events.** Recovery re-applies commands after the snapshot, so downstream
+  consumers see duplicates and must deduplicate on `seq`. `persist` does it against a table and
+  `ws` against an in-memory high-water mark; anything new must do it too.
+* **A batch `persist` cannot write stalls history rather than skipping it.** The entries stay
+  unacknowledged and are retried forever. That is the right failure — better a stalled writer that
+  pages you than one that quietly drops trades — but it does need someone watching for it.
+* **A graceful restart leaves the old engine answering reads.** `main.rs` races `Runner::run`
+  against SIGTERM in a `tokio::select!`. When the signal wins, `run` is *cancelled* — so the
+  `handle.abort()` at the end of it never executes, and the query task is only stopped by
+  `Drop for Runner`, which fires after `snapshot()` and `shutdown()` have already run. The task
+  is a competing consumer on the shared queries queue, so once the lock is released a client's
+  read can be answered by the outgoing engine from state the incoming one has already moved past,
+  and two consecutive reads can show `seq` going backwards. The fix is to pass the stop signal
+  into `run` so its own cleanup always executes, rather than adding another call site to forget.

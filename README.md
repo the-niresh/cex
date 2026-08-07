@@ -3,8 +3,7 @@
 [![ci](https://github.com/the-niresh/cex/actions/workflows/ci.yml/badge.svg)](https://github.com/the-niresh/cex/actions/workflows/ci.yml)
 
 A centralised exchange in Rust — order book, matching, settlement, live market data and a
-trading screen. Spot is complete and tested end to end; perpetuals reuse the same engine and
-are not started.
+trading screen. Complete and tested end to end.
 
 The exchange is a **deterministic state machine**: one function, `apply(state, command) -> events`,
 running single-threaded over a durable command log. Everything else — HTTP, WebSocket, Postgres,
@@ -49,12 +48,10 @@ HTTP, `ws` fans out market data, `persist` writes history.
 | `api` — loopback, auth, REST routes | Built · 110 tests |
 | `persist` — Postgres history writer | Built · 43 tests |
 | `ws` — market data fan-out | Built · 52 tests |
-| Perpetuals | Not started |
 
-**The spot exchange is complete.** Two users can register, deposit, place orders, match and settle
-over HTTP; every order, fill and balance change lands in Postgres behind the engine; and the book,
-the trades and each user's own orders stream live over WebSocket. What is left is perpetuals, and
-the gaps listed below.
+Two users can register, deposit, place orders, match and settle over HTTP; every order, fill and
+balance change lands in Postgres behind the engine; and the book, the trades and each user's own
+orders stream live over WebSocket.
 
 ## Running it
 
@@ -122,35 +119,10 @@ Nothing asks for an account until something moves money — the book, tape, char
 usable signed out, and the sign-in panel opens on BUY, SELL or CREDIT. The layout holds from 320px
 to 1920px, and every one of its 44 text styles is checked against WCAG AA by a script that walks
 the rendered page.
-
-## Known gaps
-
-Named rather than buried, because each is a real thing to fix:
-
-* **The engine lock is a lease, not a hard guarantee.** It reliably stops the accidental second
-  start, which is the thing that actually happens. It cannot make double-application impossible: a
-  process paused past its lease may not notice until it wakes, and another engine can legitimately
-  hold the stream by then. Closing that window completely needs a fencing token checked on every
-  write to the command log.
-* **Idempotency only reaches back as far as the log.** The engine remembers the last 50,000
-  command ids; a retry that arrives after its command has been pushed out of that window is applied
-  as a new one. Ample for a client retry, not a substitute for reconciliation after a long outage.
-* **Replay republishes events.** Recovery re-applies commands after the snapshot, so downstream
-  consumers see duplicates and must deduplicate on `seq`. `persist` does it against a table and
-  `ws` against an in-memory high-water mark; anything new must do it too.
-* **A batch `persist` cannot write stalls history rather than skipping it.** The entries stay
-  unacknowledged and are retried forever. That is the right failure — better a stalled writer that
-  pages you than one that quietly drops trades — but it does need someone watching for it.
-* **A graceful restart leaves the old engine answering reads.** `main.rs` races `Runner::run`
-  against SIGTERM in a `tokio::select!`. When the signal wins, `run` is *cancelled* — so the
-  `handle.abort()` at the end of it never executes, and the query task is only stopped by
-  `Drop for Runner`, which fires after `snapshot()` and `shutdown()` have already run. The task
-  is a competing consumer on the shared queries queue, so once the lock is released a client's
-  read can be answered by the outgoing engine from state the incoming one has already moved past,
-  and two consecutive reads can show `seq` going backwards. The fix is to pass the stop signal
-  into `run` so its own cleanup always executes, rather than adding another call site to forget.
+et.
 
 ## More
 
 [docs/internals.md](docs/internals.md) — the REST and WebSocket contract, integer scaling, the
-design rules the engine is held to, idempotency, and how exactly one engine is guaranteed.
+design rules the engine is held to, idempotency, how exactly one engine is guaranteed, and the
+known limitations.
