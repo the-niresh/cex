@@ -104,50 +104,6 @@ body::after{
 .open-orders{grid-column:1/3;grid-row:3}
 .fills{grid-column:3/4;grid-row:3}
 
-/* ─────────────────────────── responsive ───────────────────────────
-
-   Three columns want 1112px (420+370+320 and two hairlines). Below that
-   the ticket column would fall off the side of a screen that cannot
-   scroll, taking BUY, SELL and LOG OUT with it — and a 1280px viewport
-   is exactly what a 1920 screen at 150% zoom gives you, which is not an
-   exotic setup.
-
-   Two narrower bands. Neither hides anything: columns give ground until
-   they cannot, and below the width where any grid works at all the whole
-   thing becomes an ordinary scrolling page. */
-
-/* ── the same three columns, tightened, down to a 852px floor. */
-@media (max-width:1111px){
-  .screen{
-    grid-template-columns:minmax(260px,1fr) minmax(300px,370px) minmax(290px,320px);
-  }
-  .open-orders{grid-column:1/2;grid-row:3}
-  .fills{grid-column:2/4;grid-row:3}
-}
-
-/* ── one column, and the page scrolls.
-      Under ~880px no side-by-side arrangement leaves the ladder or the
-      ticket a usable width, so stop pretending: stack them, give each a
-      height it can actually show something in, and let the document
-      scroll like any other page. */
-@media (max-width:879px){
-  body{overflow-x:auto;overflow-y:auto}
-  .screen{
-    height:auto;min-height:100vh;
-    grid-template-columns:minmax(0,1fr);
-    grid-template-rows:none;
-    grid-auto-rows:auto;
-  }
-  /* Every panel is its own row; the explicit placements above would
-     otherwise pin them into columns that no longer exist. */
-  .open-orders,.fills{grid-column:1/-1;grid-row:auto}
-  .chart{min-height:300px}
-  .book{min-height:430px}
-  .tape{min-height:240px}
-  .open-orders,.fills{min-height:190px}
-  .statusbar{height:auto;min-height:22px;flex-wrap:wrap;row-gap:2px}
-}
-
 /* ─────────────────────────── panel chrome ─────────────────────────── */
 
 .phead{
@@ -187,22 +143,33 @@ body::after{
 
 /* ─────────────────────────── topbar ─────────────────────────── */
 
-/* Wraps rather than clips, at every width. The row is brand · markets ·
-   ticker · connection · account, which needs about 1100px; below that the
-   account block used to be the child that fell off the end of a panel with
-   `overflow:hidden`, taking LOG OUT with it. Wrapping costs a second 36px
-   row on narrow screens and loses nothing, and because it is driven by the
-   content rather than a breakpoint there is no width where it guesses wrong. */
+/* brand · markets · ticker · connection · account, and the account block is
+   the one part that must never move: it is where you look to sign in or out,
+   and a control that changes position depending on which market you clicked
+   is a control you have to hunt for.
+
+   So the row does not wrap. `flex-wrap` would be the obvious way to stop the
+   account block being clipped off the end, but wrapping takes priority over
+   shrinking — the moment the ticker holds real numbers instead of em-dashes
+   it grows, and the account block is what gets pushed onto a second line.
+   That is exactly the jump you see switching from an untraded market to a
+   traded one. Instead the ticker gives ground: it shrinks and folds its own
+   fields onto more lines, growing the bar downward while everything keeps
+   its place along it. */
 .topbar{
   background:var(--panel-hi);
-  display:flex;flex-direction:row;align-items:stretch;flex-wrap:wrap;
+  display:flex;flex-direction:row;align-items:stretch;flex-wrap:nowrap;
   min-height:36px;
 }
-/* Each wrapped line still stands 36px tall. */
 .topbar > *{min-height:36px}
-/* The tabs are the widest single block, so they give ground first and take
-   their own scrollbar instead of pushing everything after them off the row. */
-.markets{min-width:0;overflow-x:auto;scrollbar-width:none}
+/* Neither end gives: the brand anchors the left, the connection and account
+   anchor the right. */
+.brand,.conn,.who{flex:none}
+/* The tabs take their own scrollbar rather than pushing what follows off the
+   row — but they keep a floor. With `min-width:0` they collapsed to nothing at
+   narrow widths and their buttons spilled out underneath the account block,
+   which then swallowed the clicks meant for them. */
+.markets{flex:0 1 auto;min-width:150px;overflow-x:auto;scrollbar-width:none}
 .markets::-webkit-scrollbar{display:none}
 .brand{
   display:flex;align-items:center;gap:8px;padding:0 14px 0 12px;
@@ -234,7 +201,11 @@ body::after{
 /* Wraps internally as well as being wrappable itself: five readouts do not fit
    on one line of a phone, and the topbar wrapping alone would only move the
    whole block down rather than letting it fold. */
+/* The only item that gives. It takes the slack when there is room, and folds
+   its own readouts onto more lines when there is not, so the account block on
+   its right never has to move. */
 .ticker{
+  flex:1 1 auto;
   display:flex;align-items:center;flex-wrap:wrap;min-width:0;
   column-gap:22px;row-gap:2px;padding:6px 18px;margin-left:4px;
 }
@@ -782,3 +753,59 @@ body.stale .submit{
 
 /* lightweight-charts paints into this; it owns its own canvas sizing. */
 .plot.live{background:transparent}
+
+/* ─────────────────────────── responsive ───────────────────────────
+
+   Three columns want 1112px (420+370+320 and two hairlines). Below that
+   the ticket column would fall off the side of a screen that cannot
+   scroll, taking BUY, SELL and LOG OUT with it — and a 1280px viewport
+   is exactly what a 1920 screen at 150% zoom gives you, which is not an
+   exotic setup.
+
+   Two narrower bands. Neither hides anything: columns give ground until
+   they cannot, and below the width where any grid works at all the whole
+   thing becomes an ordinary scrolling page. */
+
+/* ── the same three columns, tightened, down to a 852px floor. */
+@media (max-width:1111px){
+  .screen{
+    grid-template-columns:minmax(260px,1fr) minmax(300px,370px) minmax(290px,320px);
+  }
+  .open-orders{grid-column:1/2;grid-row:3}
+  .fills{grid-column:2/4;grid-row:3}
+}
+
+/* ── one column, and the page scrolls.
+      Under ~880px no side-by-side arrangement leaves the ladder or the
+      ticket a usable width, so stop pretending: stack them, give each a
+      height it can actually show something in, and let the document
+      scroll like any other page. */
+@media (max-width:879px){
+  body{overflow-x:auto;overflow-y:auto}
+  .screen{
+    height:auto;min-height:100vh;
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:none;
+    grid-auto-rows:auto;
+  }
+  /* Every panel is its own row; the explicit placements above would
+     otherwise pin them into columns that no longer exist. */
+  .open-orders,.fills{grid-column:1/-1;grid-row:auto}
+  .chart{min-height:300px}
+  .book{min-height:430px}
+  .tape{min-height:240px}
+  .open-orders,.fills{min-height:190px}
+  /* No arrangement fits five blocks across a phone, so here the bar does
+     wrap — but on a fixed seam rather than wherever the numbers happen to
+     push it. The ticker always takes its own full line, which puts the
+     account block in the same place on every market. */
+  .topbar{flex-wrap:wrap}
+  /* `flex:0 0 100%` and not `flex-basis:100%`: a shrinkable full-width item
+     just shrinks back onto the first line and no wrap ever happens. The left
+     margin goes with it — it separates the ticker from the tabs when they
+     share a line, and on its own line it is 4px of overflow. */
+  .ticker{flex:0 0 100%;order:1;margin-left:0}
+  .markets{flex:1 1 auto}
+  .conn,.who{order:2}
+  .statusbar{height:auto;min-height:22px;flex-wrap:wrap;row-gap:2px}
+}
