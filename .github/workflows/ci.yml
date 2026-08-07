@@ -1,0 +1,142 @@
+name: ci
+
+# Every push, every branch, and every pull request. The point of CI is that it
+# cannot be skipped when you are tired, so it is not scoped to main.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── the workspace ───────────────────────────────────────────────────────
+  #
+  # `cex-core` and `cex-proto` need nothing at all; the other four crates talk
+  # to Redis and Postgres, so the job brings up the same two images the local
+  # `docker-compose.yml` uses. Ports are mapped to the same non-default numbers
+  # the code defaults to, and the URLs are passed explicitly anyway so a change
+  # to either side fails loudly rather than silently falling back to localhost.
+  rust:
+    name: rust · fmt, clippy, 411 tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cex
+          POSTGRES_PASSWORD: cex
+          POSTGRES_DB: cex
+        ports:
+          - 5442:5432
+        # Steps do not start until both of these report healthy, so no test
+        # has to sleep-and-hope while the database finishes booting.
+        options: >-
+          --health-cmd "pg_isready -U cex"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6390:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 15
+
+    env:
+      CEX_DATABASE_URL: postgres://cex:cex@127.0.0.1:5442/cex
+      CEX_REDIS_URL: redis://127.0.0.1:6390
+      CARGO_TERM_COLOR: always
+      # Deliberately no `RUSTFLAGS: -D warnings`. It would apply to every
+      # dependency as well, so a warning in a transitive crate — or in a newer
+      # rustc — breaks the build over something not in this repo. Clippy below
+      # already denies warnings in the code we actually own, which is the part
+      # worth being strict about.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # `rust-toolchain.toml` pins 1.97.1 with rustfmt and clippy. Touching
+      # rustup here makes it install that toolchain up front, so the version
+      # appears in the log rather than being fetched silently mid-build.
+      - name: Install the pinned toolchain
+        run: |
+          rustup show active-toolchain || rustup show
+          rustc --version && cargo --version && cargo clippy --version
+
+      # Compiling six crates and their dependencies from scratch is the slow
+      # part; everything else is seconds. Keyed on the lockfile and the
+      # toolchain pin, so a dependency or compiler change invalidates it.
+      - name: Cache cargo and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+  # ── the frontend ────────────────────────────────────────────────────────
+  #
+  # Types, lint and the unit suite. Playwright is deliberately not here: it
+  # needs all four binaries and a Vite server running against live Redis and
+  # Postgres, and wiring that into every push buys a slow, flaky red badge
+  # that people learn to ignore. It stays a local and on-demand check.
+  frontend:
+    name: frontend · types, lint, unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+
+    env:
+      # Playwright is a devDependency and `npm ci` installs it, but this job
+      # never drives a browser — skip the ~500MB download.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Types
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Includes `src/lib/proxy.test.ts`, which reads `crates/api/src/routes.rs`
+      # to check the dev proxy still covers every API route — so this job needs
+      # the whole repo checked out, not just `frontend/`.
+      - name: Unit tests
+        run: npm test

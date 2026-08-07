@@ -1,5 +1,7 @@
 # cex
 
+[![ci](https://github.com/the-niresh/cex/actions/workflows/ci.yml/badge.svg)](https://github.com/the-niresh/cex/actions/workflows/ci.yml)
+
 A centralised exchange in Rust. Spot markets first, perpetual futures on the same engine.
 
 The exchange is a **deterministic state machine**: one function, `apply(state, command) -> events`,
