@@ -24,7 +24,7 @@ jobs:
   # the code defaults to, and the URLs are passed explicitly anyway so a change
   # to either side fails loudly rather than silently falling back to localhost.
   rust:
-    name: rust · fmt, clippy, 411 tests
+    name: rust · fmt, clippy, 412 tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
 

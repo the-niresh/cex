@@ -236,6 +236,49 @@ async fn each_side_of_a_fill_is_told_its_own_role_side_and_fee() {
     }
 }
 
+/// `seq` alone does not identify a fill — one command can produce several, and
+/// a client that deduplicates on `seq` would throw away all but the first.
+/// `idx` counts across the whole batch rather than restarting inside each
+/// event, so that `(seq, idx)` is the same identity the `fills` table is keyed
+/// on and a live update can be matched against the history row it becomes.
+#[tokio::test]
+async fn a_private_fill_carries_its_index_within_the_batch() {
+    let maker = Uuid::new_v4();
+    let taker = Uuid::new_v4();
+
+    let updates = route(&batch(
+        7,
+        vec![
+            Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![fill(maker, taker), fill(maker, taker)],
+            },
+            Event::Trades {
+                symbol: SYM.into(),
+                fills: vec![fill(maker, taker)],
+            },
+        ],
+    ));
+
+    let indices: Vec<i32> = updates
+        .iter()
+        .filter(|u| u.audience == Some(taker))
+        .map(|u| {
+            let env: cex_ws::Envelope = serde_json::from_str(&u.payload).unwrap();
+            match env.data {
+                Payload::Order(cex_ws::wire::OrderUpdate::Fill { idx, .. }) => idx,
+                other => panic!("expected a fill, got {other:?}"),
+            }
+        })
+        .collect();
+
+    assert_eq!(
+        indices,
+        vec![0, 1, 2],
+        "the counter runs across the batch, not per event"
+    );
+}
+
 #[tokio::test]
 async fn a_private_fill_does_not_name_the_counterparty() {
     let maker = Uuid::new_v4();

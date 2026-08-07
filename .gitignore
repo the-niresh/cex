@@ -20,3 +20,4 @@ docs/superpowers/
 # part of the exchange.
 frontend_prompt.md
 next_prompt.md
+.gstack/

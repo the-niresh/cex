@@ -13,6 +13,8 @@
  *   - therefore `notional = price × qty / 10^base_decimals`, in quote atoms.
  */
 
+import type { Market, Side } from "./types";
+
 export function pow10(n: bigint): bigint {
   return 10n ** n;
 }
@@ -55,6 +57,25 @@ export function feeOn(notionalAtoms: bigint, bps: bigint): bigint {
  * want two places — not six. Showing the full six would be honest but unreadable,
  * and showing an arbitrary two would be wrong for a market with a finer tick.
  */
+/**
+ * The asset a fill's fee was charged in, and the scale to read it at.
+ *
+ * A fee comes out of what the filler *received*, so it follows their own side:
+ * `crates/core/src/state.rs` credits the buyer `qty - fee` in the base asset
+ * and the seller `cost - fee` in the quote, paying the fee account in the same
+ * asset each time. Base and quote rarely share a scale — BTC has 8 decimals,
+ * USDT 6 — so reading every fee as quote silently renders a buyer's at a
+ * hundred times its value, under the wrong ticker.
+ */
+export function feeAsset(
+  side: Side,
+  market: Pick<Market, "base" | "quote" | "base_decimals" | "quote_decimals">,
+): { asset: string; decimals: bigint } {
+  return side === "BUY"
+    ? { asset: market.base, decimals: market.base_decimals }
+    : { asset: market.quote, decimals: market.quote_decimals };
+}
+
 export function decimalsForStep(step: bigint, decimals: bigint): number {
   if (step <= 0n) return Number(decimals);
   let trailingZeros = 0n;

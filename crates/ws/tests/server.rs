@@ -119,6 +119,7 @@ fn private_fill(user: UserId, order_id: u64) -> Update {
             side: Side::Buy,
             fee: 50,
             role: cex_ws::wire::Role::Taker,
+            idx: 0,
         }),
     )
 }

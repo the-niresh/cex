@@ -175,6 +175,12 @@ pub enum OrderUpdate {
         side: Side,
         fee: i64,
         role: Role,
+        /// Position of this fill within its batch, counted across every event
+        /// in it. `seq` alone is not unique — one command can produce several
+        /// fills — so `(seq, idx)` is the identity, and it is deliberately the
+        /// same one the `fills` table is keyed on: a client holding a live
+        /// update can recognise the history row it later becomes.
+        idx: i32,
     },
 }
 

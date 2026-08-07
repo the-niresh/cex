@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./lib/api";
 import { DepthBook, type Level } from "./lib/book";
 import { Feed, type FeedStatus } from "./lib/feed";
+import { liveFillFrom, mergeFills } from "./lib/fills";
 import { clearSession, loadSession, saveSession } from "./lib/session";
 import type {
   AuthMode,
@@ -107,7 +108,11 @@ export function useExchange(): Exchange {
   const [dayCandles, setDayCandles] = useState<Candle[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
-  const [fills, setFills] = useState<MyFill[]>([]);
+  // What `/orders/history` last returned, and the fills the feed has reported
+  // that it does not contain yet. They are kept apart because the history is
+  // the authority: a live one is only shown while the row is still catching up.
+  const [history, setHistory] = useState<MyFill[]>([]);
+  const [liveFills, setLiveFills] = useState<MyFill[]>([]);
 
   const [status, setStatus] = useState<FeedStatus>("connecting");
   const [resyncs, setResyncs] = useState(0);
@@ -120,10 +125,15 @@ export function useExchange(): Exchange {
   // is exactly what tears under concurrent rendering.
   const symbolRef = useRef(symbol);
   const tokenRef = useRef<string | null>(session?.token ?? null);
+  const marketsRef = useRef<Market[]>(markets);
 
   useEffect(() => {
     symbolRef.current = symbol;
   }, [symbol]);
+
+  useEffect(() => {
+    marketsRef.current = markets;
+  }, [markets]);
 
   useEffect(() => {
     tokenRef.current = session?.token ?? null;
@@ -179,7 +189,7 @@ export function useExchange(): Exchange {
         ]);
         setBalances(b);
         setOpenOrders(o);
-        setFills(f);
+        setHistory(f);
       }
     } catch (e) {
       failed(e);
@@ -197,7 +207,7 @@ export function useExchange(): Exchange {
       ]);
       setBalances(b);
       setOpenOrders(o);
-      setFills(f);
+      setHistory(f);
     } catch (e) {
       failed(e);
     }
@@ -240,10 +250,20 @@ export function useExchange(): Exchange {
         });
         setLastUpdateMs(Date.now());
       },
-      onOrder() {
+      onOrder(update, seq) {
         // The private feed says *that* something changed; the REST views are
         // the authority on what it changed to. Refetching is a round trip the
         // screen can afford and keeps one source of truth.
+        //
+        // Fills are the exception, and only because of *when*. Balances and
+        // open orders come back from the engine, so a refetch here already
+        // reflects this event. `/orders/history` reads a table `persist`
+        // writes asynchronously, so it truthfully does not have this fill yet
+        // — and nothing would refetch again once it did. Hold the live one
+        // until the row lands, or your own trade is invisible until you
+        // reload. `mergeFills` drops it again on `(seq, idx)`.
+        const live = liveFillFrom(update, seq, marketsRef.current);
+        if (live) setLiveFills((current) => [live, ...current].slice(0, TAPE_LIMIT));
         void refreshAccount();
       },
       onStatus: setStatus,
@@ -336,6 +356,12 @@ export function useExchange(): Exchange {
     };
   }, [dayCandles]);
 
+  /** History, plus any fill it has not caught up to yet. */
+  const fills = useMemo(
+    () => mergeFills(history, liveFills, TAPE_LIMIT),
+    [history, liveFills],
+  );
+
   const market = useMemo(
     () => markets.find((m) => m.symbol === symbol) ?? null,
     [markets, symbol],
@@ -370,7 +396,8 @@ export function useExchange(): Exchange {
     setSession(null);
     setBalances([]);
     setOpenOrders([]);
-    setFills([]);
+    setHistory([]);
+    setLiveFills([]);
   }, []);
 
   const submitOrder = useCallback(

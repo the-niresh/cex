@@ -113,7 +113,10 @@ export interface MyFill {
   price: bigint;
   qty: bigint;
   notional: bigint;
-  /** What this caller paid, in quote atoms. */
+  /**
+   * What this caller paid, in atoms of whatever their side received — base on
+   * a BUY, quote on a SELL. Use `feeAsset` rather than assuming either.
+   */
   fee: bigint;
   timestamp_ms: bigint;
 }
@@ -197,5 +200,11 @@ export interface OrderUpdate {
   status?: string;
   role?: Role;
   fee?: bigint;
+  /**
+   * Position of a `fill` within its batch. `seq` alone is not unique — one
+   * command can produce several — so `(seq, idx)` is the identity, and it is
+   * the same one `/orders/history` reports.
+   */
+  idx?: bigint;
   reason?: string;
 }

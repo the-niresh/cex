@@ -47,7 +47,7 @@ HTTP, `ws` fans out market data, `persist` writes history.
 | `engine` — stream consumer, snapshots, crash recovery, boot lock, concurrent query serving | Built · 56 tests |
 | `api` — loopback, auth, REST routes | Built · 110 tests |
 | `persist` — Postgres history writer | Built · 43 tests |
-| `ws` — market data fan-out | Built · 52 tests |
+| `ws` — market data fan-out | Built · 53 tests |
 
 Two users can register, deposit, place orders, match and settle over HTTP; every order, fill and
 balance change lands in Postgres behind the engine; and the book, the trades and each user's own
@@ -144,7 +144,6 @@ Nothing asks for an account until something moves money — the book, tape, char
 usable signed out, and the sign-in panel opens on BUY, SELL or CREDIT. The layout holds from 320px
 to 1920px, and every one of its 44 text styles is checked against WCAG AA by a script that walks
 the rendered page.
-et.
 
 ## More
 

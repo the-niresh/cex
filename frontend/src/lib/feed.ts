@@ -11,7 +11,7 @@ export type FeedStatus = "connecting" | "live" | "reconnecting" | "closed";
 export interface FeedHandlers {
   onDepth(update: DepthUpdate): void;
   onTrade(update: TradeUpdate): void;
-  onOrder(update: OrderUpdate): void;
+  onOrder(update: OrderUpdate, seq: bigint): void;
   onStatus(status: FeedStatus): void;
   /**
    * Everything in memory must be thrown away and refetched.
@@ -150,7 +150,10 @@ export class Feed {
         this.handlers.onTrade(body as TradeUpdate);
         break;
       case "order":
-        this.handlers.onOrder(body as OrderUpdate);
+        // The envelope carries the seq, not the body — and a fill needs it to
+        // be identifiable as `(seq, idx)`, so pass it through rather than
+        // making the handler dig for it.
+        this.handlers.onOrder(body as OrderUpdate, message.seq ?? 0n);
         break;
     }
   }

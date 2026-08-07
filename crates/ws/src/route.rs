@@ -46,13 +46,17 @@ impl Update {
 /// Fan one batch out into the updates it produces, in order.
 pub fn route(batch: &EventBatch) -> Vec<Update> {
     let mut out = Vec::new();
+    // Counts fills across the whole batch rather than within each event, which
+    // is how `persist` numbers the rows it writes. The two have to agree or
+    // `(seq, idx)` would name a different fill depending on who was asked.
+    let mut fill_idx = 0i32;
     for event in &batch.events {
-        route_event(event, batch.seq, &mut out);
+        route_event(event, batch.seq, &mut fill_idx, &mut out);
     }
     out
 }
 
-fn route_event(event: &Event, seq: Seq, out: &mut Vec<Update>) {
+fn route_event(event: &Event, seq: Seq, fill_idx: &mut i32, out: &mut Vec<Update>) {
     match event {
         Event::DepthUpdated {
             symbol,
@@ -87,8 +91,9 @@ fn route_event(event: &Event, seq: Seq, out: &mut Vec<Update>) {
                 ));
 
                 // And one private message to each side, about its own order.
-                out.push(private_fill(fill, Role::Maker, seq));
-                out.push(private_fill(fill, Role::Taker, seq));
+                out.push(private_fill(fill, Role::Maker, seq, *fill_idx));
+                out.push(private_fill(fill, Role::Taker, seq, *fill_idx));
+                *fill_idx += 1;
             }
         }
 
@@ -173,7 +178,7 @@ fn route_event(event: &Event, seq: Seq, out: &mut Vec<Update>) {
 ///
 /// Each side is told its own order, its own side, its own fee and its own role.
 /// The counterparty is not named, and there is no field here that could name it.
-fn private_fill(fill: &Fill, role: Role, seq: Seq) -> Update {
+fn private_fill(fill: &Fill, role: Role, seq: Seq, idx: i32) -> Update {
     let (user, order_id, side, fee) = match role {
         Role::Maker => (
             fill.maker_user_id,
@@ -201,6 +206,7 @@ fn private_fill(fill: &Fill, role: Role, seq: Seq) -> Update {
             side,
             fee,
             role,
+            idx,
         }),
     )
 }
