@@ -1,20 +1,32 @@
+name: cex
+
 services:
   redis:
     image: redis:7-alpine
     container_name: cex-redis
+    restart: unless-stopped
     # Non-default port so this never collides with another local Redis.
     ports:
       - "6390:6379"
     command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - cex-redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
 
+  # Only for local development. Deployments point CEX_DATABASE_URL at managed
+  # Postgres, so this is behind a profile rather than started by default:
+  # `docker compose --profile local-db up -d`. Postgres is off the hot path by
+  # design — persist is asynchronous and api touches it only for auth — so the
+  # extra network hop to a managed instance costs nothing that matters.
   postgres:
     image: postgres:16-alpine
     container_name: cex-postgres
+    profiles: ["local-db"]
+    restart: unless-stopped
     ports:
       - "5442:5432"
     environment:
@@ -29,5 +41,124 @@ services:
       timeout: 3s
       retries: 10
 
+  # ── the exchange ────────────────────────────────────────────────────────
+  #
+  # One image, four commands. All four restart with the box, which is the
+  # whole reason they are here rather than being started by hand.
+
+  engine:
+    image: cex:latest
+    build: .
+    container_name: cex-engine
+    command: ["engine"]
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      CEX_REDIS_URL: redis://redis:6379
+      CEX_SNAPSHOT_DIR: /var/lib/cex/snapshots
+      CEX_BLOCK_MS: "200"
+    volumes:
+      # Snapshots have to outlive the container. Without them recovery replays
+      # the command log from the beginning on every restart — correct, but
+      # slower every day the log gets longer.
+      - cex-snapshots:/var/lib/cex/snapshots
+    # SIGTERM makes the engine snapshot and release its stream lock, so the
+    # replacement boots immediately instead of waiting out a 30s lease. Worth
+    # more than the default 10s.
+    stop_grace_period: 30s
+
+  api:
+    image: cex:latest
+    build: .
+    container_name: cex-api
+    command: ["api"]
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      CEX_REDIS_URL: redis://redis:6379
+      CEX_API_BIND: 0.0.0.0:8080
+      CEX_DATABASE_URL: ${CEX_DATABASE_URL:?set CEX_DATABASE_URL in .env}
+      # ws verifies the tokens api signs. Both read the same variable for a
+      # reason: two different secrets means every private subscription is
+      # refused, and nothing else about the stack looks wrong.
+      CEX_JWT_SECRET: ${CEX_JWT_SECRET:?set CEX_JWT_SECRET in .env}
+      CEX_CORS_ORIGINS: ${CEX_CORS_ORIGINS:?set CEX_CORS_ORIGINS in .env}
+    networks:
+      - default
+      - proxy
+    labels:
+      traefik.enable: "true"
+      # This container is on two networks and Traefik is not told which one to
+      # dial by its own configuration, so it has to be named here.
+      traefik.docker.network: n8n-mkvx_proxy
+      traefik.http.routers.cex-api.rule: Host(`api.niresh.tech`)
+      traefik.http.routers.cex-api.entrypoints: websecure
+      traefik.http.routers.cex-api.tls.certresolver: letsencrypt
+      # Traefik ranks by rule length unless told otherwise, which already puts
+      # the ws router first. Said explicitly so that a later edit to either
+      # rule cannot silently reorder them.
+      traefik.http.routers.cex-api.priority: "1"
+      traefik.http.services.cex-api.loadbalancer.server.port: "8080"
+
+  ws:
+    image: cex:latest
+    build: .
+    container_name: cex-ws
+    command: ["ws"]
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      CEX_REDIS_URL: redis://redis:6379
+      CEX_WS_BIND: 0.0.0.0:8081
+      CEX_JWT_SECRET: ${CEX_JWT_SECRET:?set CEX_JWT_SECRET in .env}
+    networks:
+      - default
+      - proxy
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: n8n-mkvx_proxy
+      # Shares a host with the API and is separated by path. Traefik proxies
+      # the Upgrade handshake itself; what breaks a WebSocket here is a
+      # buffering or compression middleware, so this router has none.
+      traefik.http.routers.cex-ws.rule: Host(`api.niresh.tech`) && PathPrefix(`/ws`)
+      traefik.http.routers.cex-ws.entrypoints: websecure
+      traefik.http.routers.cex-ws.tls.certresolver: letsencrypt
+      traefik.http.routers.cex-ws.priority: "100"
+      traefik.http.services.cex-ws.loadbalancer.server.port: "8081"
+
+  persist:
+    image: cex:latest
+    build: .
+    container_name: cex-persist
+    command: ["persist"]
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      CEX_REDIS_URL: redis://redis:6379
+      CEX_DATABASE_URL: ${CEX_DATABASE_URL:?set CEX_DATABASE_URL in .env}
+      # Stable on purpose. Redis holds unacknowledged entries against the name
+      # that received them, so a name that changed on every boot would orphan
+      # its own backlog.
+      CEX_PERSIST_CONSUMER: cex-persist-1
+
+networks:
+  # Traefik owns :80 and :443 and discovers containers through the Docker
+  # provider. Reaching a container means sharing this network with it; only
+  # api and ws do, because engine and persist have no inbound listener and
+  # nothing should be able to dial them from the proxy network.
+  proxy:
+    name: n8n-mkvx_proxy
+    external: true
+
 volumes:
   cex-pgdata:
+  cex-redisdata:
+  cex-snapshots:

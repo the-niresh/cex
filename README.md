@@ -55,8 +55,33 @@ orders stream live over WebSocket.
 
 ## Running it
 
+The whole exchange is in `docker-compose.yml`, so it comes up with one command and comes back
+on its own after a reboot:
+
 ```bash
-docker compose up -d                     # redis on 6390, postgres on 5442
+cp .env.example .env                     # CEX_JWT_SECRET, CEX_DATABASE_URL, CEX_CORS_ORIGINS
+docker compose up -d
+```
+
+`Dockerfile` builds all four binaries into **one** image. They share a workspace and nearly all
+of their dependencies, so building an image each would compile the same crates four times over
+to produce four images differing only in an argv; every service is that image with a different
+`command`.
+
+Postgres is behind a `local-db` profile rather than started by default, because a deployment
+points `CEX_DATABASE_URL` at managed Postgres. Either way it is off the hot path — `persist` is
+asynchronous and `api` touches it only for auth — so the extra hop costs nothing that matters.
+Redis is not optional and stays next to the engine: a command and its reply are two round trips
+on the matching path.
+
+```bash
+docker compose --profile local-db up -d  # redis on 6390, postgres on 5442
+```
+
+To run the binaries directly instead — the usual loop while working on them:
+
+```bash
+docker compose --profile local-db up -d redis postgres
 cargo build --release
 
 ./target/release/engine &                # consumes cex:commands

@@ -1,0 +1,16 @@
+# The build context is sent to the daemon in full before anything runs, and
+# `target/` alone is several gigabytes. The build needs the workspace manifests
+# and `crates/` and nothing else.
+target/
+frontend/
+docs/
+.git/
+.github/
+.claude/
+.agents/
+**/node_modules/
+**/*.md
+docker-compose.yml
+Dockerfile
+.dockerignore
+.env

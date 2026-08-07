@@ -1,0 +1,4 @@
+.vercel
+
+# `tsc -b` writes this next to the config; it is a build cache, not source.
+tsconfig.tsbuildinfo
