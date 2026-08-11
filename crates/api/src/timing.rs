@@ -11,6 +11,11 @@ use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use axum::extract::Request;
+use axum::http::{HeaderName, HeaderValue};
+use axum::middleware::Next;
+use axum::response::Response;
+
 tokio::task_local! {
     static ENGINE_MICROS: Arc<AtomicU64>;
 }
@@ -32,6 +37,30 @@ pub fn record_engine(micros: u64) {
     let _ = ENGINE_MICROS.try_with(|cell| {
         cell.fetch_add(micros, Ordering::Relaxed);
     });
+}
+
+/// The whole request, in microseconds.
+pub const SERVER_US: HeaderName = HeaderName::from_static("x-cex-server-us");
+/// The part of it spent waiting on the engine. The difference between the two
+/// is the Redis command hop.
+pub const ENGINE_US: HeaderName = HeaderName::from_static("x-cex-engine-us");
+
+pub async fn timing_middleware(req: Request, next: Next) -> Response {
+    let started = std::time::Instant::now();
+    let (mut response, engine_micros) = measure_engine(next.run(req)).await;
+    let total_micros = started.elapsed().as_micros() as u64;
+
+    let headers = response.headers_mut();
+    // Both always set, even at zero. A missing header and a fast one must not
+    // look the same to the reader.
+    if let Ok(value) = HeaderValue::from_str(&total_micros.to_string()) {
+        headers.insert(SERVER_US, value);
+    }
+    if let Ok(value) = HeaderValue::from_str(&engine_micros.to_string()) {
+        headers.insert(ENGINE_US, value);
+    }
+
+    response
 }
 
 #[cfg(test)]

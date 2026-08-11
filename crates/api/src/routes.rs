@@ -219,6 +219,11 @@ impl CorsSettings {
                 CONTENT_TYPE,
                 HeaderName::from_static("idempotency-key"),
             ])
+            // Response headers a browser may read cross-origin. Without this
+            // the timing headers are set, sent, and invisible to JS on
+            // cex.niresh.tech — which works perfectly on localhost, because
+            // localhost is same-origin.
+            .expose_headers([crate::timing::SERVER_US, crate::timing::ENGINE_US])
             .max_age(Duration::from_secs(600))
     }
 }
@@ -252,6 +257,7 @@ pub fn build_router_with_cors(state: AppState, cors: CorsSettings) -> Router {
         .route("/trades/{symbol}", get(trades))
         .route("/candles/{symbol}", get(candles))
         .merge(protected)
+        .layer(middleware::from_fn(crate::timing::timing_middleware))
         // Outermost, so a preflight is answered here rather than routed into
         // `require_auth` — a browser never sends the token on an OPTIONS, so
         // routing it would refuse every cross-origin write with a 401.

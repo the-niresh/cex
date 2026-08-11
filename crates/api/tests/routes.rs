@@ -1594,3 +1594,55 @@ async fn a_nonsense_candle_limit_is_a_client_error() {
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+// ───────────────────────── timing headers ─────────────────────────
+
+#[tokio::test]
+async fn every_response_carries_the_two_timing_headers() {
+    let h = Harness::start().await;
+
+    let (status, headers) = h
+        .call_headers(
+            Request::builder()
+                .method("GET")
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let server = headers
+        .get("x-cex-server-us")
+        .expect("x-cex-server-us must be set");
+    assert!(
+        server.to_str().unwrap().parse::<u64>().is_ok(),
+        "the header must be a plain integer of microseconds, got {server:?}"
+    );
+    assert!(
+        headers.get("x-cex-engine-us").is_some(),
+        "x-cex-engine-us must be set even on a route that never reaches the \
+         engine, or a reader cannot tell zero from missing"
+    );
+}
+
+#[tokio::test]
+async fn the_timing_headers_are_exposed_to_the_browser() {
+    // The screen is served from a different origin to the API. A header the
+    // browser refuses to expose is a header the readout cannot read, and that
+    // failure appears only once deployed, because localhost is same-origin.
+    let h = Harness::start().await;
+
+    let (status, headers) = h.get_with_origin("/health", "http://localhost:5173").await;
+
+    assert_eq!(status, StatusCode::OK);
+    let exposed = headers
+        .get("access-control-expose-headers")
+        .expect("the CORS layer must expose response headers")
+        .to_str()
+        .unwrap()
+        .to_ascii_lowercase();
+
+    assert!(exposed.contains("x-cex-server-us"), "got: {exposed}");
+    assert!(exposed.contains("x-cex-engine-us"), "got: {exposed}");
+}
