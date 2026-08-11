@@ -1,0 +1,29 @@
+[package]
+name = "cex-loadgen"
+version.workspace = true
+edition.workspace = true
+
+# A development tool. It is a workspace member so it compiles and is tested in
+# CI, and it is deliberately absent from Dockerfile — the deployed image builds
+# four binaries and this is not one of them.
+
+# Split into lib + bin, matching cex-api/engine/persist/ws: report.rs's items
+# are only exercised by unit tests and (starting Task 7) the driver, not by
+# `main` itself. As a bin-only crate that would make them dead code under
+# `-D warnings`; as a lib's public API they are not.
+[lib]
+name = "cex_loadgen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "loadgen"
+path = "src/main.rs"
+
+[dependencies]
+cex-proto.workspace = true
+hdrhistogram = "7"
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
