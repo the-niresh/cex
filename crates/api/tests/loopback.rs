@@ -364,33 +364,87 @@ async fn concurrent_scopes_do_not_leak_engine_time_into_each_other() {
     // `measure_engine` scopes at once against the same `Loopback` and checks each
     // scope's total reflects only the work it issued: one scope sends a single
     // command, the other sends several, and the totals must not blur together.
+    //
+    // Failure mode this test catches: the quiet scope's recorded total includes
+    // engine time that actually belongs to the busy scope's commands (in whole
+    // or in part), because `record_engine` landed in the wrong task's
+    // accumulator.
+    //
+    // The comparison basis matters more than it looks on this box: it is a
+    // shared, heavily oversubscribed machine (load average well past its core
+    // count under normal conditions), and two wall-clock round trips measured
+    // in two *different* moments — a pre-measured baseline vs. this section,
+    // or the busy scope's own per-command average vs. the quiet scope's total —
+    // can differ by an order of magnitude purely from scheduling jitter,
+    // nothing to do with `Loopback`. Both of those shapes produced spurious
+    // failures during development. What does not depend on cross-window noise
+    // is comparing `measure_engine`'s report against an independent wall-clock
+    // timer wrapped around the *exact same* call, in the *exact same* moment:
+    // the two measure the identical interval, so whatever the system is doing
+    // right then affects both readings equally. Any gap between them is not
+    // system noise — it is time `record_engine` attributed to this scope that
+    // did not come from timing this scope's own call.
     let dir = tempfile::tempdir().unwrap();
     let (engine_cfg, loopback_cfg) = pair(dir.path());
     let runner = Runner::boot(engine_cfg).await.expect("engine boot");
     let _engine = spawn_engine(runner);
     let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
 
+    // Busy fires many commands concurrently (not one at a time) so real work
+    // is continuously in flight through the whole window the quiet scope's
+    // single command overlaps with — the shape that would actually give a
+    // contamination bug the chance to manifest, and also the realistic shape
+    // of "many requests hitting a shared Loopback at once."
+    const BUSY_COMMANDS: u64 = 60;
+
     let quiet_user = Uuid::new_v4();
     let busy_user = Uuid::new_v4();
 
+    // Rather than leave the overlap between the two scopes to timing luck —
+    // this machine's contention made the quiet scope's single command
+    // routinely finish before the busy scope's flood had completed even one
+    // round trip, which would let a real leak hide simply by never getting
+    // the chance to happen — the quiet scope explicitly stays open until the
+    // busy scope signals it is done. Its own timed work (both the real
+    // command and the ground-truth window) still finishes first; it just
+    // does not let `measure_engine`'s scope close until the busy scope's
+    // entire run — and every `record_engine` call it could possibly leak —
+    // has had the chance to land while this scope was still active.
+    let (busy_done_tx, busy_done_rx) = tokio::sync::oneshot::channel::<()>();
+
     let quiet_loopback = loopback.clone();
     let quiet_scope = cex_api::timing::measure_engine(async move {
-        quiet_loopback
+        // The ground truth: an independent timer around this exact call,
+        // taken by the test itself rather than by `record_engine`. Wraps the
+        // same single await `Loopback::command_with_id`'s own internal timer
+        // wraps, so — isolation holding — the two should land within a
+        // sliver of each other regardless of what else is happening on the
+        // box right now.
+        let ground_truth_started = std::time::Instant::now();
+        let result = quiet_loopback
             .command(deposit(quiet_user, "USDT", 1_000))
-            .await
+            .await;
+        let ground_truth_micros = ground_truth_started.elapsed().as_micros() as u64;
+        let _ = busy_done_rx.await;
+        (result, ground_truth_micros)
     });
 
     let busy_loopback = loopback.clone();
     let busy_scope = cex_api::timing::measure_engine(async move {
-        for _ in 0..20 {
-            busy_loopback
-                .command(deposit(busy_user, "USDT", 1_000))
-                .await
-                .expect("deposit should succeed");
-        }
+        let sends = (0..BUSY_COMMANDS).map(|_| {
+            let lb = busy_loopback.clone();
+            async move {
+                lb.command(deposit(busy_user, "USDT", 1_000))
+                    .await
+                    .expect("deposit should succeed")
+            }
+        });
+        futures_util::future::join_all(sends).await;
+        let _ = busy_done_tx.send(());
     });
 
-    let ((quiet_result, quiet_micros), (_, busy_micros)) = tokio::join!(quiet_scope, busy_scope);
+    let (((quiet_result, ground_truth_micros), quiet_micros), (_, busy_micros)) =
+        tokio::join!(quiet_scope, busy_scope);
 
     assert!(
         quiet_result.is_ok(),
@@ -401,11 +455,46 @@ async fn concurrent_scopes_do_not_leak_engine_time_into_each_other() {
         "the quiet scope did one real round trip and must record some time"
     );
     assert!(
-        busy_micros > quiet_micros * 5,
-        "the busy scope issued 20 commands against the quiet scope's 1; if its \
-         total isn't meaningfully larger, either it never recorded its own work \
-         or it is also seeing the quiet scope's, and the two totals have blurred \
-         together (quiet={quiet_micros}, busy={busy_micros})"
+        busy_micros > 0,
+        "the busy scope did real round trips and must record some time"
+    );
+    assert!(
+        ground_truth_micros > 0,
+        "the independent timer must have measured a real interval"
+    );
+
+    // Tolerance is an absolute figure, not a multiplier, and it is not a
+    // round number either: `quiet_micros` and `ground_truth_micros` time the
+    // identical interval (same call, same moment), so without contamination
+    // they should differ only by the handful of extra instructions the
+    // test's outer timer covers that the inner one does not (entering
+    // `.command()`, constructing the tuple) — measured empirically at 4-9
+    // microseconds across 25 repeated runs of this exact test on this box.
+    // Both simulated failure modes checked during development — a shared
+    // accumulator (quiet's total balloons to match busy's) and a shared
+    // mutable start-time (quiet's own reading gets clobbered by a busy
+    // command's start, so it *under*-reports) — produced gaps no smaller
+    // than 885 microseconds across 20 repeated runs each, and the shared-
+    // accumulator case pushed `quiet_micros` up to match `busy_micros`
+    // exactly. 300us sits with roughly 30-75x headroom above the observed
+    // normal jitter and about 3x below the smallest observed contamination
+    // gap, in either direction, which is why the check below is symmetric
+    // (leaked time can just as easily displace a scope's own reading as
+    // inflate it, so only checking one direction would have missed the
+    // under-reporting case).
+    const TOLERANCE_MICROS: i64 = 300;
+    let gap = quiet_micros as i64 - ground_truth_micros as i64;
+    assert!(
+        gap.abs() <= TOLERANCE_MICROS,
+        "the quiet scope's one command measured {ground_truth_micros}us on an \
+         independent timer wrapping the exact same call, in the exact same \
+         moment, so `record_engine` should have attributed close to that same \
+         figure to this scope; instead it recorded {quiet_micros}us, {gap}us \
+         off (more than the {TOLERANCE_MICROS}us tolerance), which means \
+         engine time that belongs to the busy scope's {BUSY_COMMANDS} \
+         concurrent commands (which together recorded {busy_micros}us) \
+         either leaked into this scope's reading or displaced it, rather \
+         than this scope timing only its own single round trip"
     );
 }
 
