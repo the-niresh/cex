@@ -1,0 +1,68 @@
+//! How long a request spent inside the engine, kept separate from how long the
+//! whole request took.
+//!
+//! The gap between the two is the Redis command hop, and that is a segment of
+//! the published latency budget rather than a rounding error. `Loopback` is
+//! shared across every request and cannot tell which one it is serving, so the
+//! accumulator rides the task instead of a handler argument. Nothing in a
+//! handler signature changes.
+
+use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+tokio::task_local! {
+    static ENGINE_MICROS: Arc<AtomicU64>;
+}
+
+/// Run `f` with a fresh accumulator. Returns its output and the microseconds
+/// recorded inside the engine while it ran.
+pub async fn measure_engine<F, T>(f: F) -> (T, u64)
+where
+    F: Future<Output = T>,
+{
+    let cell = Arc::new(AtomicU64::new(0));
+    let out = ENGINE_MICROS.scope(cell.clone(), f).await;
+    (out, cell.load(Ordering::Relaxed))
+}
+
+/// Add to the current request's engine total. Outside a [`measure_engine`]
+/// scope this does nothing.
+pub fn record_engine(micros: u64) {
+    let _ = ENGINE_MICROS.try_with(|cell| {
+        cell.fetch_add(micros, Ordering::Relaxed);
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sums_every_record_inside_the_scope() {
+        let (out, micros) = measure_engine(async {
+            record_engine(40);
+            record_engine(2);
+            "done"
+        })
+        .await;
+
+        assert_eq!(out, "done");
+        assert_eq!(micros, 42);
+    }
+
+    #[tokio::test]
+    async fn recording_outside_a_scope_is_a_no_op() {
+        // A background task or a test calling the loopback directly has no
+        // request to attribute time to. That must be silent, not a panic.
+        record_engine(99);
+    }
+
+    #[tokio::test]
+    async fn one_scope_cannot_see_another() {
+        let (_, first) = measure_engine(async { record_engine(10) }).await;
+        let (_, second) = measure_engine(async { record_engine(1) }).await;
+
+        assert_eq!((first, second), (10, 1));
+    }
+}

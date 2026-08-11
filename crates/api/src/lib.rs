@@ -6,6 +6,7 @@
 pub mod auth;
 pub mod loopback;
 pub mod routes;
+pub mod timing;
 pub mod users;
 
 pub use auth::{hash_password, verify_password, Tokens};
