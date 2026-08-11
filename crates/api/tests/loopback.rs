@@ -327,6 +327,88 @@ async fn a_reply_for_an_unknown_request_is_ignored() {
     );
 }
 
+// ───────────────────────── timing ─────────────────────────
+
+#[tokio::test]
+async fn a_command_records_its_own_engine_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let (engine_cfg, loopback_cfg) = pair(dir.path());
+    let runner = Runner::boot(engine_cfg).await.expect("engine boot");
+    let _engine = spawn_engine(runner);
+    let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
+
+    let who = Uuid::new_v4();
+    let (result, micros) = cex_api::timing::measure_engine(async {
+        loopback.command(deposit(who, "USDT", 1_000_000)).await
+    })
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "the deposit itself must succeed: {result:?}"
+    );
+    assert!(
+        micros > 0,
+        "a real round trip through Redis to the engine cannot take zero \
+         microseconds; nothing recorded means the instrumentation is not on \
+         this path at all"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_scopes_do_not_leak_engine_time_into_each_other() {
+    // Loopback is one shared instance behind every request. If `record_engine`
+    // ever wrote to the wrong task's accumulator, a busy request's engine time
+    // would land partly on a quiet request running at the same moment, and every
+    // published percentile would be built on mixed data. This drives two
+    // `measure_engine` scopes at once against the same `Loopback` and checks each
+    // scope's total reflects only the work it issued: one scope sends a single
+    // command, the other sends several, and the totals must not blur together.
+    let dir = tempfile::tempdir().unwrap();
+    let (engine_cfg, loopback_cfg) = pair(dir.path());
+    let runner = Runner::boot(engine_cfg).await.expect("engine boot");
+    let _engine = spawn_engine(runner);
+    let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
+
+    let quiet_user = Uuid::new_v4();
+    let busy_user = Uuid::new_v4();
+
+    let quiet_loopback = loopback.clone();
+    let quiet_scope = cex_api::timing::measure_engine(async move {
+        quiet_loopback
+            .command(deposit(quiet_user, "USDT", 1_000))
+            .await
+    });
+
+    let busy_loopback = loopback.clone();
+    let busy_scope = cex_api::timing::measure_engine(async move {
+        for _ in 0..20 {
+            busy_loopback
+                .command(deposit(busy_user, "USDT", 1_000))
+                .await
+                .expect("deposit should succeed");
+        }
+    });
+
+    let ((quiet_result, quiet_micros), (_, busy_micros)) = tokio::join!(quiet_scope, busy_scope);
+
+    assert!(
+        quiet_result.is_ok(),
+        "the quiet scope's own command must still succeed: {quiet_result:?}"
+    );
+    assert!(
+        quiet_micros > 0,
+        "the quiet scope did one real round trip and must record some time"
+    );
+    assert!(
+        busy_micros > quiet_micros * 5,
+        "the busy scope issued 20 commands against the quiet scope's 1; if its \
+         total isn't meaningfully larger, either it never recorded its own work \
+         or it is also seeing the quiet scope's, and the two totals have blurred \
+         together (quiet={quiet_micros}, busy={busy_micros})"
+    );
+}
+
 // ───────────────────────── request ids ─────────────────────────
 
 #[tokio::test]

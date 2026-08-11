@@ -157,6 +157,17 @@ impl Loopback {
     /// retry after a timeout safe.
     pub async fn command_with_id(
         &self,
+        cmd: Command,
+        id: Uuid,
+    ) -> Result<ResponseBody, LoopbackError> {
+        let started = std::time::Instant::now();
+        let out = self.command_with_id_inner(cmd, id).await;
+        crate::timing::record_engine(started.elapsed().as_micros() as u64);
+        out
+    }
+
+    async fn command_with_id_inner(
+        &self,
         mut cmd: Command,
         id: Uuid,
     ) -> Result<ResponseBody, LoopbackError> {
@@ -181,8 +192,15 @@ impl Loopback {
 
     /// Send a read-only request. Never logged.
     pub async fn query(&self, mut query: Query) -> Result<ResponseBody, LoopbackError> {
+        let started = std::time::Instant::now();
+        let out = self.query_inner(&mut query).await;
+        crate::timing::record_engine(started.elapsed().as_micros() as u64);
+        out
+    }
+
+    async fn query_inner(&self, query: &mut Query) -> Result<ResponseBody, LoopbackError> {
         let id = Uuid::new_v4();
-        set_query_request_id(&mut query, id);
+        set_query_request_id(query, id);
 
         let json =
             serde_json::to_string(&query).map_err(|e| LoopbackError::Transport(e.to_string()))?;
