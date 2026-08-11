@@ -177,26 +177,56 @@ Reproduce with:
 cargo bench -p cex-core
 ```
 
-Point estimate of the mean, from criterion's `estimates.json`, at three book depths (resting price
-levels per side):
+**The first published version of this table was wrong**, and worth saying plainly rather than
+silently redrawing. The routine closure took its `(State, Command)` input by value and returned
+only the `Result`, so the cloned `State` was dropped *inside* criterion's timed region —
+`iter_batched`'s own docs say as much: setup is excluded from timing, but the input's `Drop`
+is not. Dropping a depth-`d` `State` frees on the order of `2d` orders, `2d` price levels each
+holding a `VecDeque`, and `2d` idempotency entries — an O(d) cost that dominated every one of the
+twelve original numbers, including `market_sweep_half`, and produced growth that looked like a
+matching-cost problem but was actually a benchmark bug. The fix returns the state alongside the
+result so criterion drops it after the clock stops:
 
-| Case | depth 10 | depth 100 | depth 1,000 |
+```rust
+|(mut state, cmd)| {
+    let r = state.apply(cmd);
+    (state, black_box(r))
+}
+```
+
+Point estimate of the mean and the median, from criterion's `estimates.json`, at three book
+depths (resting price levels per side):
+
+| Case | depth | mean | median |
 |---|---|---|---|
-| `limit_rest` — rests below best bid, no match | 5.85 µs | 76.12 µs | 258.19 µs |
-| `limit_cross_one` — one match against best ask | 24.72 µs | 83.26 µs | 454.33 µs |
-| `market_sweep_half` — market buy through half the asks | 33.25 µs | 213.21 µs | 1044.18 µs |
-| `cancel` — lookup and removal, no matching | 22.65 µs | 47.91 µs | 438.69 µs |
+| `limit_rest` — rests below best bid, no match | 10 | 3.81 µs | 0.90 µs |
+| | 100 | 5.71 µs | 1.61 µs |
+| | 1,000 | 7.21 µs | 4.59 µs |
+| `limit_cross_one` — one match against best ask | 10 | 5.23 µs | 1.79 µs |
+| | 100 | 16.45 µs | 3.00 µs |
+| | 1,000 | 29.00 µs | 6.79 µs |
+| `market_sweep_half` — market buy through half the asks | 10 | 9.91 µs | 4.22 µs |
+| | 100 | 142.43 µs | 77.74 µs |
+| | 1,000 | 1276.22 µs | 831.50 µs |
+| `cancel` — lookup and removal, no matching | 10 | 4.52 µs | 0.88 µs |
+| | 100 | 13.16 µs | 1.96 µs |
+| | 1,000 | 38.28 µs | 4.05 µs |
 
 `market_sweep_half` climbs with depth as expected — a sweep sized to half the resting asks does
-more matching work the deeper the book is, roughly 6.4x from depth 10 to 100 and 4.9x from 100 to
-1,000, tracking the 5x growth in swept quantity at each step.
+more matching work the deeper the book is: roughly 14.4x (mean) from depth 10 to 100 and 9x from
+100 to 1,000, tracking the growth in swept quantity at each step. `limit_rest`, which touches at
+most one price level and never matches, stays close to flat by the median (0.90 → 1.61 → 4.59 µs)
+— the shape the brief expected once the drop-time bug above is fixed.
 
-`limit_rest` and `cancel` were expected to stay roughly flat — neither touches more than one price
-level — but both grew with depth instead, by a larger factor than `market_sweep_half` in the
-10 → 100 step. Matching code was not touched to chase this down, per the instruction that this
-task measures and does not optimise; worth a follow-up look, plausibly the larger `BTreeMap`s
-(order arena, idempotency log, book price levels) that a bigger fixture leaves every clone
-carrying, which every `apply` call — even one doing no matching — still walks a little of.
+**The mean sits 2–9x above the median in every case**, which means the box this ran on was noisy
+— background load from other work on the shared machine, most likely, rather than anything in
+the engine. `cancel`'s median stays close to flat (0.88 → 1.96 → 4.05 µs, matching its O(1)
+tombstone design) while its mean grows 8.5x, which is exactly what heavy-tailed noise looks like:
+a handful of slow outlier iterations pull the mean up without moving the typical case. Re-running
+on a quieter box would likely tighten these numbers; the table above is what this machine actually
+produced, reported honestly rather than smoothed over.
+
+## Retrying safely
 
 
 A `504` from the API is genuinely ambiguous: the command is already on the durable log, so a

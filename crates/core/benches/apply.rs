@@ -106,7 +106,10 @@ fn bench_apply(c: &mut Criterion) {
                         limit(f.taker, Side::Buy, MID - (depth + 10) * TICK, QTY),
                     )
                 },
-                |(mut state, cmd)| black_box(state.apply(cmd)),
+                |(mut state, cmd)| {
+                    let r = state.apply(cmd);
+                    (state, black_box(r))
+                },
                 BatchSize::SmallInput,
             )
         });
@@ -115,7 +118,10 @@ fn bench_apply(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("limit_cross_one", depth), &f, |b, f| {
             b.iter_batched(
                 || (f.state.clone(), limit(f.taker, Side::Buy, MID + TICK, QTY)),
-                |(mut state, cmd)| black_box(state.apply(cmd)),
+                |(mut state, cmd)| {
+                    let r = state.apply(cmd);
+                    (state, black_box(r))
+                },
                 BatchSize::SmallInput,
             )
         });
@@ -126,7 +132,10 @@ fn bench_apply(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("market_sweep_half", depth), &f, |b, f| {
             b.iter_batched(
                 || (f.state.clone(), market(f.taker, Side::Buy, sweep_qty)),
-                |(mut state, cmd)| black_box(state.apply(cmd)),
+                |(mut state, cmd)| {
+                    let r = state.apply(cmd);
+                    (state, black_box(r))
+                },
                 BatchSize::SmallInput,
             )
         });
@@ -145,7 +154,10 @@ fn bench_apply(c: &mut Criterion) {
                         },
                     )
                 },
-                |(mut state, cmd)| black_box(state.apply(cmd)),
+                |(mut state, cmd)| {
+                    let r = state.apply(cmd);
+                    (state, black_box(r))
+                },
                 BatchSize::SmallInput,
             )
         });
