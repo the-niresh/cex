@@ -162,7 +162,41 @@ group, so a second instance would read the same commands and apply everything tw
 on `<commands-stream>:lock` enforces it: the engine takes it at boot, renews it while it runs, and
 stops the moment it cannot. A second engine refuses to start and names the one holding the stream.
 
-## Retrying safely
+## Measured
+
+
+What `State::apply` actually costs, in isolation, with no Redis and no HTTP anywhere near it.
+`crates/core/benches/apply.rs` seeds a `BTC_USDT` book to a given depth, then times one call to
+`apply` per iteration — a fresh `State` clone and a fresh `request_id` each time, so neither the
+idempotency log nor a draining book skews the number (see `crates/core/tests/bench_guards.rs`,
+which pins both of those assumptions).
+
+Reproduce with:
+
+```bash
+cargo bench -p cex-core
+```
+
+Point estimate of the mean, from criterion's `estimates.json`, at three book depths (resting price
+levels per side):
+
+| Case | depth 10 | depth 100 | depth 1,000 |
+|---|---|---|---|
+| `limit_rest` — rests below best bid, no match | 5.85 µs | 76.12 µs | 258.19 µs |
+| `limit_cross_one` — one match against best ask | 24.72 µs | 83.26 µs | 454.33 µs |
+| `market_sweep_half` — market buy through half the asks | 33.25 µs | 213.21 µs | 1044.18 µs |
+| `cancel` — lookup and removal, no matching | 22.65 µs | 47.91 µs | 438.69 µs |
+
+`market_sweep_half` climbs with depth as expected — a sweep sized to half the resting asks does
+more matching work the deeper the book is, roughly 6.4x from depth 10 to 100 and 4.9x from 100 to
+1,000, tracking the 5x growth in swept quantity at each step.
+
+`limit_rest` and `cancel` were expected to stay roughly flat — neither touches more than one price
+level — but both grew with depth instead, by a larger factor than `market_sweep_half` in the
+10 → 100 step. Matching code was not touched to chase this down, per the instruction that this
+task measures and does not optimise; worth a follow-up look, plausibly the larger `BTreeMap`s
+(order arena, idempotency log, book price levels) that a bigger fixture leaves every clone
+carrying, which every `apply` call — even one doing no matching — still walks a little of.
 
 
 A `504` from the API is genuinely ambiguous: the command is already on the durable log, so a

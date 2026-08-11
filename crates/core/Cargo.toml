@@ -5,9 +5,20 @@ edition.workspace = true
 
 # Deliberately no tokio, no redis, no time, no rand.
 # The engine core must be a pure function of (state, command) or replay is a lie.
+#
+# [dev-dependencies] is exempt and does not weaken that. Dev-dependencies are
+# not linked into the crate, so nothing there can reach its runtime behaviour.
+# criterion is here for benches/apply.rs and for nothing else.
 [dependencies]
 cex-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "apply"
+harness = false
