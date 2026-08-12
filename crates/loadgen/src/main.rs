@@ -10,13 +10,24 @@
 //! Correlation is done on the private `orders` feed, which carries the
 //! order's own id, not on the public depth feed: several orders can land
 //! inside one depth delta, so a delta cannot be attributed to one order. See
-//! `is_order_accepted` below.
+//! `is_order_accepted` below. The `visible ≥ ack` ordering this produces is a
+//! consequence of how the two are timed (both from one `Instant`, `ack`
+//! recorded first), not evidence of correctness by itself — see
+//! `docs/internals.md` for what actually establishes the correlation is
+//! right.
+//!
+//! Before the timed loop starts, the private connection blocks until the
+//! server confirms the `orders` subscription (`wait_for_subscribed`) so the
+//! first order can't be placed — and its `Accepted` event lost — while the
+//! subscription is still being registered. Each order's wait on the private
+//! feed is bounded by a timeout that names the order it gave up on, rather
+//! than hanging forever on a dropped event.
 //!
 //! Re-derive with:
 //!   cargo run -p cex-loadgen -- --host http://localhost:8080 \
 //!     --ws ws://localhost:8081 --count 2000 --out target/latency
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use cex_loadgen::report::Samples;
@@ -26,6 +37,18 @@ use uuid::Uuid;
 const MID: i64 = 50_000_000_000;
 const TICK: i64 = 10_000;
 const QTY: i64 = 100_000;
+
+/// How long to wait for the server to confirm the `orders` subscription
+/// before giving up. This is a single local round trip with no matching
+/// engine work behind it, so it should resolve in milliseconds; generous
+/// mainly so a slow CI runner doesn't make this flaky.
+const SUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long to wait for one order's `Accepted` event on the private feed
+/// before giving up. Generous enough not to fire on a healthy run over the
+/// public internet (Task 8's target), where the HTTP round trip alone can
+/// already run into the hundreds of milliseconds.
+const ORDER_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Parser)]
 struct Args {
@@ -73,6 +96,8 @@ async fn main() -> Result<()> {
     // the only one of the three that is independent of where this process is
     // running, which is why the screen's degraded threshold is taken from it.
     let mut engine = Samples::new();
+    let mut engine_header_missing = 0u64;
+    let mut engine_header_malformed = 0u64;
 
     for _ in 0..args.count {
         // A market buy, so it takes from the seeded asks rather than resting.
@@ -80,8 +105,15 @@ async fn main() -> Result<()> {
         let (order_id, engine_us) =
             place(&http, &args.host, &taker, &args.symbol, "BUY", None).await?;
         ack.record(started.elapsed().as_micros() as u64);
-        if let Some(us) = engine_us {
-            engine.record(us);
+        match engine_us {
+            EngineUs::Present(us) => engine.record(us),
+            EngineUs::Absent => engine_header_missing += 1,
+            EngineUs::Malformed(raw) => {
+                engine_header_malformed += 1;
+                eprintln!(
+                    "warning: order {order_id}: x-cex-engine-us header present but unparsable: {raw:?}"
+                );
+            }
         }
 
         wait_for_order(&mut orders_feed, order_id).await?;
@@ -100,13 +132,26 @@ async fn main() -> Result<()> {
     println!("engine  {:?}", engine.summary());
     println!("csv     {}/", args.out);
 
+    // A silent shortfall here is worse than a loud one: Task 10 sources its
+    // amber threshold from this histogram's p99, and a partial drop skews
+    // that number without anyone noticing a run went wrong.
+    let expected = args.count as u64;
+    let recorded = engine.summary().count;
+    if recorded != expected {
+        anyhow::bail!(
+            "engine histogram recorded only {recorded} of {expected} x-cex-engine-us samples \
+             ({engine_header_missing} responses had no header at all, \
+             {engine_header_malformed} had one that failed to parse as a u64) — \
+             Task 10's amber threshold is sourced from this histogram's p99, so treat this run's \
+             engine numbers as unreliable until the cause is fixed"
+        );
+    }
+
     Ok(())
 }
 
 struct User {
     token: String,
-    #[allow(dead_code)] // kept for parity with the brief / future correlation needs
-    id: Uuid,
 }
 
 async fn register(http: &reqwest::Client, host: &str) -> Result<User> {
@@ -122,7 +167,6 @@ async fn register(http: &reqwest::Client, host: &str) -> Result<User> {
 
     Ok(User {
         token: body["token"].as_str().context("token")?.to_string(),
-        id: body["user_id"].as_str().context("user_id")?.parse()?,
     })
 }
 
@@ -163,8 +207,40 @@ async fn seed_book(
     Ok(())
 }
 
-/// Returns the new order's id and the server's own `x-cex-engine-us`, which is
-/// `None` if the header was absent. A fresh `idempotency-key` every time.
+/// What the `x-cex-engine-us` header told us about one response.
+///
+/// Kept distinct from `Option<u64>` on purpose: a header that never showed up
+/// and a header that showed up mangled are different failures with different
+/// causes, and collapsing them into one silent `None` would give a build that
+/// stopped emitting the header, and a build that emits it in the wrong
+/// format, the exact same (silent) symptom. Task 10 sources its amber
+/// threshold from this histogram's p99, so a drop here is not a footnote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EngineUs {
+    Present(u64),
+    Absent,
+    Malformed(String),
+}
+
+/// Reads `x-cex-engine-us` out of a response header value, distinguishing
+/// "not sent" from "sent but not a valid u64" rather than merging both into
+/// `None`. Takes the raw `HeaderValue` rather than an already-decoded `&str`
+/// so this is exercised directly by unit tests without a live response.
+fn parse_engine_us(header: Option<&reqwest::header::HeaderValue>) -> EngineUs {
+    let Some(value) = header else {
+        return EngineUs::Absent;
+    };
+    match value.to_str() {
+        Ok(s) => match s.parse::<u64>() {
+            Ok(n) => EngineUs::Present(n),
+            Err(_) => EngineUs::Malformed(s.to_string()),
+        },
+        Err(_) => EngineUs::Malformed("<non-utf8 header value>".to_string()),
+    }
+}
+
+/// Returns the new order's id and what the server said about its own
+/// `x-cex-engine-us` timing. A fresh `idempotency-key` every time.
 ///
 /// A repeated key is answered straight from the idempotency log without the
 /// engine ever seeing it, which would record a cache hit as a matching time.
@@ -176,7 +252,7 @@ async fn place(
     symbol: &str,
     side: &str,
     price: Option<i64>,
-) -> Result<(u64, Option<u64>)> {
+) -> Result<(u64, EngineUs)> {
     let mut body = serde_json::json!({
         "symbol": symbol,
         "side": side,
@@ -197,11 +273,7 @@ async fn place(
         .await?
         .error_for_status()?;
 
-    let engine_us = raw
-        .headers()
-        .get("x-cex-engine-us")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok());
+    let engine_us = parse_engine_us(raw.headers().get("x-cex-engine-us"));
 
     let response: serde_json::Value = raw.json().await?;
     let order_id = response["order_id"]
@@ -214,6 +286,14 @@ async fn place(
 type Feed =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+/// Connects, authenticates, subscribes to the private `orders` channel, and
+/// blocks until the server has confirmed that subscription.
+///
+/// That last part matters: without it, the caller could place the first
+/// order before the ws server finished registering this connection for
+/// `orders`, in which case its `Accepted` event is published to nobody and
+/// `wait_for_order` would wait out its full timeout for an event that
+/// already came and went.
 async fn subscribe_private_orders(ws: &str, who: &User) -> Result<Feed> {
     use futures_util::SinkExt;
     use tokio_tungstenite::tungstenite::Message;
@@ -233,7 +313,43 @@ async fn subscribe_private_orders(ws: &str, who: &User) -> Result<Feed> {
                 .into(),
         ))
         .await?;
+
+    tokio::time::timeout(SUBSCRIBE_TIMEOUT, wait_for_subscribed(&mut socket))
+        .await
+        .context("timed out waiting for the server to confirm the orders subscription")??;
+
     Ok(socket)
+}
+
+/// Reads frames until the server confirms the `orders` subscription, or
+/// reports an outright rejection (bad token, unknown channel, ...).
+/// Everything else on the wire before that point — `Authenticated`, or a
+/// `Subscribed` ack for some other channel — is expected and skipped.
+async fn wait_for_subscribed(feed: &mut Feed) -> Result<()> {
+    use cex_ws::wire::ServerMessage;
+    use futures_util::StreamExt;
+    use tokio_tungstenite::tungstenite::Message;
+
+    while let Some(frame) = feed.next().await {
+        let Message::Text(text) = frame? else {
+            continue;
+        };
+        let Ok(msg) = serde_json::from_str::<ServerMessage>(&text) else {
+            // Envelopes (market data / order events) are not ServerMessages;
+            // none are expected this early, but skipping is still correct.
+            continue;
+        };
+        match msg {
+            ServerMessage::Subscribed { channels } if channels.iter().any(|c| c == "orders") => {
+                return Ok(());
+            }
+            ServerMessage::Error { error } => {
+                anyhow::bail!("server rejected the orders subscription: {error}")
+            }
+            _ => continue,
+        }
+    }
+    anyhow::bail!("the private feed closed before the orders subscription was confirmed")
 }
 
 /// True when this envelope is the `Accepted` event for exactly this order.
@@ -253,8 +369,22 @@ fn is_order_accepted(envelope: &cex_ws::wire::Envelope, order_id: u64) -> bool {
     )
 }
 
-/// Blocks until this exact order is acknowledged on the private feed.
+/// Blocks until this exact order is acknowledged on the private feed, or
+/// gives up loudly after `ORDER_TIMEOUT` — naming the order it gave up on —
+/// rather than hanging forever on a dropped event. A caller must not treat a
+/// timeout as "no sample this time" and carry on; it is propagated as an
+/// error so the run stops rather than silently biasing the percentiles.
 async fn wait_for_order(feed: &mut Feed, order_id: u64) -> Result<()> {
+    match tokio::time::timeout(ORDER_TIMEOUT, wait_for_order_inner(feed, order_id)).await {
+        Ok(result) => result,
+        Err(_) => anyhow::bail!(
+            "timed out after {ORDER_TIMEOUT:?} waiting for order {order_id} to be \
+             acknowledged on the private feed"
+        ),
+    }
+}
+
+async fn wait_for_order_inner(feed: &mut Feed, order_id: u64) -> Result<()> {
     use cex_ws::wire::Envelope;
     use futures_util::StreamExt;
     use tokio_tungstenite::tungstenite::Message;
@@ -347,5 +477,37 @@ mod tests {
         }));
 
         assert!(!is_order_accepted(&env, 42));
+    }
+
+    #[test]
+    fn parse_engine_us_reads_a_present_and_valid_header() {
+        let value = reqwest::header::HeaderValue::from_static("1234");
+        assert_eq!(parse_engine_us(Some(&value)), EngineUs::Present(1234));
+    }
+
+    #[test]
+    fn parse_engine_us_reports_absent_when_there_is_no_header() {
+        assert_eq!(parse_engine_us(None), EngineUs::Absent);
+    }
+
+    /// The failure Important 3 is about: a header that showed up but is not a
+    /// valid u64 must be reported, not folded into the same "nothing to see
+    /// here" bucket as a header that never showed up at all.
+    #[test]
+    fn parse_engine_us_reports_malformed_rather_than_dropping_a_present_but_unparsable_header() {
+        let value = reqwest::header::HeaderValue::from_static("not-a-number");
+        assert_eq!(
+            parse_engine_us(Some(&value)),
+            EngineUs::Malformed("not-a-number".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_engine_us_reports_malformed_for_a_non_utf8_header_value() {
+        let value = reqwest::header::HeaderValue::from_bytes(&[0xFF, 0xFE]).unwrap();
+        assert!(matches!(
+            parse_engine_us(Some(&value)),
+            EngineUs::Malformed(_)
+        ));
     }
 }

@@ -244,7 +244,9 @@ measurement belongs to exactly one order.
 Measured against the isolated local stack (`.superpowers/sdd/2026-08-11-latency-measurement-and-readout/local-stack.sh up`
 — redis db 3, `loadtest:*` streams, postgres schema `loadtest`, fully separated from the live
 exchange behind api.niresh.tech), one maker seeding 2,000 resting asks and one taker sending
-2,000 market buys against them:
+2,000 market buys against them, one order at a time — each order's HTTP round trip and feed wait
+complete before the next order is sent, so this is serialized single-order latency, not
+throughput under concurrent load:
 
 ```bash
 cargo run -p cex-loadgen -- --host http://localhost:8080 --ws ws://localhost:8081 --count 2000
@@ -259,11 +261,27 @@ cargo run -p cex-loadgen -- --host http://localhost:8080 --ws ws://localhost:808
 `visible` is slower than `ack` at every percentile, as expected: the private-feed message is
 strictly downstream of the HTTP response, so `visible` pays for the full HTTP round trip and
 then also whatever it takes the acceptance event to reach this WebSocket connection through the
-engine → ws pipeline. The gap between them (~113 µs at p50, growing to ~5.2ms at p999) is that
-event path's own cost. `engine` sits below both at every percentile, as it should — it is the
+engine → ws pipeline. `engine` sits below both at every percentile, as it should — it is the
 portion of `ack` spent inside the engine's own apply loop, not the network or HTTP stack around
-it. (Had `visible` come out faster than `ack` at any percentile, that would mean the correlation
-was matching a previous order's acceptance rather than this one's — it did not, here.)
+it. The difference between the `visible` and `ack` numbers at the same rank (~113 µs at p50,
+growing to ~5.2ms at p999) is a rough sense of what that event path costs, not a measured
+latency of any one thing — it is a difference of percentiles, not a percentile of per-order
+differences.
+
+**`visible ≥ ack` on every sample is guaranteed by construction, not something this run
+discovered.** Both are timed from the same `Instant` (`ack.record(started.elapsed()...)` runs
+right after the HTTP response, `visible.record(started.elapsed()...)` runs later in the same
+iteration, after `wait_for_order` returns), and `Instant::elapsed` is monotonic — so the
+ordering holds pointwise for every single sample regardless of whether the event being waited
+on is actually *this* order's. A correlation bug that matched some other order's `Accepted`
+event would still show `visible ≥ ack`, as long as that event happened to arrive after the HTTP
+response, which it almost always would. What actually establishes the correlation is right is
+`is_order_accepted` in `crates/loadgen/src/main.rs`, which compares the private feed's own
+`order_id` field rather than matching on event type alone, together with its mutation-tested
+unit test `does_not_match_the_accepted_event_for_a_different_order_id`: deleting the id
+comparison reintroduces exactly the "matches a previous order's event" bug, and that test is the
+one that catches it. The size of the `visible`/`ack` gap above is weak corroboration at best — a
+bug that matched a very recently stale event would still show a small positive gap — not proof.
 
 Raw per-bucket CSVs, from which every percentile above can be recomputed, land in
 `target/latency/{ack,visible,engine}.csv`.
