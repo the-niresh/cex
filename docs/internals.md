@@ -226,6 +226,48 @@ a handful of slow outlier iterations pull the mean up without moving the typical
 on a quieter box would likely tighten these numbers; the table above is what this machine actually
 produced, reported honestly rather than smoothed over.
 
+### Load driver: HTTP ack vs private-feed visibility
+
+`crates/loadgen` (`cargo run -p cex-loadgen`) drives real orders through a running exchange and
+times two things per order: `ack` is the HTTP response returning from `POST /orders`; `visible`
+is the same order reaching this client's own `orders` channel on the private WebSocket feed —
+the point at which a real trader would actually see the order took effect. A third histogram,
+`engine`, is the server's own `x-cex-engine-us` response header: the exchange's own view of how
+long it spent inside the engine, independent of where the load driver happens to be running.
+
+**Correlation.** Several orders can land inside one depth delta on the public book feed, so a
+depth delta cannot be attributed to any single order. The driver therefore does not use the
+public depth path at all; it correlates on the private `orders` feed's
+`OrderUpdate::Accepted { order_id, .. }` event, which carries the order's own id, so each
+measurement belongs to exactly one order.
+
+Measured against the isolated local stack (`.superpowers/sdd/2026-08-11-latency-measurement-and-readout/local-stack.sh up`
+— redis db 3, `loadtest:*` streams, postgres schema `loadtest`, fully separated from the live
+exchange behind api.niresh.tech), one maker seeding 2,000 resting asks and one taker sending
+2,000 market buys against them:
+
+```bash
+cargo run -p cex-loadgen -- --host http://localhost:8080 --ws ws://localhost:8081 --count 2000
+```
+
+| | count | p50 | p90 | p99 | p999 | max |
+|---|---|---|---|---|---|---|
+| `ack` — HTTP response | 2000 | 1356 µs | 4383 µs | 9255 µs | 20655 µs | 22431 µs |
+| `visible` — private feed | 2000 | 1469 µs | 4747 µs | 9815 µs | 25839 µs | 42271 µs |
+| `engine` — `x-cex-engine-us` | 2000 | 765 µs | 3079 µs | 6783 µs | 12175 µs | 18751 µs |
+
+`visible` is slower than `ack` at every percentile, as expected: the private-feed message is
+strictly downstream of the HTTP response, so `visible` pays for the full HTTP round trip and
+then also whatever it takes the acceptance event to reach this WebSocket connection through the
+engine → ws pipeline. The gap between them (~113 µs at p50, growing to ~5.2ms at p999) is that
+event path's own cost. `engine` sits below both at every percentile, as it should — it is the
+portion of `ack` spent inside the engine's own apply loop, not the network or HTTP stack around
+it. (Had `visible` come out faster than `ack` at any percentile, that would mean the correlation
+was matching a previous order's acceptance rather than this one's — it did not, here.)
+
+Raw per-bucket CSVs, from which every percentile above can be recomputed, land in
+`target/latency/{ack,visible,engine}.csv`.
+
 ## Retrying safely
 
 

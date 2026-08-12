@@ -95,6 +95,17 @@ mod tests {
     }
 
     #[test]
+    fn a_zero_value_is_floored_to_one_microsecond_not_dropped() {
+        // record() clamps at `.max(1)` before handing off to the histogram,
+        // whose low bound is 1. Task 6 covered the clamp-at-ceiling path
+        // (values above 60s) but nothing exercised the floor.
+        let summary = with(&[0]).summary();
+        assert_eq!(summary.count, 1, "a floored value must still be counted");
+        assert_eq!(summary.p50, 1);
+        assert_eq!(summary.max, 1);
+    }
+
+    #[test]
     fn an_empty_set_reports_zeroes_rather_than_panicking() {
         let summary = Samples::new().summary();
         assert_eq!(summary.count, 0);
