@@ -48,7 +48,7 @@ function Trigger({ value, label, count }: { value: string; label: string; count:
     <TabsTrigger
       value={value}
       data-testid={`activity-tab-${value}`}
-      className="rounded-control px-2 py-0.5 text-label font-medium uppercase tracking-[0.12em] text-ink-4 transition-colors hover:text-ink-2 data-[selected]:bg-rule data-[selected]:text-ink"
+      className="rounded-control px-2 py-0.5 font-sans text-label font-medium uppercase tracking-[0.12em] text-ink-4 transition-colors hover:text-ink-2 data-[selected]:bg-rule data-[selected]:text-ink"
     >
       {label}
       {/* The count sits on the tab so an empty panel does not need opening. */}
