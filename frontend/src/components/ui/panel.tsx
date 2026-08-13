@@ -109,6 +109,30 @@ export function Scroll({ className, children, ...rest }: { className?: string; c
   );
 }
 
+/**
+ * Headings and rows in one horizontal scroller, so they cannot drift out of
+ * alignment and a panel narrower than the table scrolls sideways instead of
+ * quietly cutting the last columns off the end.
+ *
+ * The caller puts the same `minWidth` on its `ColumnHeads` and its `Scroll` —
+ * and drops it when the table is empty, because an empty panel has no columns
+ * to hold in alignment and should centre its message in the width the user can
+ * actually see rather than one they would have to scroll to reach.
+ */
+export function Table({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-x-auto",
+        "[&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:bg-rule-hi [&::-webkit-scrollbar-track]:bg-transparent",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** A panel with nothing in it yet. Says so, rather than rendering a void. */
 export function Empty({ children }: { children: ReactNode }) {
   return <div className="p-4 text-center font-sans text-label text-ink-4">{children}</div>;

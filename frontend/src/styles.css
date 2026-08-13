@@ -397,74 +397,6 @@ body::after{
 }
 .spread .gap .v{font-size:11px;color:var(--ink-2)}
 
-/* ─────────────────────────── open orders + fills ─────────────────────────── */
-
-/* Headings and rows in one horizontal scroller, so they cannot drift apart
-   and a panel narrower than the table scrolls instead of clipping. `.scroll`
-   keeps owning the vertical axis inside it. */
-.tbl{flex:1;min-height:0;display:flex;flex-direction:column;overflow-x:auto}
-.tbl .chead,.tbl .scroll{min-width:var(--tbl-min,0)}
-/* An empty panel has no columns to hold in alignment, so it fills the panel
-   and centres its message there — rather than centring inside a width the
-   user would have to scroll sideways to read. */
-.tbl:has(.empty) .chead,.tbl:has(.empty) .scroll{min-width:0}
-.tbl::-webkit-scrollbar{height:6px}
-.tbl::-webkit-scrollbar-thumb{background:var(--rule-hi)}
-.tbl::-webkit-scrollbar-track{background:transparent}
-
-/* id age market side type | price qty filled | prog status ✕
-   Eleven columns, which is what the rows actually render — the template used
-   to declare fifteen (tif, remaining, notional, slack), so every heading from
-   Price rightwards sat over the wrong column and the table claimed 130px more
-   width than the panel had. Progress takes the slack; the rest are fixed so
-   the numbers stay in tabular alignment. */
-.open-orders{--tbl-min:824px}
-.open-orders .chead,.oo{
-  grid-template-columns:56px 56px 92px 46px 52px 100px 92px 92px minmax(40px,1fr) 76px 24px;
-  column-gap:8px;
-}
-.open-orders .chead span:nth-child(n+6),.oo span:nth-child(n+6){text-align:right}
-.open-orders .chead span:nth-child(11),.oo span:nth-child(11){text-align:center}
-.oo{display:grid;align-items:center;height:21px;padding:0 9px;border-left:2px solid transparent}
-.oo:hover{background:#12161c}
-.oo .id{color:var(--ink-4)}
-.oo .age{color:var(--ink-4)}
-.oo .mkt{color:var(--ink-2);letter-spacing:.04em}
-.oo .side{font-size:10px;letter-spacing:.08em}
-.oo.buy{border-left-color:color-mix(in oklab,var(--buy) 55%,transparent)}
-.oo.buy .side{color:var(--buy)}
-.oo.sell{border-left-color:color-mix(in oklab,var(--sell) 55%,transparent)}
-.oo.sell .side{color:var(--sell)}
-.oo .kind{color:var(--ink-3);font-size:10px;letter-spacing:.06em}
-.oo .filled{color:var(--ink-2)}
-.oo .st{font-size:9.5px;letter-spacing:.1em;color:var(--ink-3)}
-.oo .st.partial{color:var(--ink)}
-.oo .prog{height:3px;background:var(--rule);position:relative;margin-left:12px}
-.oo .prog i{position:absolute;inset:0 auto 0 0;background:var(--ink-3)}
-.oo.buy .prog i{background:color-mix(in oklab,var(--buy) 80%,transparent)}
-/* The cancel button. 11px of glyph in a 21px row; the row is as tall as it
-   gets, so the target is widened instead to keep it clickable. */
-.oo .x{
-  all:unset;cursor:pointer;text-align:center;color:var(--ink-4);font-size:11px;line-height:1;
-  display:flex;align-items:center;justify-content:center;
-  min-width:24px;align-self:stretch;
-}
-.oo .x:hover{color:var(--sell)}
-
-.fills{--tbl-min:470px}
-.fills .chead,.fl{grid-template-columns:66px 92px 56px minmax(72px,1fr) 80px 88px;column-gap:8px}
-.fills .chead span:nth-child(n+4),.fl span:nth-child(n+4){text-align:right}
-.fills .chead span:nth-child(-n+3),.fl span:nth-child(-n+3){text-align:left}
-.fl{display:grid;align-items:center;height:19px;padding:0 9px}
-.fl:hover{background:#12161c}
-.fl .t{color:var(--ink-4);font-size:10.5px}
-.fl .side{font-size:10px;letter-spacing:.06em;white-space:nowrap}
-.fl.buy .side,.fl.buy .p{color:var(--buy)}
-.fl.sell .side,.fl.sell .p{color:var(--sell)}
-.fl .q{color:var(--ink-2)}
-/* maker/taker rides on the side cell rather than paying for a column of its own */
-.fl .role{color:var(--ink-4);font-size:10px;letter-spacing:.04em}
-
 /* ─────────────────────────── degraded ───────────────────────────
    A stale book must be unmistakable without borrowing the buy/sell
    hues. So: the live data desaturates and dims, and a hatched bar
@@ -538,8 +470,6 @@ body::after{
   .screen{
     grid-template-columns:minmax(260px,1fr) minmax(300px,370px) minmax(290px,320px);
   }
-  .open-orders{grid-column:1/2;grid-row:3}
-  .fills{grid-column:2/4;grid-row:3}
 }
 
 /* ── one column, and the page scrolls.
@@ -555,13 +485,13 @@ body::after{
     grid-template-rows:none;
     grid-auto-rows:auto;
   }
-  /* Every panel is its own row; the explicit placements above would
-     otherwise pin them into columns that no longer exist. */
-  .open-orders,.fills{grid-column:1/-1;grid-row:auto}
+  /* Every panel is its own row; the explicit placement above would
+     otherwise pin the activity panel into a row that no longer exists. */
+  .activity{grid-column:1/-1;grid-row:auto}
   .chart{min-height:300px}
   .book{min-height:430px}
   .tape{min-height:240px}
-  .open-orders,.fills{min-height:190px}
+  .activity{min-height:190px}
   /* No arrangement fits five blocks across a phone, so here the bar does
      wrap — but on a fixed seam rather than wherever the numbers happen to
      push it. The ticker always takes its own full line, which puts the
