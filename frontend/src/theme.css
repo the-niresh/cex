@@ -173,3 +173,54 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   TRANSITIONAL — delete this block with styles.css.
+
+   The type split is the change that makes the screen stop reading as a wall:
+   numbers stay monospace so digits line up down a column, labels move to the
+   sans sibling so they stop competing with the data for attention.
+
+   Doing it here rather than in eleven components is deliberate. It lands the
+   change across the whole screen in one place while the port is still in
+   progress, and it is a `utilities` rule so it outranks the legacy layer.
+   Each component drops out of these selectors as it is ported, and when the
+   last one has, this block and the file it fights both go.
+   ══════════════════════════════════════════════════════════════════════ */
+@layer utilities {
+  .phead h2,
+  .chead,
+  .chead span,
+  .meta,
+  .brand,
+  .brand .build,
+  .seg button,
+  .k,
+  .flabel,
+  .empty,
+  .picks button,
+  .assets button,
+  .staleband,
+  .conn,
+  .who {
+    font-family: var(--font-sans);
+  }
+
+  /* Column headings were 10px and are the labels the eye scans most. */
+  .chead,
+  .chead span {
+    font-size: var(--text-label);
+  }
+
+  .phead h2 {
+    font-size: var(--text-label);
+  }
+
+  /* Anything that is a number keeps the mono, including inside the above. */
+  .num,
+  .price,
+  .tnum,
+  .statusbar b {
+    font-family: var(--font-mono);
+  }
+}
