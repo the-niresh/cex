@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import type { FeedStatus } from "../lib/feed";
 import { decimalsForStep } from "../lib/num";
 import type { DayStats, Market, Session } from "../lib/types";
@@ -25,19 +26,15 @@ interface Props {
 }
 
 const STATUS_TEXT: Record<FeedStatus, string> = {
-  connecting: "CONNECTING",
-  live: "LIVE",
-  reconnecting: "RECONNECTING",
-  closed: "OFFLINE",
+  connecting: "Connecting",
+  live: "Live",
+  reconnecting: "Reconnecting",
+  closed: "Offline",
 };
 
 /** The caption over a readout in the ticker. */
 function Key({ children }: { children: string }) {
-  return (
-    <span className="font-sans text-[9.5px] font-medium uppercase tracking-[0.14em] text-ink-4">
-      {children}
-    </span>
-  );
+  return <span className="font-sans text-micro text-ink-4">{children}</span>;
 }
 
 /**
@@ -78,12 +75,12 @@ export function TopBar({
     <header
       className={[
         "col-span-full flex min-w-0 flex-row flex-nowrap items-stretch overflow-hidden",
-        "min-h-9 rounded-panel border border-rule bg-panel-hi [&>*]:min-h-9",
+        "min-h-14 rounded-panel border border-rule bg-panel-hi [&>*]:min-h-14",
         "max-stack:flex-wrap",
       ].join(" ")}
     >
       <div className="flex flex-none items-center gap-2 border-r border-rule pl-3 pr-3.5">
-        <span className="font-sans text-[11px] font-bold tracking-[0.24em] text-ink">CEX</span>
+        <span className="font-sans text-[11px] font-bold tracking-tight text-ink">CEX</span>
         <span className="font-sans text-micro tracking-[0.06em] text-ink-4">spot</span>
       </div>
 
@@ -93,7 +90,7 @@ export function TopBar({
           account block, which then swallowed the clicks meant for them. */}
       <nav
         className={[
-          "flex min-w-[150px] flex-[0_1_auto] overflow-x-auto",
+          "flex min-w-[150px] flex-[0_1_auto] items-center gap-1 overflow-x-auto px-2 py-1",
           "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
           "max-stack:flex-[1_1_auto]",
         ].join(" ")}
@@ -107,20 +104,16 @@ export function TopBar({
               type="button"
               aria-selected={selected}
               onClick={() => onSelect(m.symbol)}
-              className={[
-                "flex min-w-[112px] cursor-pointer flex-col justify-center gap-px px-3.5",
-                "border-r border-rule transition-colors",
-                selected
-                  ? "bg-panel shadow-[inset_0_-2px_0_var(--color-control)]"
-                  : "hover:bg-hover",
-              ].join(" ")}
+              className={cn(
+                "flex min-w-[104px] cursor-pointer flex-col justify-center gap-px rounded-control px-2.5 py-1",
+                "transition-colors",
+                selected ? "bg-field" : "hover:bg-hover",
+              )}
             >
-              <span
-                className={`font-sans text-[10.5px] tracking-[0.06em] ${selected ? "text-ink" : "text-ink-3"}`}
-              >
+              <span className={cn("font-sans text-data", selected ? "text-ink" : "text-ink-3")}>
                 {m.symbol}
               </span>
-              <span className={`tnum text-micro ${selected ? "text-ink-3" : "text-ink-4"}`}>
+              <span className={cn("tnum text-micro", selected ? "text-ink-3" : "text-ink-4")}>
                 {selected && lastPrice !== null ? (
                   <span className={down ? "text-sell" : "text-buy"}>
                     <Num
@@ -157,7 +150,7 @@ export function TopBar({
           <div className="flex flex-col gap-px leading-[1.15]">
             <Key>last</Key>
             <span
-              className={`tnum text-[20px] font-medium leading-[1.1] tracking-[-0.015em] ${
+              className={`tnum text-[22px] font-medium leading-[1.1] tracking-[-0.015em] ${
                 down ? "text-sell" : "text-buy"
               }`}
             >
@@ -177,7 +170,7 @@ export function TopBar({
             {/* The day's move is the one number here that carries a direction,
                 so it is the only other one that carries a colour. */}
             <span
-              className={`tnum text-[11.5px] ${
+              className={`tnum text-micro ${
                 day === null ? "text-ink-2" : day.change < 0n ? "text-sell" : "text-buy"
               }`}
             >
@@ -204,7 +197,7 @@ export function TopBar({
 
           <div className="flex flex-col gap-px leading-[1.15]">
             <Key>24h high</Key>
-            <span className="tnum text-[11.5px] text-ink-2">
+            <span className="tnum text-micro text-ink-2">
               {day === null ? (
                 "—"
               ) : (
@@ -215,7 +208,7 @@ export function TopBar({
 
           <div className="flex flex-col gap-px leading-[1.15]">
             <Key>24h low</Key>
-            <span className="tnum text-[11.5px] text-ink-2">
+            <span className="tnum text-micro text-ink-2">
               {day === null ? (
                 "—"
               ) : (
@@ -226,7 +219,7 @@ export function TopBar({
 
           <div className="flex flex-col gap-px leading-[1.15]">
             <Key>24h volume</Key>
-            <span className="tnum text-[11.5px] text-ink-2">
+            <span className="tnum text-micro text-ink-2">
               {day === null ? (
                 "—"
               ) : (
@@ -247,14 +240,10 @@ export function TopBar({
         ].join(" ")}
       >
         <i
-          className={`size-1.5 ${feedDegraded ? "bg-warn" : "animate-[dot-pulse_2.4s_ease-in-out_infinite] bg-buy"}`}
+          className={`size-1.5 rounded-full ${feedDegraded ? "bg-warn" : "animate-[dot-pulse_2.4s_ease-in-out_infinite] bg-buy"}`}
         />
-        <span
-          className={`font-sans text-micro font-bold tracking-[0.16em] ${
-            feedDegraded ? "text-warn" : "text-ink-2"
-          }`}
-        >
-          {feedDegraded && status === "live" ? "RESYNCING" : STATUS_TEXT[status]}
+        <span className={`font-sans text-micro ${feedDegraded ? "text-warn" : "text-ink-2"}`}>
+          {feedDegraded && status === "live" ? "Resyncing" : STATUS_TEXT[status]}
         </span>
       </div>
 
@@ -266,13 +255,13 @@ export function TopBar({
       >
         {session?.name && (
           <span
-            className="max-w-[14ch] truncate font-sans text-[10.5px] text-ink"
+            className="max-w-[14ch] truncate font-sans text-micro text-ink"
             data-testid="account-name"
           >
             {session.name}
           </span>
         )}
-        <span className="tnum text-micro text-ink-3" data-testid="account-id">
+        <span className="tnum text-micro text-ink-4" data-testid="account-id">
           {session ? `${session.user_id.slice(0, 8)}…` : "signed out"}
         </span>
         {/* 24px is the floor for a pointer target (WCAG 2.2). This one was 11px
@@ -282,9 +271,9 @@ export function TopBar({
           type="button"
           onClick={session ? onSignOut : onSignIn}
           data-testid="account-action"
-          className="flex min-h-6 cursor-pointer items-center px-1 font-sans text-micro font-medium tracking-[0.12em] text-ink-4 transition-colors hover:text-ink-2"
+          className="flex min-h-6 cursor-pointer items-center px-1 font-sans text-micro font-medium text-ink-4 transition-colors hover:text-ink-2"
         >
-          {session ? "LOG OUT" : "LOG IN"}
+          {session ? "Log out" : "Log in"}
         </button>
       </div>
     </header>
