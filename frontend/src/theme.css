@@ -229,24 +229,8 @@
    last one has, this block and the file it fights both go.
    ══════════════════════════════════════════════════════════════════════ */
 @layer utilities {
-  .phead h2,
-  .chead,
-  .chead span,
-  .meta,
-  .k,
-  .empty,
-  .staleband {
+  .k {
     font-family: var(--font-sans);
-  }
-
-  /* Column headings were 10px and are the labels the eye scans most. */
-  .chead,
-  .chead span {
-    font-size: var(--text-label);
-  }
-
-  .phead h2 {
-    font-size: var(--text-label);
   }
 
   /* ── surfaces ──────────────────────────────────────────────────────
@@ -273,21 +257,7 @@
     border: 1px solid var(--color-rule);
   }
 
-  /* Depth bars were at 13% against a near-black ground — visible on bids,
-     effectively invisible on asks. The eye is meant to read shape down the
-     ladder before it reads any number, so they get enough weight to do that. */
-  .asks .bar {
-    background: color-mix(in oklab, var(--color-sell) 22%, transparent);
-    border-right-color: color-mix(in oklab, var(--color-sell) 55%, transparent);
-  }
-  .bids .bar {
-    background: color-mix(in oklab, var(--color-buy) 22%, transparent);
-    border-right-color: color-mix(in oklab, var(--color-buy) 55%, transparent);
-  }
-
   /* Anything that is a number keeps the mono, including inside the above. */
-  .num,
-  .price,
   .tnum,
   .statusbar b {
     font-family: var(--font-mono);
