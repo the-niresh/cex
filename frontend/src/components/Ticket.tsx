@@ -1,7 +1,20 @@
 import { useMemo, useState } from "react";
 import type { PlaceOrderRequest } from "../lib/api";
+import { cn } from "../lib/utils";
 import { decimalsForStep, feeOn, formatAtoms, isAligned, notional, parseAtoms } from "../lib/num";
 import type { Balance, Market, Side } from "../lib/types";
+import {
+  AvailableLine,
+  Field,
+  FieldLabel,
+  FieldName,
+  FieldRule,
+  Segment,
+  Segmented,
+  SubmitButton,
+  SunkenInput,
+} from "./ui/form";
+import { Meta, PanelHead, PanelTitle } from "./ui/panel";
 
 interface Props {
   market: Market | null;
@@ -159,124 +172,134 @@ export function Ticket({
 
   return (
     <>
-      <div className="phead">
-        <h2>Order ticket</h2>
+      <PanelHead>
+        <PanelTitle>Order ticket</PanelTitle>
         {market && (
-          <span className="meta">
-            min <b>{formatAtoms(market.min_notional, market.quote_decimals, { places: 2 })}</b>{" "}
+          <Meta>
+            min{" "}
+            <b className="tnum font-medium text-ink-2">
+              {formatAtoms(market.min_notional, market.quote_decimals, { places: 2 })}
+            </b>{" "}
             {market.quote}
-          </span>
+          </Meta>
         )}
-      </div>
+      </PanelHead>
 
-      <div className="body">
-        <div className="seg side" data-testid="side-select">
-          <button data-side="buy" aria-selected={side === "BUY"} onClick={() => setSide("BUY")}>
+      <div className="flex flex-none flex-col gap-2.5 p-2.5 [&>*]:flex-none">
+        <Segmented className="grid-cols-2" data-testid="side-select">
+          <Segment
+            data-side="buy"
+            tone="buy"
+            selected={side === "BUY"}
+            onClick={() => setSide("BUY")}
+          >
             BUY
-          </button>
-          <button data-side="sell" aria-selected={side === "SELL"} onClick={() => setSide("SELL")}>
+          </Segment>
+          <Segment
+            data-side="sell"
+            tone="sell"
+            selected={side === "SELL"}
+            onClick={() => setSide("SELL")}
+          >
             SELL
-          </button>
-        </div>
+          </Segment>
+        </Segmented>
 
-        <div className="seg kind">
-          <button aria-selected={kind === "LIMIT"} onClick={() => setKind("LIMIT")}>
+        <Segmented className="grid-cols-2">
+          <Segment selected={kind === "LIMIT"} onClick={() => setKind("LIMIT")}>
             LIMIT
-          </button>
-          <button aria-selected={kind === "MARKET"} onClick={() => setKind("MARKET")}>
+          </Segment>
+          <Segment selected={kind === "MARKET"} onClick={() => setKind("MARKET")}>
             MARKET
-          </button>
-        </div>
+          </Segment>
+        </Segmented>
 
-        <div className="field">
-          <div className="flabel">
-            <span className="k">Price</span>
+        <Field>
+          <FieldLabel>
+            <FieldName>Price</FieldName>
             {market && kind === "LIMIT" && (bestBid !== null || bestAsk !== null) && (
               // Two prices worth one click each: the middle of the spread, and
               // the best price already showing on your own side of it. Both
               // come off the book already on screen.
-              <span className="picks" data-testid="price-picks">
-                <button type="button" onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
+              <span className="ml-2.5 flex gap-px" data-testid="price-picks">
+                <Pick onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
                   MID
-                </button>
-                <button type="button" onClick={() => setPriceFrom(bboPrice)} disabled={bboPrice === null}>
+                </Pick>
+                <Pick onClick={() => setPriceFrom(bboPrice)} disabled={bboPrice === null}>
                   BBO
-                </button>
+                </Pick>
               </span>
             )}
             {market && (
-              <span className="rule">
+              <FieldRule>
                 tick {formatAtoms(market.tick_size, market.quote_decimals, { places: priceDp })}
-              </span>
+              </FieldRule>
             )}
-          </div>
-          <div className="input">
-            <input
-              value={kind === "MARKET" ? "" : price}
-              placeholder={kind === "MARKET" ? "market" : ""}
-              disabled={kind === "MARKET"}
-              inputMode="decimal"
-              aria-label="price"
-              onChange={(e) => onPriceChange(e.target.value)}
-            />
-            <span className="unit">{market?.quote ?? ""}</span>
-          </div>
-        </div>
+          </FieldLabel>
+          <SunkenInput
+            unit={market?.quote ?? ""}
+            value={kind === "MARKET" ? "" : price}
+            placeholder={kind === "MARKET" ? "market" : ""}
+            disabled={kind === "MARKET"}
+            inputMode="decimal"
+            aria-label="price"
+            onChange={(e) => onPriceChange(e.target.value)}
+          />
+        </Field>
 
-        <div className="field">
-          <div className="flabel">
-            <span className="k">Quantity</span>
+        <Field>
+          <FieldLabel>
+            <FieldName>Quantity</FieldName>
             {market && (
-              <span className="rule">
+              <FieldRule>
                 lot {formatAtoms(market.lot_size, market.base_decimals, { places: qtyDp })}
-              </span>
+              </FieldRule>
             )}
+          </FieldLabel>
+          <SunkenInput
+            unit={market?.base ?? ""}
+            bad={problem !== null}
+            value={qty}
+            inputMode="decimal"
+            aria-label="quantity"
+            onChange={(e) => setQty(e.target.value)}
+          />
+          <div className="grid grid-cols-4 gap-px bg-rule">
+            {([25n, 50n, 75n, 100n] as const).map((percent) => (
+              <button
+                key={String(percent)}
+                type="button"
+                onClick={() => fillPercent(percent)}
+                className="flex min-h-6 cursor-pointer items-center justify-center bg-panel-hi py-1 text-center font-sans text-micro text-ink-3 transition-colors hover:bg-hover hover:text-ink"
+              >
+                {percent === 100n ? "MAX" : `${percent}%`}
+              </button>
+            ))}
           </div>
-          <div className={`input${problem ? " bad" : ""}`}>
-            <input
-              value={qty}
-              inputMode="decimal"
-              aria-label="quantity"
-              onChange={(e) => setQty(e.target.value)}
-            />
-            <span className="unit">{market?.base ?? ""}</span>
-          </div>
-          <div className="pcts">
-            <button onClick={() => fillPercent(25n)}>25%</button>
-            <button onClick={() => fillPercent(50n)}>50%</button>
-            <button onClick={() => fillPercent(75n)}>75%</button>
-            <button onClick={() => fillPercent(100n)}>MAX</button>
-          </div>
-        </div>
+        </Field>
 
         {problem && (
-          <div className="bad-note" data-testid="ticket-problem">
+          <div className="font-sans text-micro leading-[1.4] text-sell" data-testid="ticket-problem">
             {problem}
           </div>
         )}
 
-        <div className="readout">
-          <div className="r">
-            <span className="k">Notional</span>
-            <span className="v">
-              {quote && market
-                ? `${formatAtoms(quote.value, market.quote_decimals)} ${market.quote}`
-                : "—"}
-            </span>
-          </div>
-          <div className="r">
-            <span className="k">
-              Fee<span className="hint">taker {market ? String(market.taker_fee_bps) : "—"} bps</span>
-            </span>
-            <span className="v">
-              {quote && market
-                ? `${formatAtoms(quote.fee, market.quote_decimals)} ${market.quote}`
-                : "—"}
-            </span>
-          </div>
-          <div className="r total">
-            <span className="k">{side === "BUY" ? "Total cost" : "Net proceeds"}</span>
-            <span className="v" data-testid="ticket-total">
+        <div className="border border-rule bg-sunken">
+          <Readout label="Notional">
+            {quote && market
+              ? `${formatAtoms(quote.value, market.quote_decimals)} ${market.quote}`
+              : "—"}
+          </Readout>
+          <Readout
+            label="Fee"
+            hint={`taker ${market ? String(market.taker_fee_bps) : "—"} bps`}
+          >
+            {quote && market
+              ? `${formatAtoms(quote.fee, market.quote_decimals)} ${market.quote}`
+              : "—"}
+          </Readout>
+          <Readout label={side === "BUY" ? "Total cost" : "Net proceeds"} total>
+            <span data-testid="ticket-total">
               {quote && market
                 ? `${formatAtoms(
                     side === "BUY" ? quote.value + quote.fee : quote.value - quote.fee,
@@ -284,11 +307,11 @@ export function Ticket({
                   )} ${market.quote}`
                 : "—"}
             </span>
-          </div>
+          </Readout>
         </div>
 
-        <button
-          className={`submit${side === "SELL" ? " sell" : ""}`}
+        <SubmitButton
+          side={side}
           data-testid="ticket-submit"
           disabled={signedIn && !ready}
           onClick={() => void submit()}
@@ -300,17 +323,62 @@ export function Ticket({
               : qty
                 ? `${side} ${qty} ${market?.base ?? ""}`.trim()
                 : side}
-        </button>
+        </SubmitButton>
 
-        <div className="avail">
-          <span>available</span>
-          <b>
-            {spendBalance
-              ? `${formatAtoms(spendBalance.available, spendDecimals)} ${spendAsset}`
-              : `0 ${spendAsset}`}
-          </b>
-        </div>
+        <AvailableLine label="available">
+          {spendBalance
+            ? `${formatAtoms(spendBalance.available, spendDecimals)} ${spendAsset}`
+            : `0 ${spendAsset}`}
+        </AvailableLine>
       </div>
     </>
+  );
+}
+
+/** One price straight off the book. Outlined, small, and never the loudest thing. */
+function Pick({
+  children,
+  ...rest
+}: { children: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={[
+        "flex min-h-5 cursor-pointer items-center px-1.5 py-0.5",
+        "font-sans text-[9.5px] font-bold tracking-[0.12em] text-ink-3",
+        "shadow-[inset_0_0_0_1px_var(--color-rule-hi)] transition-colors",
+        "hover:bg-panel-hi hover:text-ink",
+        "disabled:cursor-default disabled:bg-transparent disabled:text-ink-4",
+        "disabled:shadow-[inset_0_0_0_1px_var(--color-rule)]",
+      ].join(" ")}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** One line of the cost estimate. The total is the one that gets the weight. */
+function Readout({
+  label,
+  hint,
+  total = false,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  total?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center border-b border-rule px-2 py-1 last:border-b-0">
+      <span className="font-sans text-label font-medium uppercase tracking-[0.13em] text-ink-4">
+        {label}
+        {hint !== undefined && <span className="ml-1.5 text-[9.5px] normal-case">{hint}</span>}
+      </span>
+      <span className={cn("tnum ml-auto", total ? "text-data text-ink" : "text-ink-2")}>
+        {children}
+      </span>
+    </div>
   );
 }

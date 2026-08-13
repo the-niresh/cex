@@ -135,7 +135,12 @@ export default function App() {
           <Tape market={x.market} prints={x.tape} tab={bookTab} onTab={setBookTab} />
         )}
 
-        <section className="panel ticket bal">
+        {/* The right rail carries the ticket, balances and deposit stacked.
+            Three panels in one column need ~545px; under that — a 1366×768
+            laptop once the browser has taken its chrome — the deposit block
+            used to fall out of the bottom of a clipped container, so funding
+            an account became impossible on a short screen. Scroll, not clip. */}
+        <section className="panel overflow-y-auto" data-testid="ticket-rail">
           <Ticket
             market={x.market}
             balances={x.balances}

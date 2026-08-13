@@ -62,6 +62,26 @@
   --color-buy-ghost: #17b98a24;
   --color-sell-ghost: #e2504f24;
 
+  /* A control that carries a side is filled and ringed in that side's hue
+     rather than painted flat, so BUY and SELL are told apart before the word
+     is read. One fill and one edge each — the old stylesheet had two fills a
+     couple of percent apart for no reason anyone could state. */
+  --color-buy-fill: color-mix(in oklab, #17b98a 18%, #0b0d10);
+  --color-buy-fill-hi: color-mix(in oklab, #17b98a 28%, #0b0d10);
+  --color-buy-line: color-mix(in oklab, #17b98a 55%, transparent);
+  --color-sell-fill: color-mix(in oklab, #e2504f 18%, #0b0d10);
+  --color-sell-fill-hi: color-mix(in oklab, #e2504f 28%, #0b0d10);
+  --color-sell-line: color-mix(in oklab, #e2504f 55%, transparent);
+
+  /* Below the panel, not above it: what you type into reads as a well cut
+     into the surface rather than a card sitting on it. */
+  --color-sunken: #080a0c;
+  /* Two hover grounds, and the difference is deliberate: a row is being
+     scanned, so it lifts barely; a control is being aimed at, so it lifts
+     enough to confirm the cursor is on it. */
+  --color-row-hover: #12161c;
+  --color-hover: #161b22;
+
   /* ── type ─────────────────────────────────────────────────────────────
      Numbers are monospace so digits align in a column and the eye can
      compare magnitudes down a ladder. Labels are the sans sibling of that
@@ -203,12 +223,8 @@
   .meta,
   .brand,
   .brand .build,
-  .seg button,
   .k,
-  .flabel,
   .empty,
-  .picks button,
-  .assets button,
   .staleband,
   .conn,
   .who {
@@ -241,13 +257,6 @@
   .activity {
     border: 1px solid var(--color-rule);
     border-radius: var(--radius-panel);
-  }
-
-  /* The right rail carries the ticket, balances and deposit stacked. The gaps
-     and padding above cost real height, and `.panel`'s `overflow:hidden` cut
-     the deposit form in half rather than letting it scroll. */
-  .panel.ticket.bal {
-    overflow-y: auto;
   }
 
   /* The strip is the floor of the screen, not a floating card. */

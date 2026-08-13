@@ -397,147 +397,6 @@ body::after{
 }
 .spread .gap .v{font-size:11px;color:var(--ink-2)}
 
-/* ─────────────────────────── ticket ─────────────────────────── */
-
-/* Ticket, balances and deposit share one column and stack. The ticket keeps
-   its natural height, balances absorb the slack, deposit pins to the bottom. */
-
-/* Three panels in one column need ~545px. Under that — a 1366×768 laptop
-   once the browser has taken its chrome — the deposit block used to fall
-   out of the bottom of a container with `overflow:hidden`, so funding an
-   account became impossible on a short screen. Scroll instead of clip. */
-.ticket{overflow-y:auto}
-/* So the balances list yields height to the panels around it but never
-   collapses to a sliver of itself on the way. */
-.bal .scroll{min-height:56px}
-
-.ticket .body{padding:9px;display:flex;flex-direction:column;gap:9px;flex:none}
-.ticket .body > *{flex:none}
-.ticket .phead + .phead,.ticket .phead ~ .phead{border-top:1px solid var(--rule)}
-
-.seg{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule)}
-.seg button{
-  all:unset;cursor:pointer;text-align:center;padding:6px 0;
-  background:var(--panel-hi);
-  font-family:var(--chrome);font-size:10px;font-weight:700;letter-spacing:.16em;
-  color:var(--ink-4);transition:color .1s,background .1s;
-  /* BUY/SELL and LIMIT/MARKET; 23px before, one short of the target floor. */
-  min-height:24px;display:flex;align-items:center;justify-content:center;
-}
-.seg button:hover{color:var(--ink-2)}
-.seg.side button[aria-selected="true"]{
-  background:color-mix(in oklab,var(--buy) 16%,var(--panel));
-  color:var(--buy);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--buy) 40%,transparent);
-}
-.seg.side button[data-side="sell"][aria-selected="true"]{
-  background:color-mix(in oklab,var(--sell) 16%,var(--panel));
-  color:var(--sell);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--sell) 40%,transparent);
-}
-.seg.kind button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--accent-dim)}
-
-.field{display:flex;flex-direction:column;gap:3px}
-.field .flabel{display:flex;align-items:baseline}
-.field .flabel .k{
-  font-family:var(--chrome);font-size:10px;font-weight:500;letter-spacing:.14em;
-  color:var(--ink-3);text-transform:uppercase;
-}
-.field .flabel .rule{margin-left:auto;font-size:9.5px;color:var(--ink-4)}
-
-/* MID / BBO — one click each, straight off the book. Sits between the label
-   and the tick rule, so the reference values stay where the eye expects. */
-.field .flabel .picks{display:flex;gap:1px;margin-left:10px}
-.field .flabel .picks button{
-  all:unset;cursor:pointer;padding:2px 6px;min-height:20px;
-  display:flex;align-items:center;
-  font-family:var(--chrome);font-size:9.5px;font-weight:700;letter-spacing:.12em;
-  color:var(--ink-3);box-shadow:inset 0 0 0 1px var(--rule-hi);
-}
-.field .flabel .picks button:hover{color:var(--ink);background:var(--panel-hi)}
-.field .flabel .picks button:disabled{color:var(--ink-4);cursor:default;box-shadow:inset 0 0 0 1px var(--rule)}
-.input{
-  display:flex;align-items:center;background:#080a0c;
-  border:1px solid var(--rule-hi);
-}
-.input:focus-within{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-dim)}
-.input input{
-  /* `min-width:0` for the same reason as the deposit row: a flex item's
-     default `min-width:auto` refuses to go below an input's intrinsic width. */
-  all:unset;flex:1;min-width:0;padding:6px 8px;font-family:var(--mono);font-size:13px;
-  color:var(--ink);font-variant-numeric:tabular-nums;
-}
-.input .unit{
-  padding:0 9px;font-size:9.5px;letter-spacing:.1em;color:var(--ink-4);
-  border-left:1px solid var(--rule);align-self:stretch;display:flex;align-items:center;
-}
-.input.bad{border-color:var(--sell)}
-
-.pcts{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule)}
-.pcts button{
-  all:unset;cursor:pointer;text-align:center;padding:4px 0;background:var(--panel-hi);
-  font-size:10px;color:var(--ink-3);
-  /* 21px before; see the note on .who button. */
-  min-height:24px;display:flex;align-items:center;justify-content:center;
-}
-.pcts button:hover{background:#161b22;color:var(--ink)}
-
-.readout{border:1px solid var(--rule);background:#080a0c}
-.readout .r{
-  display:flex;align-items:center;padding:4px 8px;
-  border-bottom:1px solid var(--rule);
-}
-.readout .r:last-child{border-bottom:0}
-.readout .k{
-  font-family:var(--chrome);font-size:10px;font-weight:500;letter-spacing:.13em;
-  color:var(--ink-4);text-transform:uppercase;
-}
-.readout .v{margin-left:auto;color:var(--ink-2)}
-.readout .r.total .v{color:var(--ink);font-size:12.5px}
-.readout .hint{font-size:9.5px;color:var(--ink-4);margin-left:6px}
-
-.submit{
-  all:unset;cursor:pointer;text-align:center;padding:9px 0;
-  background:color-mix(in oklab,var(--buy) 18%,var(--panel));
-  box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--buy) 55%,transparent);
-  color:var(--buy);
-  font-family:var(--chrome);font-size:10px;font-weight:700;letter-spacing:.14em;
-  transition:background .1s linear;
-}
-.submit:hover{background:color-mix(in oklab,var(--buy) 28%,var(--panel))}
-.avail{display:flex;font-size:10px;color:var(--ink-4);padding-top:1px}
-.avail b{margin-left:auto;color:var(--ink-3);font-weight:400}
-
-/* ─────────────────────────── balances + deposit ─────────────────────────── */
-
-.bal .chead,.bal .brow{grid-template-columns:44px 1fr 104px;column-gap:10px}
-.bal .chead span:nth-child(n+2),.bal .brow span:nth-child(n+2){text-align:right}
-.bal .chead span:first-child,.bal .brow span:first-child{text-align:left}
-.brow{display:grid;align-items:center;height:20px;padding:0 9px}
-.brow:hover{background:#12161c}
-.brow .asset{color:var(--ink-2);letter-spacing:.06em}
-.brow .lock{color:var(--ink-3)}
-.brow .lock.zero{color:var(--ink-4)}
-
-.deposit{padding:9px;display:flex;flex-direction:column;gap:7px}
-/* `minmax(0,1fr)`, not `1fr`. A bare `1fr` floors at the column's min-content
-   width, and this column holds a text input whose intrinsic width is ~180px —
-   so on a narrow ticket the row silently grew past the panel and pushed the
-   CREDIT button off the side. */
-.deposit .row{display:grid;grid-template-columns:minmax(0,1fr) 118px;gap:7px}
-.assets{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule)}
-.assets button{
-  all:unset;cursor:pointer;text-align:center;padding:5px 0;background:var(--panel-hi);
-  font-size:10px;letter-spacing:.06em;color:var(--ink-4);
-  min-height:24px;display:flex;align-items:center;justify-content:center;
-}
-.assets button:hover{color:var(--ink-2)}
-.assets button[aria-selected="true"]{background:var(--panel);color:var(--ink);box-shadow:inset 0 0 0 1px var(--accent-dim)}
-.ghost{
-  all:unset;cursor:pointer;text-align:center;padding:6px 0;
-  box-shadow:inset 0 0 0 1px var(--rule-hi);color:var(--ink-2);
-  font-family:var(--chrome);font-size:10px;font-weight:700;letter-spacing:.14em;
-}
-.ghost:hover{background:var(--panel-hi);color:var(--ink)}
-
 /* ─────────────────────────── open orders + fills ─────────────────────────── */
 
 /* Headings and rows in one horizontal scroller, so they cannot drift apart
@@ -629,10 +488,6 @@ body::after{
   border-bottom:1px solid color-mix(in oklab,var(--warn) 35%,transparent);
 }
 .screen.stale .staleband .age{margin-left:auto;font-family:var(--mono);font-weight:400;letter-spacing:.04em}
-.screen.stale .submit{
-  pointer-events:none;background:var(--panel-hi);color:var(--ink-4);
-  box-shadow:inset 0 0 0 1px var(--rule-hi);
-}
 
 /* ─────────────────────────── app-only ───────────────────────────
    Everything above is the reviewed mockup, unchanged. What follows
@@ -641,38 +496,6 @@ body::after{
 
 /* Fonts are bundled, not fetched — a chart that reflows because a CDN
    was slow is a worse first impression than a plain one. */
-
-.auth{
-  position:fixed;inset:0;z-index:50;
-  display:flex;align-items:center;justify-content:center;
-  /* Translucent on purpose: this only opens when someone tries to trade, and
-     the book behind it is public and still streaming while it is up. */
-  background:color-mix(in oklab,var(--bg) 78%,transparent);
-  backdrop-filter:blur(2px);
-}
-/* Covers the screen so a click anywhere outside the form dismisses it. The
-   form sits above it, so its own clicks never reach this. */
-.auth .scrim{position:absolute;inset:0}
-.auth form{
-  position:relative;
-  width:320px;background:var(--panel);
-  box-shadow:inset 0 0 0 1px var(--rule);
-  display:flex;flex-direction:column;
-}
-.auth .phead{border-bottom:1px solid var(--rule)}
-.auth .phead .close{
-  all:unset;cursor:pointer;margin-left:auto;padding:0 2px;
-  font-size:11px;line-height:1;color:var(--ink-4);
-}
-.auth .phead .close:hover{color:var(--ink)}
-.auth .body{padding:14px;display:flex;flex-direction:column;gap:10px}
-.auth .seg{grid-template-columns:1fr 1fr}
-.auth .note{font-size:10px;color:var(--ink-4);line-height:1.5}
-.auth .fail{
-  font-size:10.5px;color:var(--sell);line-height:1.4;
-  padding:6px 8px;background:color-mix(in oklab,var(--sell) 10%,transparent);
-  box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--sell) 35%,transparent);
-}
 
 /* An empty panel says why it is empty rather than looking broken. */
 .empty{
@@ -694,22 +517,6 @@ body::after{
 }
 .toast button{all:unset;cursor:pointer;color:var(--ink-4);margin-left:auto;flex:none}
 .toast button:hover{color:var(--ink)}
-
-.submit:disabled{
-  pointer-events:none;background:var(--panel-hi);color:var(--ink-4);
-  box-shadow:inset 0 0 0 1px var(--rule-hi);
-}
-.seg.side button[data-side="sell"][aria-selected="true"] ~ * .submit{color:var(--sell)}
-.submit.sell{
-  background:color-mix(in oklab,var(--sell) 18%,var(--panel));
-  box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--sell) 55%,transparent);
-  color:var(--sell);
-}
-.submit.sell:hover{background:color-mix(in oklab,var(--sell) 28%,var(--panel))}
-
-/* Client-side tick/lot failures, shown before the request is sent so the
-   user reads a rule rather than a 400. */
-.ticket .bad-note{font-size:10px;color:var(--sell);line-height:1.4}
 
 /* lightweight-charts paints into this; it owns its own canvas sizing. */
 .plot.live{background:transparent}
