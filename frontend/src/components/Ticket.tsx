@@ -12,7 +12,7 @@ import {
   Segment,
   Segmented,
   SubmitButton,
-  SunkenInput,
+  FieldInput,
 } from "./ui/form";
 import { Meta, PanelHead, PanelTitle } from "./ui/panel";
 
@@ -236,7 +236,7 @@ export function Ticket({
               </FieldRule>
             )}
           </FieldLabel>
-          <SunkenInput
+          <FieldInput
             unit={market?.quote ?? ""}
             value={kind === "MARKET" ? "" : price}
             placeholder={kind === "MARKET" ? "market" : ""}
@@ -256,7 +256,7 @@ export function Ticket({
               </FieldRule>
             )}
           </FieldLabel>
-          <SunkenInput
+          <FieldInput
             unit={market?.base ?? ""}
             bad={problem !== null}
             value={qty}

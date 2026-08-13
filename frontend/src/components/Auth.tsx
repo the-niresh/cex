@@ -8,7 +8,7 @@ import {
   Segment,
   Segmented,
   SubmitButton,
-  SunkenInput,
+  FieldInput,
 } from "./ui/form";
 import { PanelHead, PanelTitle } from "./ui/panel";
 
@@ -95,7 +95,7 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
                 <FieldName>Name</FieldName>
                 <FieldRule>what we call you</FieldRule>
               </FieldLabel>
-              <SunkenInput
+              <FieldInput
                 value={name}
                 autoComplete="name"
                 aria-label="name"
@@ -108,7 +108,7 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
             <FieldLabel>
               <FieldName>Username</FieldName>
             </FieldLabel>
-            <SunkenInput
+            <FieldInput
               value={username}
               autoComplete="username"
               aria-label="username"
@@ -124,7 +124,7 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
                   anything checks just teaches people the labels here lie. */}
               <FieldRule>8+ characters</FieldRule>
             </FieldLabel>
-            <SunkenInput
+            <FieldInput
               type="password"
               value={password}
               autoComplete={mode === "register" ? "new-password" : "current-password"}

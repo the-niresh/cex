@@ -20,6 +20,7 @@ export function Panel({
     <section
       className={cn(
         "flex min-w-0 flex-col overflow-hidden rounded-panel border border-rule bg-panel",
+        "shadow-[0_1px_1px_rgb(0_0_0/0.3)]",
         className,
       )}
       {...rest}
@@ -54,9 +55,7 @@ export function PanelHead({
 }
 
 export function PanelTitle({ children }: { children: ReactNode }) {
-  return (
-    <h2 className="font-sans text-label font-semibold uppercase tracking-[0.14em] text-ink">{children}</h2>
-  );
+  return <h2 className="font-sans text-micro font-medium text-ink">{children}</h2>;
 }
 
 /**
@@ -71,10 +70,7 @@ export function Meta({
   ...rest
 }: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span
-      className={cn("ml-auto font-sans text-micro tracking-[0.04em] text-ink-4", className)}
-      {...rest}
-    >
+    <span className={cn("ml-auto font-sans text-micro text-ink-4", className)} {...rest}>
       {children}
     </span>
   );
@@ -95,7 +91,7 @@ export function ColumnHeads({
       {...rest}
       className={cn(
         "grid h-5 flex-none items-center border-b border-rule px-2.5",
-        "font-sans text-micro font-medium uppercase tracking-[0.12em] text-ink-4",
+        "font-sans text-micro text-ink-4",
         className,
       )}
     >
@@ -147,5 +143,5 @@ export function Table({ className, children }: { className?: string; children: R
 
 /** A panel with nothing in it yet. Says so, rather than rendering a void. */
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="p-4 text-center font-sans text-label text-ink-4">{children}</div>;
+  return <div className="p-4 text-center font-sans text-micro text-ink-4">{children}</div>;
 }

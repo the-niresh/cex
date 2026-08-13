@@ -2,7 +2,7 @@ import { useState } from "react";
 import { formatAtoms, parseAtoms } from "../lib/num";
 import type { Balance, Market } from "../lib/types";
 import { Num } from "./format";
-import { AvailableLine, GhostButton, Segment, Segmented, SunkenInput } from "./ui/form";
+import { AvailableLine, GhostButton, Segment, Segmented, FieldInput } from "./ui/form";
 import { ColumnHeads, Empty, Meta, PanelHead, PanelTitle, Scroll } from "./ui/panel";
 
 /** Headings and rows share one column template, so they cannot drift apart. */
@@ -108,7 +108,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
             intrinsic width is ~180px — so on a narrow ticket the row grew past
             the panel and pushed the CREDIT button off the side. */}
         <div className="grid grid-cols-[minmax(0,1fr)_118px] gap-[7px]">
-          <SunkenInput
+          <FieldInput
             bad={parsed === null && amount !== ""}
             value={amount}
             inputMode="decimal"
