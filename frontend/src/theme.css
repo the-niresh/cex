@@ -162,6 +162,18 @@
   --radius-lg: var(--radius);
 }
 
+/* The connection dot. Named so it cannot collide with Tailwind's own `pulse`,
+   which fades to half rather than nearly out. */
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @keyframes tape-flash {
   0% {
     background: color-mix(in oklab, var(--color-ink) 9%, transparent);
@@ -221,13 +233,9 @@
   .chead,
   .chead span,
   .meta,
-  .brand,
-  .brand .build,
   .k,
   .empty,
-  .staleband,
-  .conn,
-  .who {
+  .staleband {
     font-family: var(--font-sans);
   }
 

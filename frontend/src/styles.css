@@ -148,110 +148,6 @@ body::after{
 .d{color:var(--ink-3)}
 .num{font-variant-numeric:tabular-nums;text-align:right}
 
-/* ─────────────────────────── topbar ─────────────────────────── */
-
-/* brand · markets · ticker · connection · account, and the account block is
-   the one part that must never move: it is where you look to sign in or out,
-   and a control that changes position depending on which market you clicked
-   is a control you have to hunt for.
-
-   So the row does not wrap. `flex-wrap` would be the obvious way to stop the
-   account block being clipped off the end, but wrapping takes priority over
-   shrinking — the moment the ticker holds real numbers instead of em-dashes
-   it grows, and the account block is what gets pushed onto a second line.
-   That is exactly the jump you see switching from an untraded market to a
-   traded one. Instead the ticker gives ground: it shrinks and folds its own
-   fields onto more lines, growing the bar downward while everything keeps
-   its place along it. */
-.topbar{
-  background:var(--panel-hi);
-  display:flex;flex-direction:row;align-items:stretch;flex-wrap:nowrap;
-  min-height:36px;
-}
-.topbar > *{min-height:36px}
-/* Neither end gives: the brand anchors the left, the connection and account
-   anchor the right. */
-.brand,.conn,.who{flex:none}
-/* The tabs take their own scrollbar rather than pushing what follows off the
-   row — but they keep a floor. With `min-width:0` they collapsed to nothing at
-   narrow widths and their buttons spilled out underneath the account block,
-   which then swallowed the clicks meant for them. */
-.markets{flex:0 1 auto;min-width:150px;overflow-x:auto;scrollbar-width:none}
-.markets::-webkit-scrollbar{display:none}
-.brand{
-  display:flex;align-items:center;gap:8px;padding:0 14px 0 12px;
-  border-right:1px solid var(--rule);
-}
-.brand .mark{
-  font-family:var(--chrome);font-weight:700;font-size:11px;letter-spacing:.24em;
-  color:var(--ink);
-}
-.brand .build{font-size:10px;color:var(--ink-4);letter-spacing:.06em}
-
-.markets{display:flex}
-.markets button{
-  all:unset;cursor:pointer;
-  display:flex;flex-direction:column;justify-content:center;gap:1px;
-  padding:0 14px;min-width:112px;
-  border-right:1px solid var(--rule);
-  transition:background .1s linear;
-}
-.markets button:hover{background:#141920}
-.markets .sym{font-size:10.5px;letter-spacing:.06em;color:var(--ink-3)}
-.markets .lp{font-size:10px;color:var(--ink-4)}
-.markets button[aria-selected="true"]{background:var(--panel);box-shadow:inset 0 -2px 0 var(--accent)}
-.markets button[aria-selected="true"] .sym{color:var(--ink)}
-.markets button[aria-selected="true"] .lp{color:var(--ink-3)}
-.markets .up{color:var(--buy)}
-.markets .dn{color:var(--sell)}
-
-/* Wraps internally as well as being wrappable itself: five readouts do not fit
-   on one line of a phone, and the topbar wrapping alone would only move the
-   whole block down rather than letting it fold. */
-/* The only item that gives. It takes the slack when there is room, and folds
-   its own readouts onto more lines when there is not, so the account block on
-   its right never has to move. */
-.ticker{
-  flex:1 1 auto;
-  display:flex;align-items:center;flex-wrap:wrap;min-width:0;
-  column-gap:22px;row-gap:2px;padding:6px 18px;margin-left:4px;
-}
-.ticker .field{display:flex;flex-direction:column;gap:1px;line-height:1.15}
-.ticker .k{
-  font-family:var(--chrome);font-size:9.5px;font-weight:500;letter-spacing:.14em;
-  color:var(--ink-4);text-transform:uppercase;
-}
-.ticker .v{font-size:11.5px;color:var(--ink-2)}
-.ticker .last{font-size:20px;font-weight:500;color:var(--buy);letter-spacing:-.015em;line-height:1.1}
-.ticker .last::after{content:' ▲';font-size:11px;vertical-align:3px}
-/* The day's move is the one number here that carries a direction, so it is
-   the only one that carries a colour. */
-.ticker .chg.up{color:var(--buy)}
-.ticker .chg.dn{color:var(--sell)}
-.ticker .chg .pct{margin-left:6px;opacity:.75}
-
-.conn{
-  margin-left:auto;display:flex;align-items:center;gap:9px;
-  padding:0 12px;border-left:1px solid var(--rule);
-}
-.conn .dot{width:6px;height:6px;background:var(--buy);animation:pulse 2.4s ease-in-out infinite}
-.conn .txt{font-family:var(--chrome);font-size:10px;font-weight:700;letter-spacing:.16em;color:var(--ink-2)}
-.conn .rtt{font-size:10px;color:var(--ink-4)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-
-.who{display:flex;align-items:center;gap:10px;padding:0 12px;border-left:1px solid var(--rule)}
-.who .name{font-size:10.5px;color:var(--ink);max-width:14ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.who .id{font-size:10px;color:var(--ink-3)}
-/* 24px is the floor for a pointer target (WCAG 2.2 target size). This one
-   was 11px tall — the single hardest thing on the screen to click, and it
-   is the control that signs you out. */
-.who button{
-  all:unset;cursor:pointer;font-family:var(--chrome);font-size:10px;font-weight:500;
-  letter-spacing:.12em;color:var(--ink-4);
-  display:flex;align-items:center;min-height:24px;padding:0 4px;
-}
-.who button:hover{color:var(--ink-2)}
-
 /* ─────────────────────────── order book ─────────────────────────── */
 
 /* Numbers cluster right in one tight block; the left is left to the depth
@@ -352,11 +248,6 @@ body::after{
 
 .screen.stale .book .ladder,
 .screen.stale .tape .scroll{filter:saturate(.15) brightness(.62)}
-.conn .degraded{display:none}
-.screen.stale .conn .dot{background:var(--warn);animation:none}
-.screen.stale .conn .live{display:none}
-.screen.stale .conn .degraded{display:inline;color:var(--warn)}
-.screen.stale .conn .rtt{visibility:hidden}
 .staleband{display:none}
 .screen.stale .staleband{
   display:flex;align-items:center;gap:8px;
@@ -437,17 +328,5 @@ body::after{
   .book{min-height:430px}
   .tape{min-height:240px}
   .activity{min-height:190px}
-  /* No arrangement fits five blocks across a phone, so here the bar does
-     wrap — but on a fixed seam rather than wherever the numbers happen to
-     push it. The ticker always takes its own full line, which puts the
-     account block in the same place on every market. */
-  .topbar{flex-wrap:wrap}
-  /* `flex:0 0 100%` and not `flex-basis:100%`: a shrinkable full-width item
-     just shrinks back onto the first line and no wrap ever happens. The left
-     margin goes with it — it separates the ticker from the tabs when they
-     share a line, and on its own line it is 4px of overflow. */
-  .ticker{flex:0 0 100%;order:1;margin-left:0}
-  .markets{flex:1 1 auto}
-  .conn,.who{order:2}
   .statusbar{height:auto;min-height:22px;flex-wrap:wrap;row-gap:2px}
 }
