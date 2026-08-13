@@ -155,9 +155,13 @@ export function SubmitButton({
           : "bg-buy-fill text-buy shadow-[inset_0_0_0_1px_var(--color-buy-line)] hover:bg-buy-fill-hi",
         // Dead in the same way for both reasons, so the user never has to work
         // out which of the two is stopping them.
+        //
+        // ⚠️ `degraded`, not `stale`. Stale only means nothing has printed
+        // lately, which on a quiet market is normal — gating on it locked
+        // people out of a book that was working perfectly well.
         "disabled:pointer-events-none disabled:bg-panel-hi disabled:text-ink-4 disabled:shadow-[inset_0_0_0_1px_var(--color-rule-hi)]",
-        "group-data-[stale=true]/screen:pointer-events-none group-data-[stale=true]/screen:bg-panel-hi",
-        "group-data-[stale=true]/screen:text-ink-4 group-data-[stale=true]/screen:shadow-[inset_0_0_0_1px_var(--color-rule-hi)]",
+        "group-data-[degraded=true]/screen:pointer-events-none group-data-[degraded=true]/screen:bg-panel-hi",
+        "group-data-[degraded=true]/screen:text-ink-4 group-data-[degraded=true]/screen:shadow-[inset_0_0_0_1px_var(--color-rule-hi)]",
         className,
       )}
       {...rest}

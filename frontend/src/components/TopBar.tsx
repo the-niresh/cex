@@ -11,7 +11,13 @@ interface Props {
   lastPrice: bigint | null;
   lastSide: "BUY" | "SELL" | null;
   status: FeedStatus;
-  stale: boolean;
+  /**
+   * The book cannot be trusted — socket down, or a sequence gap. The shell
+   * decides this once and hands the same answer to every readout of it, so the
+   * dot here, the strip at the bottom and the band over the ladder can never
+   * disagree about the same condition the way they used to.
+   */
+  feedDegraded: boolean;
   day: DayStats | null;
   session: Session | null;
   onSignIn(): void;
@@ -58,13 +64,12 @@ export function TopBar({
   lastPrice,
   lastSide,
   status,
-  stale,
+  feedDegraded,
   day,
   session,
   onSignIn,
   onSignOut,
 }: Props) {
-  const degraded = stale || status !== "live";
   const priceDp = market ? decimalsForStep(market.tick_size, market.quote_decimals) : 2;
   const qtyDp = market ? decimalsForStep(market.lot_size, market.base_decimals) : 5;
   const down = lastSide === "SELL";
@@ -242,14 +247,14 @@ export function TopBar({
         ].join(" ")}
       >
         <i
-          className={`size-1.5 ${degraded ? "bg-warn" : "animate-[dot-pulse_2.4s_ease-in-out_infinite] bg-buy"}`}
+          className={`size-1.5 ${feedDegraded ? "bg-warn" : "animate-[dot-pulse_2.4s_ease-in-out_infinite] bg-buy"}`}
         />
         <span
           className={`font-sans text-micro font-bold tracking-[0.16em] ${
-            degraded ? "text-warn" : "text-ink-2"
+            feedDegraded ? "text-warn" : "text-ink-2"
           }`}
         >
-          {stale ? "RESYNCING" : STATUS_TEXT[status]}
+          {feedDegraded && status === "live" ? "RESYNCING" : STATUS_TEXT[status]}
         </span>
       </div>
 

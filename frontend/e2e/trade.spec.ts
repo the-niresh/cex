@@ -324,6 +324,34 @@ test("reconnects and resyncs when ws is restarted, without a reload", async ({ p
   await expect(page.getByTestId("open-order")).toHaveCount(0);
 });
 
+test("a quiet market says so but still lets you trade", async ({ page }) => {
+  await seedBook(page);
+  await signUpAndFund(page, "USDT", "500000");
+
+  // Nothing is trading, so no depth update arrives and the screen stops calling
+  // itself a live picture. That is a statement about the market, not about the
+  // feed — the socket is up and the book is the real book.
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-stale", "true", {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("screen")).toHaveAttribute("data-degraded", "false");
+  await expect(page.getByTestId("staleband")).toContainText("NO UPDATES FOR");
+
+  // And the whole point: order entry stays open. This used to go dead after
+  // eight quiet seconds, which locked people out of a working market.
+  // The click is the assertion: the old gate was `pointer-events:none`, so a
+  // button that looks fine but cannot be pressed fails here and nowhere else.
+  const submit = page.getByTestId("ticket-submit");
+  await page.getByLabel("price").fill(await restingBidPrice(page));
+  await page.getByLabel("quantity").fill("0.01000");
+  await expect(submit).toBeEnabled();
+  await submit.click({ timeout: 10_000 });
+  await expect(page.getByTestId("open-order")).toHaveCount(1);
+
+  await page.getByTestId("cancel-order").first().click();
+  await expect(page.getByTestId("open-order")).toHaveCount(0);
+});
+
 test("the whole screen is usable before signing in, with nothing in the way", async ({ page }) => {
   await page.goto("/");
 

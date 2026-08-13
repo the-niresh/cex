@@ -11,12 +11,10 @@ import { Ticket } from "./components/Ticket";
 import { TopBar } from "./components/TopBar";
 import { Panel } from "./components/ui/panel";
 import { latencySeries as readLatencySeries, latencyStats, onLatency } from "./lib/api";
+import { feedHealth } from "./lib/health";
 import { decimalsForStep, formatAtoms } from "./lib/num";
 import type { AuthMode, Credentials } from "./lib/types";
 import { useExchange } from "./useExchange";
-
-/** After this long without an update the book is called stale, not live. */
-const STALE_AFTER_MS = 8_000;
 
 export default function App() {
   const x = useExchange();
@@ -64,16 +62,15 @@ export default function App() {
   const bestAsk = x.asks[0]?.price ?? null;
 
   const silentFor = x.lastUpdateMs === null ? null : now - x.lastUpdateMs;
-  const looksStale =
-    x.bookStale || x.status !== "live" || (silentFor !== null && silentFor > STALE_AFTER_MS);
 
-  const staleReason = x.bookStale
-    ? "STALE — SEQUENCE GAP, RESYNCING"
-    : x.status !== "live"
-      ? `STALE — SOCKET ${x.status.toUpperCase()}`
-      : silentFor !== null
-        ? `NO UPDATES FOR ${Math.floor(silentFor / 1000)}S`
-        : null;
+  // Two answers, not one. `degraded` means the book cannot be trusted and is
+  // the only thing allowed to stop someone trading; `fresh` only says whether
+  // the picture is moving. See lib/health.ts for why they were separated.
+  const health = feedHealth({
+    bookStale: x.bookStale,
+    status: x.status,
+    silentForMs: silentFor,
+  });
 
   return (
     <>
@@ -106,7 +103,10 @@ export default function App() {
           "max-[879px]:grid-cols-[minmax(0,1fr)] max-[879px]:grid-rows-none max-[879px]:auto-rows-auto",
         ].join(" ")}
         data-testid="screen"
-        data-stale={looksStale ? "true" : "false"}
+        // `stale` dims the live data; `degraded` switches order entry off. They
+        // are separate attributes because they are separate claims.
+        data-stale={health.fresh ? "false" : "true"}
+        data-degraded={health.degraded ? "true" : "false"}
       >
         <TopBar
           markets={x.markets}
@@ -116,7 +116,7 @@ export default function App() {
           lastPrice={lastPrint?.price ?? null}
           lastSide={lastPrint?.taker_side ?? null}
           status={x.status}
-          stale={x.bookStale}
+          feedDegraded={health.degraded}
           day={x.day}
           session={x.session}
           onSignIn={openAuth}
@@ -138,8 +138,8 @@ export default function App() {
             asks={x.asks}
             spread={x.spread}
             depthSeq={x.depthSeq}
-            stale={looksStale}
-            staleReason={staleReason}
+            stale={!health.fresh}
+            staleReason={health.reason}
             mine={x.mine}
             lastPrice={lastPrint?.price ?? null}
             lastSide={lastPrint?.taker_side ?? null}
@@ -198,6 +198,7 @@ export default function App() {
           depthSeq={x.depthSeq}
           resyncs={x.resyncs}
           status={x.status}
+          feedDegraded={health.degraded}
           silentForMs={silentFor}
         />
       </div>

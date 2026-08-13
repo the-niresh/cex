@@ -8,6 +8,8 @@ interface Props {
   depthSeq: bigint | null;
   resyncs: number;
   status: string;
+  /** Same flag the topbar reads — see the note on TopBar's own prop. */
+  feedDegraded: boolean;
   silentForMs: number | null;
 }
 
@@ -24,12 +26,23 @@ interface Props {
  * Reported as p50 over a rolling fifty requests, so one lucky call cannot
  * flatter the readout, with p99 beside each so one unlucky one is not hidden.
  */
-export function InstrumentStrip({ stats, series, depthSeq, resyncs, status, silentForMs }: Props) {
+export function InstrumentStrip({
+  stats,
+  series,
+  depthSeq,
+  resyncs,
+  status,
+  feedDegraded,
+  silentForMs,
+}: Props) {
   // Amber above the p99 the exchange actually measured under load, not above a
   // number someone picked. Only the engine gets this: no baseline was ever
   // measured for the database path, and inventing one is the exact habit this
   // readout exists to argue against.
-  const degraded = stats.engine.p50 !== null && stats.engine.p50 > ENGINE_P99_BASELINE_MS;
+  //
+  // Distinct from `feedDegraded`: this is the exchange being slow, that is the
+  // book being untrustworthy. Both go amber, for different reasons.
+  const engineSlow = stats.engine.p50 !== null && stats.engine.p50 > ENGINE_P99_BASELINE_MS;
 
   return (
     <footer
@@ -48,8 +61,8 @@ export function InstrumentStrip({ stats, series, depthSeq, resyncs, status, sile
         unit="ms"
         reading={stats.engine}
         values={series.map((s) => s.engineMs)}
-        stroke={degraded ? "var(--color-warn)" : "var(--color-buy)"}
-        tone={degraded ? "text-warn" : "text-ink"}
+        stroke={engineSlow ? "var(--color-warn)" : "var(--color-buy)"}
+        tone={engineSlow ? "text-warn" : "text-ink"}
         title="Time inside the matching engine"
       />
 
@@ -88,7 +101,7 @@ export function InstrumentStrip({ stats, series, depthSeq, resyncs, status, sile
         />
         <span className="flex items-center gap-1.5">
           <i
-            className={`size-1.5 rounded-full ${status === "live" ? "bg-buy" : "bg-warn"}`}
+            className={`size-1.5 rounded-full ${feedDegraded ? "bg-warn" : "bg-buy"}`}
             aria-hidden
           />
           <span className="uppercase tracking-[0.12em] text-ink-3">{status}</span>
