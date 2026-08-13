@@ -142,6 +142,15 @@
   --radius-lg: var(--radius);
 }
 
+@keyframes tape-flash {
+  0% {
+    background: color-mix(in oklab, var(--color-ink) 9%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
