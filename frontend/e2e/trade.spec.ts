@@ -155,6 +155,11 @@ test("registers, deposits, places an order, sees it in the book, cancels it", as
     /^0\.0+$/,
   );
 
+  // And the activity panel says the same thing in one line, so the gap between
+  // `available` and what you deposited is explained where you notice it.
+  await expect(page.getByTestId("activity-summary")).toContainText("locked");
+  await expect(page.getByTestId("activity-summary")).toContainText("USDT");
+
   await row.getByTestId("cancel-order").click();
 
   await expect(page.getByTestId("open-order")).toHaveCount(0);

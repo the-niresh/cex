@@ -1,14 +1,12 @@
-import { decimalsForStep, formatAtoms } from "../lib/num";
+import { decimalsForStep } from "../lib/num";
 import type { Market, Order } from "../lib/types";
 import { Num } from "./format";
-import { ColumnHeads, Empty, Meta, Panel, PanelHead, PanelTitle, Scroll, Table } from "./ui/panel";
+import { ColumnHeads, Empty, Scroll, Table } from "./ui/panel";
 
 interface Props {
   orders: Order[];
   markets: Market[];
   onCancel(orderId: bigint): void;
-  /** Rendered inside the tabbed activity panel, which supplies the chrome. */
-  bare?: boolean;
 }
 
 /**
@@ -28,38 +26,12 @@ const COLS = [
 /** Under this the table scrolls sideways rather than crushing its columns. */
 const MIN_WIDTH = 824;
 
-export function OpenOrders({ orders, markets, onCancel, bare = false }: Props) {
+export function OpenOrders({ orders, markets, onCancel }: Props) {
   const bySymbol = new Map(markets.map((m) => [m.symbol, m]));
-
-  // What the resting orders are holding, so the number in the header explains
-  // the gap between `available` and what you thought you had.
-  const locked = new Map<string, bigint>();
-  for (const order of orders) {
-    const market = bySymbol.get(order.symbol);
-    if (!market || order.price === null) continue;
-    const remaining = order.qty - order.filled_qty;
-    if (order.side === "BUY") {
-      const cost = (order.price * remaining) / 10n ** market.base_decimals;
-      locked.set(market.quote, (locked.get(market.quote) ?? 0n) + cost);
-    } else {
-      locked.set(market.base, (locked.get(market.base) ?? 0n) + remaining);
-    }
-  }
-  const lockedText = [...locked.entries()]
-    .map(([asset, amount]) => {
-      const market = markets.find((m) => m.quote === asset || m.base === asset);
-      const decimals = market
-        ? market.quote === asset
-          ? market.quote_decimals
-          : market.base_decimals
-        : 8n;
-      return `${formatAtoms(amount, decimals, { places: 2 })} ${asset}`;
-    })
-    .join(" + ");
 
   const width = orders.length === 0 ? undefined : MIN_WIDTH;
 
-  const table = (
+  return (
     <Table>
       <ColumnHeads className={COLS} style={{ minWidth: width }} data-testid="order-heads">
         <span>ID</span>
@@ -157,25 +129,5 @@ export function OpenOrders({ orders, markets, onCancel, bare = false }: Props) {
         )}
       </Scroll>
     </Table>
-  );
-
-  if (bare) return <div className="flex min-h-0 flex-1 flex-col">{table}</div>;
-
-  return (
-    <Panel data-testid="open-orders-panel">
-      <PanelHead>
-        <PanelTitle>Open orders</PanelTitle>
-        <Meta>
-          {orders.length} live
-          {lockedText && (
-            <>
-              {" · "}
-              <b className="tnum font-medium text-ink-2">{lockedText}</b> locked
-            </>
-          )}
-        </Meta>
-      </PanelHead>
-      {table}
-    </Panel>
   );
 }

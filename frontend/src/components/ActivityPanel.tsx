@@ -1,6 +1,9 @@
+import { useState } from "react";
+import { feesPaid, valueLocked } from "../lib/summary";
 import type { Market, MyFill, Order } from "../lib/types";
 import { MyFills } from "./MyFills";
 import { OpenOrders } from "./OpenOrders";
+import { Meta } from "./ui/panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 interface Props {
@@ -20,9 +23,16 @@ interface Props {
  * you can see there is nothing to look at without opening either.
  */
 export function ActivityPanel({ orders, fills, markets, onCancel }: Props) {
+  // Controlled rather than defaulted, because the head reports on whichever
+  // table is showing and cannot do that without knowing which one it is.
+  const [tab, setTab] = useState("orders");
+
+  const summary = tab === "orders" ? valueLocked(orders, markets) : feesPaid(fills, markets);
+
   return (
     <Tabs
-      defaultValue="orders"
+      value={tab}
+      onValueChange={(next) => setTab(String(next))}
       className="col-span-full row-start-3 flex min-h-0 flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel max-[879px]:row-auto max-[879px]:min-h-[190px]"
       data-testid="activity"
     >
@@ -31,13 +41,23 @@ export function ActivityPanel({ orders, fills, markets, onCancel }: Props) {
           <Trigger value="orders" label="Open orders" count={orders.length} />
           <Trigger value="fills" label="Fills" count={fills.length} />
         </TabsList>
+        {/* What the open orders are holding, or what the fills cost. Both used
+            to be computed inside the tables and rendered into a panel head that
+            nothing mounted once they moved in here — the arithmetic ran and the
+            answer went nowhere. */}
+        {summary && (
+          <Meta data-testid="activity-summary">
+            {tab === "orders" ? "locked" : "fees"}{" "}
+            <b className="tnum font-medium text-ink-2">{summary}</b>
+          </Meta>
+        )}
       </div>
 
       <TabsContent value="orders" className="flex min-h-0 flex-1 flex-col">
-        <OpenOrders orders={orders} markets={markets} onCancel={onCancel} bare />
+        <OpenOrders orders={orders} markets={markets} onCancel={onCancel} />
       </TabsContent>
       <TabsContent value="fills" className="flex min-h-0 flex-1 flex-col">
-        <MyFills fills={fills} markets={markets} bare />
+        <MyFills fills={fills} markets={markets} />
       </TabsContent>
     </Tabs>
   );

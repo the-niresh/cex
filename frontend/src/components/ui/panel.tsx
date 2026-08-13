@@ -59,10 +59,22 @@ export function PanelTitle({ children }: { children: ReactNode }) {
   );
 }
 
-/** Secondary detail in a panel head. Pushed to the far end. */
-export function Meta({ className, children }: { className?: string; children: ReactNode }) {
+/**
+ * Secondary detail in a panel head. Pushed to the far end.
+ *
+ * ⚠️ Forwards `...rest` like every other component in this file. It was the one
+ * that did not, so a `data-testid` handed to it disappeared without a word.
+ */
+export function Meta({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span className={cn("ml-auto font-sans text-micro tracking-[0.04em] text-ink-4", className)}>
+    <span
+      className={cn("ml-auto font-sans text-micro tracking-[0.04em] text-ink-4", className)}
+      {...rest}
+    >
       {children}
     </span>
   );

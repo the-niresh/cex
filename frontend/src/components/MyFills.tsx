@@ -1,7 +1,7 @@
-import { decimalsForStep, feeAsset, formatAtoms } from "../lib/num";
+import { decimalsForStep, feeAsset } from "../lib/num";
 import type { Market, MyFill } from "../lib/types";
 import { Num, clock } from "./format";
-import { ColumnHeads, Empty, Meta, Panel, PanelHead, PanelTitle, Scroll, Table } from "./ui/panel";
+import { ColumnHeads, Empty, Scroll, Table } from "./ui/panel";
 
 /** Headings and rows share one column template, so they cannot drift apart. */
 const COLS = [
@@ -12,41 +12,12 @@ const COLS = [
 /** Under this the table scrolls sideways rather than crushing its columns. */
 const MIN_WIDTH = 470;
 
-export function MyFills({
-  fills,
-  markets,
-  bare = false,
-}: {
-  fills: MyFill[];
-  markets: Market[];
-  /** Rendered inside the tabbed activity panel, which supplies the chrome. */
-  bare?: boolean;
-}) {
+export function MyFills({ fills, markets }: { fills: MyFill[]; markets: Market[] }) {
   const bySymbol = new Map(markets.map((m) => [m.symbol, m]));
-
-  // A fee is charged in whatever that side received — base for a buy, quote
-  // for a sell — so one market can produce fees in two assets. Group by the
-  // asset actually paid and show only what is unambiguous; adding BTC to USDT
-  // because both came from BTC_USDT would be a number that means nothing.
-  const feeByAsset = new Map<string, { total: bigint; decimals: bigint }>();
-  for (const fill of fills) {
-    const market = bySymbol.get(fill.symbol);
-    if (!market) continue;
-    const { asset, decimals } = feeAsset(fill.side, market);
-    const entry = feeByAsset.get(asset) ?? { total: 0n, decimals };
-    entry.total += fill.fee;
-    feeByAsset.set(asset, entry);
-  }
-  // At each asset's own scale rather than a fixed two places: a fee in BTC is
-  // a handful of atoms, and rounding it to 2dp prints "0.00" — a summary that
-  // says you paid nothing when you did.
-  const feeText = [...feeByAsset.entries()]
-    .map(([asset, { total, decimals }]) => `${formatAtoms(total, decimals)} ${asset}`)
-    .join(" + ");
 
   const width = fills.length === 0 ? undefined : MIN_WIDTH;
 
-  const table = (
+  return (
     <Table>
       <ColumnHeads className={COLS} style={{ minWidth: width }} data-testid="fill-heads">
         <span>Time</span>
@@ -103,21 +74,5 @@ export function MyFills({
         )}
       </Scroll>
     </Table>
-  );
-
-  if (bare) return <div className="flex min-h-0 flex-1 flex-col">{table}</div>;
-
-  return (
-    <Panel data-testid="fills-panel">
-      <PanelHead>
-        <PanelTitle>My fills</PanelTitle>
-        {feeText && (
-          <Meta>
-            fees <b className="tnum font-medium text-ink-2">{feeText}</b>
-          </Meta>
-        )}
-      </PanelHead>
-      {table}
-    </Panel>
   );
 }
