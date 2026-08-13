@@ -1,11 +1,17 @@
 //! How long a request spent inside the engine, kept separate from how long the
 //! whole request took.
 //!
-//! The gap between the two is the Redis command hop, and that is a segment of
-//! the published latency budget rather than a rounding error. `Loopback` is
-//! shared across every request and cannot tell which one it is serving, so the
-//! accumulator rides the task instead of a handler argument. Nothing in a
-//! handler signature changes.
+//! The engine number is recorded around the whole `Loopback` round trip, which
+//! means it already contains both Redis hops — the `XADD` out and the reply
+//! coming back — as well as the apply itself. The gap between the two headers
+//! is therefore **this process's own work**: routing, auth, deserialising the
+//! request and serialising the response. It is not the Redis hop, and labelling
+//! it as such in the published budget would be wrong; the hop cannot be
+//! separated out from here, because the engine holds no clock by design.
+//!
+//! `Loopback` is shared across every request and cannot tell which one it is
+//! serving, so the accumulator rides the task instead of a handler argument.
+//! Nothing in a handler signature changes.
 
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -254,17 +254,29 @@ cargo run -p cex-loadgen -- --host http://localhost:8080 --ws ws://localhost:808
 
 | | count | p50 | p90 | p99 | p999 | max |
 |---|---|---|---|---|---|---|
-| `ack` — HTTP response | 2000 | 1356 µs | 4383 µs | 9255 µs | 20655 µs | 22431 µs |
-| `visible` — private feed | 2000 | 1469 µs | 4747 µs | 9815 µs | 25839 µs | 42271 µs |
-| `engine` — `x-cex-engine-us` | 2000 | 765 µs | 3079 µs | 6783 µs | 12175 µs | 18751 µs |
+| `ack` — HTTP response | 2000 | 1014 µs | 4615 µs | 9599 µs | 14943 µs | 17167 µs |
+| `visible` — private feed | 2000 | 1082 µs | 4939 µs | 11159 µs | 40671 µs | 43871 µs |
+| `server` — `x-cex-server-us` | 2000 | 772 µs | 3845 µs | 8583 µs | 12191 µs | 16591 µs |
+| `engine` — `x-cex-engine-us` | 2000 | 738 µs | 3799 µs | 8407 µs | 12135 µs | 16527 µs |
+
+All four come from one run against a freshly reset stack, so they are directly comparable. The
+ordering `visible ≥ ack ≥ server ≥ engine` holds at every percentile, which is the ordering the
+construction requires: each is measured strictly inside the next one out.
+
+⚠️ **`server` minus `engine` is not the Redis command hop**, though it looks like the obvious
+place to read one off. `x-cex-engine-us` is recorded around the entire `Loopback` round trip
+(`crates/api/src/loopback.rs`), which already contains the `XADD` out, the engine's apply, and
+the reply coming back. The gap between the two headers is what the API process does *outside*
+that round trip: routing, JWT verification, deserialising the request, serialising the response.
+At ~34 µs (p50) it is the right order of magnitude for either, which is exactly why the
+mislabelling would have been easy to publish and hard to notice.
 
 `visible` is slower than `ack` at every percentile, as expected: the private-feed message is
 strictly downstream of the HTTP response, so `visible` pays for the full HTTP round trip and
 then also whatever it takes the acceptance event to reach this WebSocket connection through the
-engine → ws pipeline. `engine` sits below both at every percentile, as it should — it is the
-portion of `ack` spent inside the engine's own apply loop, not the network or HTTP stack around
-it. The difference between the `visible` and `ack` numbers at the same rank (~113 µs at p50,
-growing to ~5.2ms at p999) is a rough sense of what that event path costs, not a measured
+engine → ws pipeline. `engine` sits below all of them, as it should. The difference between the
+`visible` and `ack` numbers at the same rank (~68 µs at p50,
+growing to ~25.7ms at p999) is a rough sense of what that event path costs, not a measured
 latency of any one thing — it is a difference of percentiles, not a percentile of per-order
 differences.
 
@@ -284,7 +296,41 @@ one that catches it. The size of the `visible`/`ack` gap above is weak corrobora
 bug that matched a very recently stale event would still show a small positive gap — not proof.
 
 Raw per-bucket CSVs, from which every percentile above can be recomputed, land in
-`target/latency/{ack,visible,engine}.csv`.
+`target/latency/{ack,visible,engine,server}.csv`.
+
+A run that fails to collect either header on every single order aborts with a non-zero exit
+rather than publishing a percentile drawn from a set nobody knows is short. Both headers are
+load-bearing: `server`'s p99 is where the trading screen's degraded threshold comes from, and
+both appear in the budget below.
+
+### The latency budget
+
+Every segment below is measured. None is estimated, and each row names the command that
+produced it.
+
+| Segment | p50 | Where it comes from |
+|---|---|---|
+| matching (`apply`), depth 100, one match | 3.00 µs (median) | `cargo bench -p cex-core`, `limit_cross_one/100` |
+| engine round trip, incl. both Redis hops | 738 µs | `x-cex-engine-us`, the `engine` row above |
+| API's own work outside that round trip | ~34 µs | `server` minus `engine` at the same rank |
+| whole request, server side | 772 µs | `x-cex-server-us`, the `server` row above |
+| event path, order accepted → private feed | ~68 µs | `visible` minus `ack` at the same rank |
+| network | not measured | needs a run from off-box; see below |
+
+Three limitations, stated rather than buried:
+
+* **The engine holds no clock, by design.** That is why chart candles bucket on persister write
+  time. Every end-to-end number here is measured at the edges by `loadgen`; none is derived
+  from event timestamps inside the system.
+* **The two "minus" rows are differences of percentiles, not percentiles of per-order
+  differences.** They give the order of magnitude of a segment, not its distribution.
+* **The Redis command hop is not separately measured.** It sits inside the engine round trip
+  and cannot be split out without giving the engine a clock — see the warning above about what
+  `server` minus `engine` actually is.
+
+The network row is deliberately blank rather than estimated. Filling it needs the same driver
+run against the deployed exchange and subtracted from the localhost run, which requires the
+deployed build to be emitting these headers in the first place.
 
 ## Retrying safely
 
