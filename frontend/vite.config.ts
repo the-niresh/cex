@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 // The API and WS crates listen on 8080/8081, only reachable as "localhost"
 // from whatever machine is actually running the browser — which is not this
@@ -24,7 +25,7 @@ export const apiPaths = [
 ];
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
     strictPort: true,
