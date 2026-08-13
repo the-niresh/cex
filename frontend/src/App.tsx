@@ -4,14 +4,13 @@ import { Balances } from "./components/Balances";
 import { Chart } from "./components/Chart";
 import { MyFills } from "./components/MyFills";
 import { OpenOrders } from "./components/OpenOrders";
+import { InstrumentStrip } from "./components/InstrumentStrip";
 import { OrderBook } from "./components/OrderBook";
 import type { BookTab } from "./components/PanelTabs";
 import { Tape } from "./components/Tape";
 import { Ticket } from "./components/Ticket";
 import { TopBar } from "./components/TopBar";
-import { API_URL, latencyStats, onLatency } from "./lib/api";
-import { WS_URL } from "./lib/feed";
-import { ENGINE_P99_BASELINE_MS } from "./lib/latency";
+import { latencySeries as readLatencySeries, latencyStats, onLatency } from "./lib/api";
 import { decimalsForStep, formatAtoms } from "./lib/num";
 import type { AuthMode, Credentials } from "./lib/types";
 import { useExchange } from "./useExchange";
@@ -28,12 +27,16 @@ export default function App() {
   const [bookTab, setBookTab] = useState<BookTab>("book");
 
   const [latency, setLatency] = useState(latencyStats);
-  useEffect(() => onLatency(setLatency), []);
+  const [latencySeries, setLatencySeries] = useState(readLatencySeries);
+  useEffect(
+    () =>
+      onLatency((next) => {
+        setLatency(next);
+        setLatencySeries(readLatencySeries());
+      }),
+    [],
+  );
 
-  // A slow exchange is a degraded connection, so it gets the same amber the
-  // socket already uses. The threshold is the measured p99, not a taste call.
-  const engineDegraded =
-    latency.engineP50 !== null && latency.engineP50 > ENGINE_P99_BASELINE_MS;
 
   // The screen is public. Nothing asks for an account until something is
   // about to move money, and then this opens — never on arrival.
@@ -155,40 +158,14 @@ export default function App() {
 
         <MyFills fills={x.fills} markets={x.markets} />
 
-        <footer className="statusbar" data-testid="statusbar">
-          <span>
-            api <b>{new URL(API_URL).host}</b>
-          </span>
-          <span className="sep">│</span>
-          <span>
-            ws <b>{new URL(WS_URL).host}</b> <span className="ok">{x.status}</span>
-          </span>
-          <span className="sep">│</span>
-          <span>
-            depth_seq <b data-testid="status-depth-seq">{x.depthSeq === null ? "—" : String(x.depthSeq)}</b>
-          </span>
-          {/* Two numbers, never a sum. They are measured differently and
-              adding them would be the misleading figure this exists to avoid. */}
-          <span className="sep">│</span>
-          <span>
-            engine{" "}
-            <b className={engineDegraded ? "warn" : undefined} data-testid="status-engine">
-              {latency.engineP50 === null ? "—" : `${latency.engineP50}ms`}
-            </b>
-          </span>
-          <span className="sep">│</span>
-          <span>
-            network <b data-testid="status-network">{latency.networkP50 === null ? "—" : `${latency.networkP50}ms`}</b>
-          </span>
-          <div className="right">
-            <span>
-              resyncs <b data-testid="status-resyncs">{x.resyncs}</b>
-            </span>
-            <span>
-              updated <b data-testid="status-updated">{silentFor === null ? "—" : `${Math.floor(silentFor / 1000)}s ago`}</b>
-            </span>
-          </div>
-        </footer>
+        <InstrumentStrip
+          stats={latency}
+          series={latencySeries}
+          depthSeq={x.depthSeq}
+          resyncs={x.resyncs}
+          status={x.status}
+          silentForMs={silentFor}
+        />
       </div>
 
       {authOpen && x.session === null && <Auth onSubmit={signIn} onClose={closeAuth} />}

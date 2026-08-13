@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 /* ══════════════════════════════════════════════════════════════════════
    Design tokens.
@@ -13,6 +15,15 @@
        it marks what can be pressed, and never carries data. Amber means
        *degraded*. Everything else is grey. A fourth decorative hue would make
        all three of those stop reading as signals.
+
+   ⚠️ shadcn's init writes its own token layer, and three of its defaults
+   fight this one. They are corrected below rather than left to win:
+     · `--background` ships white; this screen is dark-only.
+     · `--font-sans` ships Geist; the numbers are IBM Plex Mono, so the labels
+       are its sibling Plex Sans or the two families disagree.
+     · shadcn's `--color-accent` means "subtle hover surface", which collides
+       with the azure meaning "control". Ours is `--color-control` for that
+       reason — renaming it was cheaper than fighting the framework over a word.
    ══════════════════════════════════════════════════════════════════════ */
 
 @theme {
@@ -33,8 +44,8 @@
   --color-buy: #17b98a;
   --color-sell: #e2504f;
   --color-warn: #d99a2b;
-  --color-accent: #6099da;
-  --color-accent-dim: #4c7eb6;
+  --color-control: #6099da;
+  --color-control-dim: #4c7eb6;
 
   /* Translucent side fills for depth bars and row grounds. */
   --color-buy-ghost: #17b98a24;
@@ -64,8 +75,67 @@
   --radius-control: 4px;
 }
 
-/* The grain. 2% — you should never notice it, only miss it if removed. */
+/* shadcn's semantic layer, pointed at the palette above. The screen is
+   dark-only and always has been, so these live on :root rather than under a
+   `.dark` class nothing ever sets. */
+:root {
+  --radius: 6px;
+
+  --background: var(--color-bg);
+  --foreground: var(--color-ink);
+  --card: var(--color-panel);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-panel-hi);
+  --popover-foreground: var(--color-ink);
+
+  /* Azure is the control hue, so it is what shadcn calls "primary". */
+  --primary: var(--color-control);
+  --primary-foreground: var(--color-bg);
+
+  --secondary: var(--color-rule-hi);
+  --secondary-foreground: var(--color-ink-2);
+  --muted: var(--color-rule);
+  --muted-foreground: var(--color-ink-3);
+
+  /* shadcn's "accent" is a hover ground, not a hue with meaning. */
+  --accent: var(--color-rule-hi);
+  --accent-foreground: var(--color-ink);
+
+  --destructive: var(--color-sell);
+  --border: var(--color-rule);
+  --input: var(--color-rule-hi);
+  --ring: var(--color-control);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+}
+
 @layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
   body {
     background: var(--color-bg);
     color: var(--color-ink);
@@ -75,6 +145,7 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* The grain. 2% — you should never notice it, only miss it if removed. */
   body::after {
     content: "";
     position: fixed;

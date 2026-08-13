@@ -29,16 +29,25 @@ function freshUser(prefix: string): string {
 }
 
 /**
- * A price no other run has used, well below the market so it rests.
+ * A price that rests *and* stays visible in the ladder.
  *
- * The exchange these run against is persistent: orders left behind by earlier
- * runs stay on the book. Reusing a fixed price means a new order queues
- * *behind* an old one at the same price, and a test that expects its own order
- * to be hit watches the stale one get filled instead.
+ * Derived from the live best bid rather than fixed, because both facts matter
+ * and they pull against each other. It has to be below the best bid so it
+ * rests instead of trading. It also has to be within the fourteen levels the
+ * ladder renders, or a test asserting "my order shows in the book" fails on a
+ * busy exchange while the order is resting perfectly well just out of view —
+ * which is exactly what a fixed 30,000-35,000 range did once the book filled
+ * up around 50,000.
+ *
+ * The random offset keeps runs off each other's prices; a shared level would
+ * still mark as mine, but a distinct one makes a failure easier to read.
  */
-function freshPrice(): string {
-  const ticks = 3_000_000 + Math.floor(Math.random() * 500_000);
-  return `${(ticks / 100).toFixed(2)}`;
+async function restingBidPrice(page: Page): Promise<string> {
+  const snapshot = await page.request.get(`${API}/depth/BTC_USDT`);
+  const depth = (await snapshot.json()) as { bids: [number, number][] };
+  const best = depth.bids[0]?.[0] ?? 50_000_000_000;
+  const atoms = best - (1 + Math.floor(Math.random() * 8)) * TICK;
+  return (atoms / 1e6).toFixed(2);
 }
 
 /**
@@ -122,8 +131,9 @@ async function signUpAndFund(page: Page, asset: string, amount: string) {
 test("registers, deposits, places an order, sees it in the book, cancels it", async ({ page }) => {
   await signUpAndFund(page, "USDT", "500000");
 
-  // A bid far below the market, so it rests rather than trading.
-  const price = freshPrice();
+  // Below the best bid, so it rests rather than trading — and close enough to
+  // it that the ladder actually renders the level.
+  const price = await restingBidPrice(page);
   await page.getByLabel("price").fill(price);
   await page.getByLabel("quantity").fill("0.01000");
 
@@ -174,7 +184,7 @@ test("refuses a price off the tick and a quantity off the lot, before sending", 
 test("clicking a level in the ladder loads its price into the ticket", async ({ page }) => {
   await signUpAndFund(page, "USDT", "500000");
 
-  const price = freshPrice();
+  const price = await restingBidPrice(page);
   await page.getByLabel("price").fill(price);
   await page.getByLabel("quantity").fill("0.01000");
   await page.getByTestId("ticket-submit").click();
@@ -299,7 +309,7 @@ test("reconnects and resyncs when ws is restarted, without a reload", async ({ p
   expect(resyncsAfter).toBeGreaterThan(resyncsBefore);
 
   // And it still trades, which is the only proof that the recovery was real.
-  await page.getByLabel("price").fill(freshPrice());
+  await page.getByLabel("price").fill(await restingBidPrice(page));
   await page.getByLabel("quantity").fill("0.01000");
   await page.getByTestId("ticket-submit").click();
   await expect(page.getByTestId("open-order")).toHaveCount(1);

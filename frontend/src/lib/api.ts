@@ -1,5 +1,5 @@
 import { parseExact, stringifyExact } from "./json";
-import { LatencyWindow, type LatencyStats } from "./latency";
+import { LatencyWindow, type LatencyStats, type Sample } from "./latency";
 import type {
   Balance,
   Candle,
@@ -62,6 +62,7 @@ interface RequestOptions {
 }
 
 const SERVER_US_HEADER = "x-cex-server-us";
+const ENGINE_US_HEADER = "x-cex-engine-us";
 
 // One window for the session. Every call goes through `request`, so this sees
 // the whole surface without any caller opting in.
@@ -69,6 +70,7 @@ const latency = new LatencyWindow(50);
 const listeners = new Set<(stats: LatencyStats) => void>();
 
 export const latencyStats = (): LatencyStats => latency.stats();
+export const latencySeries = (): Sample[] => latency.series();
 
 export function onLatency(fn: (stats: LatencyStats) => void): () => void {
   listeners.add(fn);
@@ -77,12 +79,21 @@ export function onLatency(fn: (stats: LatencyStats) => void): () => void {
   };
 }
 
-function recordLatency(totalMs: number, header: string | null): void {
-  // An absent header and one that is present but empty are the same failure:
-  // no measurement arrived. `Number("")` is 0, which would sail past the
-  // window's own guard and render as an impossibly fast response.
-  const serverUs = header === null || header.trim() === "" ? null : Number(header);
-  latency.add(totalMs, serverUs);
+/**
+ * An absent header and one that is present but empty are the same failure: no
+ * measurement arrived. `Number("")` is 0, which would sail past the window's
+ * own guard and render as an impossibly fast response.
+ */
+function micros(header: string | null): number | null {
+  return header === null || header.trim() === "" ? null : Number(header);
+}
+
+function recordLatency(response: Response, totalMs: number): void {
+  latency.add(
+    totalMs,
+    micros(response.headers.get(SERVER_US_HEADER)),
+    micros(response.headers.get(ENGINE_US_HEADER)),
+  );
 
   const stats = latency.stats();
   for (const fn of listeners) fn(stats);
@@ -104,7 +115,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   // body read in would make a large history request look like a slow exchange.
   const startedAt = performance.now();
   const response = await fetch(`${API_URL}${path}`, init);
-  recordLatency(performance.now() - startedAt, response.headers.get(SERVER_US_HEADER));
+  recordLatency(response, performance.now() - startedAt);
 
   const text = await response.text();
 
