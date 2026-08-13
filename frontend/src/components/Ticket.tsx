@@ -355,7 +355,7 @@ function Pick({
     <button
       type="button"
       className={[
-        "cursor-pointer font-sans text-micro text-control transition-colors",
+        "flex min-h-6 cursor-pointer items-center font-sans text-micro text-control transition-colors",
         "hover:brightness-125",
         "disabled:cursor-default disabled:text-ink-4 disabled:hover:brightness-100",
       ].join(" ")}
