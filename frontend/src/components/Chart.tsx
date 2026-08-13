@@ -9,6 +9,7 @@ import {
 } from "lightweight-charts";
 import { decimalsForStep } from "../lib/num";
 import type { Candle, Interval, Market } from "../lib/types";
+import { Empty, Meta, Panel, PanelHead, PanelTitle } from "./ui/panel";
 
 const INTERVALS: Interval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
 
@@ -142,27 +143,44 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
   }, [candles, market]);
 
   return (
-    <section className="panel chart">
-      <div className="phead">
-        <h2>Chart</h2>
-        <span className="meta">
-          {market?.symbol ?? "—"} · <b>{interval}</b> · {candles.length} bars
-        </span>
-      </div>
-      <div className="tfs">
+    <Panel className="chart" data-testid="chart-panel">
+      <PanelHead>
+        <PanelTitle>Chart</PanelTitle>
+        <Meta>
+          {market?.symbol ?? "—"} · <b className="tnum font-medium text-ink-2">{interval}</b> ·{" "}
+          <span className="tnum">{candles.length}</span> bars
+        </Meta>
+      </PanelHead>
+
+      {/* 26px so each timeframe button clears the 24px target floor. */}
+      <div className="flex h-[26px] flex-none border-b border-rule bg-panel-hi">
         {INTERVALS.map((option) => (
           <button
             key={option}
+            type="button"
             aria-selected={option === interval}
             onClick={() => onInterval(option)}
+            className={[
+              "flex cursor-pointer items-center border-r border-rule px-3.5",
+              "font-sans text-micro font-medium tracking-[0.12em] transition-colors",
+              option === interval
+                ? "bg-panel text-ink shadow-[inset_0_-2px_0_var(--color-control)]"
+                : "text-ink-4 hover:text-ink-2",
+            ].join(" ")}
           >
             {option === "1d" ? "1D" : option}
           </button>
         ))}
       </div>
-      <div className="plot live" ref={containerRef}>
-        {candles.length === 0 && <div className="empty">no trades in this window yet</div>}
+
+      {/* lightweight-charts paints into this and owns its own canvas sizing.
+          The chart is data too, so it goes flat and grey when the feed does. */}
+      <div
+        className="relative min-h-0 flex-1 bg-transparent group-data-[stale=true]/screen:saturate-[.15] group-data-[stale=true]/screen:brightness-[.62]"
+        ref={containerRef}
+      >
+        {candles.length === 0 && <Empty>no trades in this window yet</Empty>}
       </div>
-    </section>
+    </Panel>
   );
 }
