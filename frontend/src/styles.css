@@ -95,7 +95,10 @@ body::after{
   /* Last row carries the instrument strip now, not a 22px status line. */
   /* Last row is the instrument strip. Fixed, not auto: `auto` lets the
      grid squeeze it under 100vh and the sparklines get clipped away. */
-  grid-template-rows:auto minmax(0,1fr) 170px 60px;
+  /* The activity row shrank from 170px: it is one tabbed panel now, and on
+     a fresh account it has nothing to say. The height it gave back goes to
+     the trading row, which is the part anyone is actually looking at. */
+  grid-template-rows:auto minmax(0,1fr) 132px 60px;
   gap:1px;
   background:var(--rule);
 }

@@ -216,6 +216,49 @@
     font-size: var(--text-label);
   }
 
+  /* ── surfaces ──────────────────────────────────────────────────────
+     The old shell was one flat plane cut into regions by 1px hairlines, which
+     is why the eye had nowhere to land and the whole thing read as a wall.
+     Widening the gap and letting the background show through turns the same
+     regions into separate surfaces, and a small radius says "panel" without
+     saying "consumer app". */
+  .screen {
+    gap: 5px;
+    padding: 5px;
+    background: var(--color-bg);
+  }
+
+  .panel,
+  .activity {
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-panel);
+  }
+
+  /* The right rail carries the ticket, balances and deposit stacked. The gaps
+     and padding above cost real height, and `.panel`'s `overflow:hidden` cut
+     the deposit form in half rather than letting it scroll. */
+  .panel.ticket.bal {
+    overflow-y: auto;
+  }
+
+  /* The strip is the floor of the screen, not a floating card. */
+  [data-testid="statusbar"] {
+    border-radius: var(--radius-panel);
+    border: 1px solid var(--color-rule);
+  }
+
+  /* Depth bars were at 13% against a near-black ground — visible on bids,
+     effectively invisible on asks. The eye is meant to read shape down the
+     ladder before it reads any number, so they get enough weight to do that. */
+  .asks .bar {
+    background: color-mix(in oklab, var(--color-sell) 22%, transparent);
+    border-right-color: color-mix(in oklab, var(--color-sell) 55%, transparent);
+  }
+  .bids .bar {
+    background: color-mix(in oklab, var(--color-buy) 22%, transparent);
+    border-right-color: color-mix(in oklab, var(--color-buy) 55%, transparent);
+  }
+
   /* Anything that is a number keeps the mono, including inside the above. */
   .num,
   .price,
