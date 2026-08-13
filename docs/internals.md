@@ -199,32 +199,35 @@ depths (resting price levels per side):
 
 | Case | depth | mean | median |
 |---|---|---|---|
-| `limit_rest` — rests below best bid, no match | 10 | 3.81 µs | 0.90 µs |
-| | 100 | 5.71 µs | 1.61 µs |
-| | 1,000 | 7.21 µs | 4.59 µs |
-| `limit_cross_one` — one match against best ask | 10 | 5.23 µs | 1.79 µs |
-| | 100 | 16.45 µs | 3.00 µs |
-| | 1,000 | 29.00 µs | 6.79 µs |
-| `market_sweep_half` — market buy through half the asks | 10 | 9.91 µs | 4.22 µs |
-| | 100 | 142.43 µs | 77.74 µs |
-| | 1,000 | 1276.22 µs | 831.50 µs |
-| `cancel` — lookup and removal, no matching | 10 | 4.52 µs | 0.88 µs |
-| | 100 | 13.16 µs | 1.96 µs |
-| | 1,000 | 38.28 µs | 4.05 µs |
+| `limit_rest` — rests below best bid, no match | 10 | 1.37 µs | 1.02 µs |
+| | 100 | 2.85 µs | 1.90 µs |
+| | 1,000 | 5.09 µs | 5.09 µs |
+| `limit_cross_one` — one match against best ask | 10 | 1.80 µs | 1.69 µs |
+| | 100 | 3.05 µs | 2.66 µs |
+| | 1,000 | 11.23 µs | 7.95 µs |
+| `market_sweep_half` — market buy through half the asks | 10 | 3.31 µs | 3.05 µs |
+| | 100 | 24.21 µs | 22.43 µs |
+| | 1,000 | 212.59 µs | 200.14 µs |
+| `cancel` — lookup and removal, no matching | 10 | 1.56 µs | 0.99 µs |
+| | 100 | 1.60 µs | 1.30 µs |
+| | 1,000 | 4.82 µs | 4.40 µs |
 
 `market_sweep_half` climbs with depth as expected — a sweep sized to half the resting asks does
-more matching work the deeper the book is: roughly 14.4x (mean) from depth 10 to 100 and 9x from
-100 to 1,000, tracking the growth in swept quantity at each step. `limit_rest`, which touches at
-most one price level and never matches, stays close to flat by the median (0.90 → 1.61 → 4.59 µs)
-— the shape the brief expected once the drop-time bug above is fixed.
+more matching work the deeper the book is: roughly 7.3x from depth 10 to 100 and 8.8x from 100 to
+1,000, tracking the growth in swept quantity at each step. `limit_rest`, which touches at most one
+price level and never matches, stays close to flat (1.02 → 1.90 → 5.09 µs by the median), and
+`cancel` flatter still (0.99 → 1.30 → 4.40 µs, matching its O(1) tombstone design).
 
-**The mean sits 2–9x above the median in every case**, which means the box this ran on was noisy
-— background load from other work on the shared machine, most likely, rather than anything in
-the engine. `cancel`'s median stays close to flat (0.88 → 1.96 → 4.05 µs, matching its O(1)
-tombstone design) while its mean grows 8.5x, which is exactly what heavy-tailed noise looks like:
-a handful of slow outlier iterations pull the mean up without moving the typical case. Re-running
-on a quieter box would likely tighten these numbers; the table above is what this machine actually
-produced, reported honestly rather than smoothed over.
+**An earlier version of this table was measured on a loaded box and every number in it was 3–8x
+too high.** The tell was the mean sitting 2–9x above the median in every single case, which is
+what heavy-tailed scheduling noise looks like rather than anything in the engine: a handful of
+slow iterations drag the mean up without moving the typical case. The machine was shared with
+unrelated background work at the time (load average above 30 on 4 cores). The table above is a
+re-run at load average under 1, where mean and median sit within 1.0–1.4x of each other — the
+gap you would expect from a benchmark that is measuring the code rather than the queue in front
+of it. Worth stating rather than quietly redrawing: a latency number is a property of the
+machine as much as the program, and one measured under contention is not a smaller version of
+the truth, it is a different measurement.
 
 ### Load driver: HTTP ack vs private-feed visibility
 
@@ -310,7 +313,7 @@ produced it.
 
 | Segment | p50 | Where it comes from |
 |---|---|---|
-| matching (`apply`), depth 100, one match | 3.00 µs (median) | `cargo bench -p cex-core`, `limit_cross_one/100` |
+| matching (`apply`), depth 100, one match | 2.66 µs (median) | `cargo bench -p cex-core`, `limit_cross_one/100` |
 | engine round trip, incl. both Redis hops | 738 µs | `x-cex-engine-us`, the `engine` row above |
 | API's own work outside that round trip | ~34 µs | `server` minus `engine` at the same rank |
 | whole request, server side | 772 µs | `x-cex-server-us`, the `server` row above |
