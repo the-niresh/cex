@@ -2,6 +2,19 @@
 // single round-trip figure is mostly a measure of where the reader is sitting.
 // Reporting the exchange's own time separately is the only honest version.
 
+// The p99 of `x-cex-server-us` from the localhost load run: the same quantity
+// this screen displays as `engine`, so the comparison is like for like. A live
+// p50 above the measured p99 means the exchange is behaving worse than it did
+// in 99% of samples, which is the only non-arbitrary definition of "degraded"
+// available. Deliberately not the p99 of `x-cex-engine-us`, which is a
+// strictly smaller number measuring a strictly smaller thing.
+//
+// Re-derive with, against a freshly reset stack:
+//   cargo run -p cex-loadgen -- --host http://localhost:8080 \
+//     --ws ws://localhost:8081 --count 2000
+// Update this whenever that run is repeated, and update docs/internals.md too.
+export const ENGINE_P99_BASELINE_MS = 8.6;
+
 export interface LatencyStats {
   engineP50: number | null;
   engineP99: number | null;

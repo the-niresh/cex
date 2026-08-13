@@ -643,6 +643,9 @@ body.stale .plot{filter:saturate(.15) brightness(.62)}
 }
 .statusbar b{color:var(--ink-3);font-weight:400}
 .statusbar .ok{color:var(--ink-2)}
+/* Same amber the socket's degraded state uses. Hue is spent on buy/sell and
+   on a degraded connection, nothing else — a slow engine is the latter. */
+.statusbar b.warn{color:var(--warn)}
 .statusbar .sep{color:var(--ink-4);opacity:.5}
 .statusbar .right{margin-left:auto;display:flex;gap:18px;align-items:center}
 

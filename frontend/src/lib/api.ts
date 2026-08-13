@@ -1,4 +1,5 @@
 import { parseExact, stringifyExact } from "./json";
+import { LatencyWindow, type LatencyStats } from "./latency";
 import type {
   Balance,
   Candle,
@@ -60,6 +61,33 @@ interface RequestOptions {
   signal?: AbortSignal | undefined;
 }
 
+const SERVER_US_HEADER = "x-cex-server-us";
+
+// One window for the session. Every call goes through `request`, so this sees
+// the whole surface without any caller opting in.
+const latency = new LatencyWindow(50);
+const listeners = new Set<(stats: LatencyStats) => void>();
+
+export const latencyStats = (): LatencyStats => latency.stats();
+
+export function onLatency(fn: (stats: LatencyStats) => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+function recordLatency(totalMs: number, header: string | null): void {
+  // An absent header and one that is present but empty are the same failure:
+  // no measurement arrived. `Number("")` is 0, which would sail past the
+  // window's own guard and render as an impossibly fast response.
+  const serverUs = header === null || header.trim() === "" ? null : Number(header);
+  latency.add(totalMs, serverUs);
+
+  const stats = latency.stats();
+  for (const fn of listeners) fn(stats);
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", token, body, idempotencyKey, signal } = options;
 
@@ -72,7 +100,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (body !== undefined) init.body = stringifyExact(body);
   if (signal) init.signal = signal;
 
+  // Timed to the headers arriving, not to the body being read. Folding the
+  // body read in would make a large history request look like a slow exchange.
+  const startedAt = performance.now();
   const response = await fetch(`${API_URL}${path}`, init);
+  recordLatency(performance.now() - startedAt, response.headers.get(SERVER_US_HEADER));
+
   const text = await response.text();
 
   if (!response.ok) {
