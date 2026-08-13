@@ -79,7 +79,7 @@ export default function App() {
         // `group-data-[stale=true]/screen:` — instead of the flag being drilled
         // through as a prop to every panel that dims when the feed does.
         className={[
-          "group/screen grid h-screen gap-[5px] bg-bg p-[5px]",
+          "group/screen grid h-screen gap-2 bg-bg p-2",
           // chart · book-or-trades · ticket. The book and the tape share a
           // column through the tabs in their panel head, which is what took the
           // floor from 1353px to 1112px — most of the width problem solved by
@@ -89,7 +89,11 @@ export default function App() {
           // clips, and a folded topbar needs the row to grow with it. The last
           // row is fixed rather than `auto` because `auto` lets the grid
           // squeeze the instrument strip under 100vh and clip its sparklines.
-          "grid-cols-[minmax(420px,1fr)_370px_320px] grid-rows-[auto_minmax(0,1fr)_132px_60px]",
+          //
+          // The third row grew from 132px to 160px alongside the activity
+          // panel's row height (19/21px to 24px) — otherwise the taller rows
+          // would have meant fewer of them fit in the same space.
+          "grid-cols-[minmax(420px,1fr)_370px_320px] grid-rows-[auto_minmax(0,1fr)_160px_60px]",
           // Three columns want 1112px. Below that the ticket column would fall
           // off the side of a screen that cannot scroll, taking BUY, SELL and
           // LOG OUT with it — and a 1280px viewport is exactly what a 1920

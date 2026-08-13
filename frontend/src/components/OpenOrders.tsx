@@ -34,7 +34,7 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
   return (
     <Table>
       <ColumnHeads className={COLS} style={{ minWidth: width }} data-testid="order-heads">
-        <span>ID</span>
+        <span>Id</span>
         <span>Age</span>
         <span>Market</span>
         <span>Side</span>
@@ -62,7 +62,7 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
               <div
                 key={String(order.order_id)}
                 className={[
-                  "tnum grid h-[21px] items-center border-l-2 px-2.5 hover:bg-row-hover",
+                  "tnum grid h-6 items-center border-l-2 px-2.5 hover:bg-row-hover",
                   COLS,
                   // The side is on the row's leading edge as well as in its
                   // own cell, so a column of orders reads as buys and sells
@@ -73,16 +73,14 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
               >
                 <span className="text-ink-4">#{String(order.order_id)}</span>
                 <span className="text-ink-4">—</span>
-                <span className="font-sans tracking-[0.04em] text-ink-2">{order.symbol}</span>
+                <span className="font-sans text-ink-2">{order.symbol}</span>
                 <span
-                  className={`font-sans text-micro tracking-[0.08em] ${buy ? "text-buy" : "text-sell"}`}
+                  className={`font-sans text-micro ${buy ? "text-buy" : "text-sell"}`}
                   data-testid="order-side"
                 >
                   {order.side}
                 </span>
-                <span className="font-sans text-micro tracking-[0.06em] text-ink-3">
-                  {order.order_type}
-                </span>
+                <span className="font-sans text-micro text-ink-3">{order.order_type}</span>
                 <span>
                   {order.price === null || !market ? (
                     "MKT"
@@ -105,14 +103,14 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
                   />
                 </span>
                 <span
-                  className={`font-sans text-[9.5px] tracking-[0.1em] ${
+                  className={`font-sans text-micro ${
                     order.filled_qty > 0n ? "text-ink" : "text-ink-3"
                   }`}
                   data-testid="order-status"
                 >
                   {order.status}
                 </span>
-                {/* 11px of glyph in a 21px row; the row is as tall as it gets,
+                {/* 11px of glyph in a 24px row; the row is as tall as it gets,
                     so the target is widened instead to keep it clickable. */}
                 <button
                   type="button"

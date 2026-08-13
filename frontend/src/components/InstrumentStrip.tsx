@@ -56,7 +56,7 @@ export function InstrumentStrip({
       ].join(" ")}
     >
       <Gauge
-        label="engine"
+        label="Engine"
         testid="status-engine"
         unit="ms"
         reading={stats.engine}
@@ -67,7 +67,7 @@ export function InstrumentStrip({
       />
 
       <Gauge
-        label="history"
+        label="History"
         testid="status-history"
         unit="ms"
         reading={stats.history}
@@ -78,7 +78,7 @@ export function InstrumentStrip({
       />
 
       <Gauge
-        label="network"
+        label="Network"
         testid="status-network"
         unit="ms"
         reading={stats.network}
@@ -91,11 +91,11 @@ export function InstrumentStrip({
       <div className="ml-auto flex items-center gap-4 self-center text-micro text-ink-4">
         {/* Which exchange this screen is actually talking to. Worth keeping
             visible: localhost and the deployed host look identical otherwise. */}
-        <Fact label="api" value={new URL(API_URL).host} />
-        <Fact label="depth_seq" value={depthSeq === null ? "—" : String(depthSeq)} testid="status-depth-seq" />
-        <Fact label="resyncs" value={String(resyncs)} testid="status-resyncs" />
+        <Fact label="Api" value={new URL(API_URL).host} />
+        <Fact label="Depth seq" value={depthSeq === null ? "—" : String(depthSeq)} testid="status-depth-seq" />
+        <Fact label="Resyncs" value={String(resyncs)} testid="status-resyncs" />
         <Fact
-          label="updated"
+          label="Updated"
           value={silentForMs === null ? "—" : `${Math.floor(silentForMs / 1000)}s`}
           testid="status-updated"
         />
@@ -104,7 +104,9 @@ export function InstrumentStrip({
             className={`size-1.5 rounded-full ${feedDegraded ? "bg-warn" : "bg-buy"}`}
             aria-hidden
           />
-          <span className="uppercase tracking-[0.12em] text-ink-3">{status}</span>
+          {/* Left lower-case: an e2e test asserts the raw feed status word
+              (`live`) as substring text, so only the caps transform goes. */}
+          <span className="text-ink-3">{status}</span>
         </span>
       </div>
     </footer>
@@ -136,7 +138,7 @@ function Gauge({
   return (
     <div className="flex items-center gap-2 py-2" title={title}>
       <div className="w-[4.25rem]">
-        <div className="text-micro uppercase tracking-[0.14em] text-ink-4">{label}</div>
+        <div className="text-micro text-ink-4">{label}</div>
         {/* Em-dash, never a zero: a missing measurement must not render as a
             fast one. That is the whole reason this readout exists. */}
         <div className={`tnum text-[0.9375rem] leading-tight ${tone}`} data-testid={testid}>
@@ -145,7 +147,7 @@ function Gauge({
       </div>
       <Sparkline values={own} stroke={stroke} label={label} width={104} />
       <div className="w-[4.75rem] shrink-0 text-micro text-ink-4">
-        <div className="uppercase tracking-[0.1em]">p99 · n</div>
+        <div>p99 · n</div>
         <div className="tnum whitespace-nowrap text-ink-3">
           {reading.p99 === null ? "—" : `${reading.p99}`}
           <span className="text-ink-4"> · {reading.count}</span>
@@ -158,7 +160,7 @@ function Gauge({
 function Fact({ label, value, testid }: { label: string; value: string; testid?: string }) {
   return (
     <span className="flex items-baseline gap-1.5">
-      <span className="uppercase tracking-[0.1em]">{label}</span>
+      <span>{label}</span>
       <b className="tnum font-normal text-ink-2" data-testid={testid}>
         {value}
       </b>

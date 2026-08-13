@@ -36,7 +36,7 @@ export function ActivityPanel({ orders, fills, markets, onCancel }: Props) {
       className="col-span-full row-start-3 flex min-h-0 flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel max-stack:row-auto max-stack:min-h-[190px]"
       data-testid="activity"
     >
-      <div className="flex h-6 flex-none items-center gap-1 border-b border-rule bg-panel-hi px-2">
+      <div className="flex h-10 flex-none items-center gap-1 border-b border-rule bg-panel px-2">
         <TabsList className="h-auto gap-1 border-0 bg-transparent p-0">
           <Trigger value="orders" label="Open orders" count={orders.length} />
           <Trigger value="fills" label="Fills" count={fills.length} />
@@ -68,11 +68,13 @@ function Trigger({ value, label, count }: { value: string; label: string; count:
     <TabsTrigger
       value={value}
       data-testid={`activity-tab-${value}`}
-      className="rounded-control px-2 py-0.5 font-sans text-label font-medium uppercase tracking-[0.12em] text-ink-4 transition-colors hover:text-ink-2 data-[selected]:bg-rule data-[selected]:text-ink"
+      // The house tab pattern from PanelTabs: a field-toned pill on the active
+      // choice, sentence case, no shouting caps.
+      className="min-h-6 rounded-control px-2.5 font-sans text-label text-ink-4 transition-colors hover:text-ink-2 data-active:bg-field data-active:text-ink"
     >
       {label}
       {/* The count sits on the tab so an empty panel does not need opening. */}
-      <span className="tnum ml-1.5 text-ink-4">{count}</span>
+      <span className="tnum ml-1.5 text-micro text-ink-4">{count}</span>
     </TabsTrigger>
   );
 }

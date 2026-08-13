@@ -39,13 +39,13 @@ export function MyFills({ fills, markets }: { fills: MyFill[]; markets: Market[]
             return (
               <div
                 key={`${fill.seq}-${fill.idx}`}
-                className={`tnum grid h-[19px] items-center px-2.5 hover:bg-row-hover ${COLS}`}
+                className={`tnum grid h-6 items-center px-2.5 hover:bg-row-hover ${COLS}`}
                 data-testid="fill-row"
               >
-                <span className="text-[10.5px] text-ink-4">{clock(fill.timestamp_ms)}</span>
-                <span className="font-sans tracking-[0.04em] text-ink-2">{fill.symbol}</span>
+                <span className="text-micro text-ink-4">{clock(fill.timestamp_ms)}</span>
+                <span className="font-sans text-ink-2">{fill.symbol}</span>
                 <span
-                  className={`whitespace-nowrap font-sans text-micro tracking-[0.06em] ${
+                  className={`whitespace-nowrap font-sans text-micro ${
                     buy ? "text-buy" : "text-sell"
                   }`}
                   data-testid="fill-side"
@@ -53,7 +53,7 @@ export function MyFills({ fills, markets }: { fills: MyFill[]; markets: Market[]
                   {fill.side}{" "}
                   {/* maker/taker rides on the side cell rather than paying for
                       a column of its own */}
-                  <span className="tracking-[0.04em] text-ink-4" data-testid="fill-role">
+                  <span className="text-ink-4" data-testid="fill-role">
                     {fill.role === "MAKER" ? "M" : "T"}
                   </span>
                 </span>
