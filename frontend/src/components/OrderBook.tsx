@@ -302,18 +302,13 @@ export function OrderBook({
             ].join(" ")}
             data-testid="sweep"
           >
-            {/* ⚠️ Text stays lowercase, not capitalized: the e2e suite locks the
-                literal substring "avg price" (case-sensitive toContainText),
-                and that spec lives outside this task's scope to edit. The
-                shouting is gone with the dropped caps transform and the
-                dropped letter-spacing below; that is the fix this task owns. */}
-            <SweepRow label="avg price" testId="sweep-avg-price">
+            <SweepRow label="Avg price" testId="sweep-avg-price">
               <Num atoms={sweep.avg} decimals={market.quote_decimals} places={priceDp} />
             </SweepRow>
-            <SweepRow label={`sum ${market.base}`} testId="sweep-sum-base">
+            <SweepRow label={`Sum ${market.base}`} testId="sweep-sum-base">
               <Num atoms={sweep.size} decimals={market.base_decimals} places={qtyDp} />
             </SweepRow>
-            <SweepRow label={`sum ${market.quote}`} testId="sweep-sum-quote">
+            <SweepRow label={`Sum ${market.quote}`} testId="sweep-sum-quote">
               <Num atoms={sweep.value} decimals={market.quote_decimals} places={2} />
             </SweepRow>
           </div>

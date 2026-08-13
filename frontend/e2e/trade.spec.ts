@@ -401,7 +401,7 @@ test("the book and the tape share one column, and the sweep card does the arithm
   await expect(sweep).toBeVisible();
   // The best bid alone, so the sweep's size is that level's own size and the
   // average is its own price — the one case checkable without re-deriving it.
-  await expect(sweep).toContainText("avg price");
+  await expect(sweep).toContainText("Avg price");
   const shownSize = await level.getByTestId("level-total").innerText();
   await expect(sweep.getByTestId("sweep-sum-base")).toHaveText(shownSize);
 
