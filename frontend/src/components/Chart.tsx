@@ -7,6 +7,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { cn } from "@/lib/utils";
 import { withAlpha } from "../lib/color";
 import { decimalsForStep } from "../lib/num";
 import type { Candle, Interval, Market } from "../lib/types";
@@ -170,21 +171,21 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
         </Meta>
       </PanelHead>
 
-      {/* 26px so each timeframe button clears the 24px target floor. */}
-      <div className="flex h-[26px] flex-none border-b border-rule bg-panel-hi">
+      {/* 32px, matching the reference's timeframe row. The reference separates
+          buttons with spacing, not the underline and border-r dividers the old
+          row used — see PanelTabs for the same pill treatment. */}
+      <div className="flex h-8 flex-none items-center gap-1 border-b border-rule bg-panel px-2 py-1">
         {INTERVALS.map((option) => (
           <button
             key={option}
             type="button"
             aria-selected={option === interval}
             onClick={() => onInterval(option)}
-            className={[
-              "flex cursor-pointer items-center border-r border-rule px-3.5",
-              "font-sans text-micro font-medium tracking-[0.12em] transition-colors",
-              option === interval
-                ? "bg-panel text-ink shadow-[inset_0_-2px_0_var(--color-control)]"
-                : "text-ink-4 hover:text-ink-2",
-            ].join(" ")}
+            className={cn(
+              "flex min-h-6 cursor-pointer items-center rounded-control px-2.5",
+              "font-sans text-label transition-colors",
+              option === interval ? "bg-field text-ink" : "text-ink-4 hover:text-ink-2",
+            )}
           >
             {option === "1d" ? "1D" : option}
           </button>
