@@ -19,7 +19,6 @@ const twMerge = extendTailwindMerge({
     theme: {
       text: ["data", "label", "micro"],
       radius: ["panel", "control"],
-      spacing: ["row"],
     },
   },
 });

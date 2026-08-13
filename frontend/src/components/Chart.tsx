@@ -143,7 +143,12 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
   }, [candles, market]);
 
   return (
-    <Panel className="chart" data-testid="chart-panel">
+    // ⚠️ A fixed height in the stacked layout, not a floor. The rows there are
+    // auto-height, and lightweight-charts sizes its canvas from the container it
+    // is given — so a container that sizes itself from its content grows every
+    // time the observer fires, and the panel ran to a thousand pixels on a
+    // phone. The old rule set a floor and no ceiling, and did the same.
+    <Panel className="max-[879px]:h-[300px]" data-testid="chart-panel">
       <PanelHead>
         <PanelTitle>Chart</PanelTitle>
         <Meta>

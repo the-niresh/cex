@@ -9,6 +9,7 @@ import type { BookTab } from "./components/PanelTabs";
 import { Tape } from "./components/Tape";
 import { Ticket } from "./components/Ticket";
 import { TopBar } from "./components/TopBar";
+import { Panel } from "./components/ui/panel";
 import { latencySeries as readLatencySeries, latencyStats, onLatency } from "./lib/api";
 import { decimalsForStep, formatAtoms } from "./lib/num";
 import type { AuthMode, Credentials } from "./lib/types";
@@ -77,10 +78,33 @@ export default function App() {
   return (
     <>
       <div
-        // `group/screen` so a ported panel can read the stale flag off the
-        // shell — `group-data-[stale=true]/screen:` — instead of the flag being
-        // drilled through as a prop to every panel that dims when the feed does.
-        className={`screen group/screen${looksStale ? " stale" : ""}`}
+        // `group/screen` so a panel can read the stale flag off the shell —
+        // `group-data-[stale=true]/screen:` — instead of the flag being drilled
+        // through as a prop to every panel that dims when the feed does.
+        className={[
+          "group/screen grid h-screen gap-[5px] bg-bg p-[5px]",
+          // chart · book-or-trades · ticket. The book and the tape share a
+          // column through the tabs in their panel head, which is what took the
+          // floor from 1353px to 1112px — most of the width problem solved by
+          // showing one of two things that were never read at the same moment.
+          //
+          // The first row is `auto`, not `36px`: the topbar folds rather than
+          // clips, and a folded topbar needs the row to grow with it. The last
+          // row is fixed rather than `auto` because `auto` lets the grid
+          // squeeze the instrument strip under 100vh and clip its sparklines.
+          "grid-cols-[minmax(420px,1fr)_370px_320px] grid-rows-[auto_minmax(0,1fr)_132px_60px]",
+          // Three columns want 1112px. Below that the ticket column would fall
+          // off the side of a screen that cannot scroll, taking BUY, SELL and
+          // LOG OUT with it — and a 1280px viewport is exactly what a 1920
+          // screen at 150% zoom gives you, which is not an exotic setup. So the
+          // same three columns, tightened, down to an 852px floor.
+          "max-[1111px]:grid-cols-[minmax(260px,1fr)_minmax(300px,370px)_minmax(290px,320px)]",
+          // Under ~880px no side-by-side arrangement leaves the ladder or the
+          // ticket a usable width, so stop pretending: one column, each panel
+          // its own row, and the document scrolls like any other page.
+          "max-[879px]:h-auto max-[879px]:min-h-screen",
+          "max-[879px]:grid-cols-[minmax(0,1fr)] max-[879px]:grid-rows-none max-[879px]:auto-rows-auto",
+        ].join(" ")}
         data-testid="screen"
         data-stale={looksStale ? "true" : "false"}
       >
@@ -140,7 +164,7 @@ export default function App() {
             laptop once the browser has taken its chrome — the deposit block
             used to fall out of the bottom of a clipped container, so funding
             an account became impossible on a short screen. Scroll, not clip. */}
-        <section className="panel overflow-y-auto" data-testid="ticket-rail">
+        <Panel className="overflow-y-auto" data-testid="ticket-rail">
           <Ticket
             market={x.market}
             balances={x.balances}
@@ -159,7 +183,7 @@ export default function App() {
             onRequireSignIn={openAuth}
             onDeposit={x.credit}
           />
-        </section>
+        </Panel>
 
         <ActivityPanel
           orders={x.openOrders}
@@ -180,11 +204,26 @@ export default function App() {
 
       {authOpen && x.session === null && <Auth onSubmit={signIn} onClose={closeAuth} />}
 
+      {/* A failed request, dismissible, never blocking the book behind it. */}
       {x.error && (
-        <div className="toast" role="alert">
-          <span className="k">ERR</span>
+        <div
+          className={[
+            "fixed bottom-[30px] right-3 z-[60] flex max-w-[420px] items-start gap-2.5 px-2.5 py-2",
+            "rounded-panel bg-panel-hi text-[10.5px] leading-[1.45] text-ink",
+            "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-sell)_45%,transparent)]",
+          ].join(" ")}
+          role="alert"
+        >
+          <span className="flex-none pt-px font-sans text-[9.5px] font-bold tracking-[0.14em] text-sell">
+            ERR
+          </span>
           <span>{x.error}</span>
-          <button onClick={x.clearError} aria-label="dismiss">
+          <button
+            type="button"
+            className="ml-auto flex-none cursor-pointer text-ink-4 hover:text-ink"
+            onClick={x.clearError}
+            aria-label="dismiss"
+          >
             ✕
           </button>
         </div>

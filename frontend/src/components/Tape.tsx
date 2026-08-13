@@ -17,7 +17,7 @@ const COLS = "grid-cols-[76px_1fr_58px] gap-x-1.5";
 
 export function Tape({ market, prints, tab, onTab }: Props) {
   return (
-    <Panel className="tape" data-testid="tape-panel">
+    <Panel className="max-[879px]:min-h-[240px]" data-testid="tape-panel">
       <PanelHead>
         <PanelTabs tab={tab} onTab={onTab} />
         <Meta>

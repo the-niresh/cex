@@ -72,9 +72,7 @@ export function TopBar({
   return (
     <header
       className={[
-        // `topbar` stays as the shell's grid-placement hook; everything the
-        // class used to style lives here now.
-        "topbar flex min-w-0 flex-row flex-nowrap items-stretch overflow-hidden",
+        "col-span-full flex min-w-0 flex-row flex-nowrap items-stretch overflow-hidden",
         "min-h-9 rounded-panel border border-rule bg-panel-hi [&>*]:min-h-9",
         "max-[879px]:flex-wrap",
       ].join(" ")}

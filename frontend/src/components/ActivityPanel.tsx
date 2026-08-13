@@ -23,7 +23,7 @@ export function ActivityPanel({ orders, fills, markets, onCancel }: Props) {
   return (
     <Tabs
       defaultValue="orders"
-      className="panel activity col-span-full flex min-h-0 flex-col gap-0"
+      className="col-span-full row-start-3 flex min-h-0 flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel max-[879px]:row-auto max-[879px]:min-h-[190px]"
       data-testid="activity"
     >
       <div className="flex h-6 flex-none items-center gap-1 border-b border-rule bg-panel-hi px-2">

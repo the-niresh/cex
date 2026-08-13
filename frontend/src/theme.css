@@ -1,17 +1,6 @@
-/* ⚠️ Layer order, and it is load-bearing.
-   Tailwind v4 puts every utility inside a cascade layer, and unlayered CSS
-   beats layered CSS no matter the specificity. So while `styles.css` was
-   imported normally it silently won against every Tailwind utility on the
-   page — its `*{padding:0}` reset alone was enough to blank out `px-3`.
-   Importing it into a `legacy` layer ranked below `utilities` lets ported
-   components take effect while everything not yet ported keeps working. The
-   layer disappears with the file. */
-@layer theme, base, components, legacy, utilities;
-
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "./styles.css" layer(legacy);
 
 /* ══════════════════════════════════════════════════════════════════════
    Design tokens.
@@ -58,10 +47,6 @@
   --color-control: #6099da;
   --color-control-dim: #4c7eb6;
 
-  /* Translucent side fills for depth bars and row grounds. */
-  --color-buy-ghost: #17b98a24;
-  --color-sell-ghost: #e2504f24;
-
   /* A control that carries a side is filled and ringed in that side's hue
      rather than painted flat, so BUY and SELL are told apart before the word
      is read. One fill and one edge each — the old stylesheet had two fills a
@@ -97,9 +82,6 @@
   --text-data: 0.78125rem; /* 12.5px — prices, sizes, every number */
   --text-label: 0.6875rem; /* 11px — column heads, field labels */
   --text-micro: 0.625rem; /* 10px — units, footnotes, the strip's captions */
-
-  /* ── rhythm ───────────────────────────────────────────────────────── */
-  --spacing-row: 1.375rem; /* 22px — one ladder/table row */
 
   /* Enough to read as a surface, not enough to read as consumer fintech. */
   --radius-panel: 6px;
@@ -188,6 +170,11 @@
     @apply border-border outline-ring/50;
   }
 
+  html,
+  body {
+    height: 100%;
+  }
+
   body {
     background: var(--color-bg);
     color: var(--color-ink);
@@ -195,6 +182,22 @@
     font-size: var(--text-data);
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
+
+    /* Horizontal is `auto`, not `hidden`, on purpose. `hidden` propagates to
+       the viewport and takes the scrollbar *and* the wheel with it, so anything
+       past the right edge stops existing rather than being one swipe away. The
+       layout is meant to never need this; it is here so that when it is needed,
+       the user is inconvenienced rather than locked out. */
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  /* Below the width where any grid works, the whole thing becomes an ordinary
+     scrolling page — see the shell's breakpoints in App.tsx. */
+  @media (max-width: 879px) {
+    body {
+      overflow-y: auto;
+    }
   }
 
   /* The grain. 2% — you should never notice it, only miss it if removed. */
@@ -212,54 +215,5 @@
   .tnum {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-  }
-}
-
-/* ══════════════════════════════════════════════════════════════════════
-   TRANSITIONAL — delete this block with styles.css.
-
-   The type split is the change that makes the screen stop reading as a wall:
-   numbers stay monospace so digits line up down a column, labels move to the
-   sans sibling so they stop competing with the data for attention.
-
-   Doing it here rather than in eleven components is deliberate. It lands the
-   change across the whole screen in one place while the port is still in
-   progress, and it is a `utilities` rule so it outranks the legacy layer.
-   Each component drops out of these selectors as it is ported, and when the
-   last one has, this block and the file it fights both go.
-   ══════════════════════════════════════════════════════════════════════ */
-@layer utilities {
-  .k {
-    font-family: var(--font-sans);
-  }
-
-  /* ── surfaces ──────────────────────────────────────────────────────
-     The old shell was one flat plane cut into regions by 1px hairlines, which
-     is why the eye had nowhere to land and the whole thing read as a wall.
-     Widening the gap and letting the background show through turns the same
-     regions into separate surfaces, and a small radius says "panel" without
-     saying "consumer app". */
-  .screen {
-    gap: 5px;
-    padding: 5px;
-    background: var(--color-bg);
-  }
-
-  .panel,
-  .activity {
-    border: 1px solid var(--color-rule);
-    border-radius: var(--radius-panel);
-  }
-
-  /* The strip is the floor of the screen, not a floating card. */
-  [data-testid="statusbar"] {
-    border-radius: var(--radius-panel);
-    border: 1px solid var(--color-rule);
-  }
-
-  /* Anything that is a number keeps the mono, including inside the above. */
-  .tnum,
-  .statusbar b {
-    font-family: var(--font-mono);
   }
 }
