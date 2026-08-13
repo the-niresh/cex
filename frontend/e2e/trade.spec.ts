@@ -41,6 +41,58 @@ function freshPrice(): string {
   return `${(ticks / 100).toFixed(2)}`;
 }
 
+/**
+ * Rest one bid and one ask on the book, through the API rather than the screen.
+ *
+ * The tests that read the ladder used to depend on levels left behind by
+ * *earlier* tests. That made them order-dependent, and it meant they passed for
+ * the wrong reason: while the depth-resync bug was live, the tests before them
+ * failed early and abandoned their orders on the book, which is what gave these
+ * something to read. Against a freshly reset exchange the ask side was always
+ * empty — nothing in the suite ever leaves a resting ask — so "MID and BBO"
+ * could not pass at all.
+ *
+ * Seeding through the API keeps them quick: they are about what the ladder
+ * renders, not about order entry, which other tests already cover through the UI.
+ */
+async function seedBook(page: Page): Promise<void> {
+  const username = freshUser("seed");
+  const registered = await page.request.post(`${API}/register`, {
+    data: { username, name: `Seed ${username}`, password: "a-good-password" },
+  });
+  const { token } = (await registered.json()) as { token: string };
+  const headers = { authorization: `Bearer ${token}` };
+
+  for (const asset of ["USDT", "BTC"]) {
+    await page.request.post(`${API}/deposit`, {
+      headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+      data: { asset, amount: 1_000_000_000_000_000 },
+    });
+  }
+
+  // Far apart and on the tick, so neither crosses the other or anything an
+  // earlier run left behind.
+  const bid = 30_000_000_000 + Math.floor(Math.random() * 1_000) * TICK;
+  const ask = 90_000_000_000 + Math.floor(Math.random() * 1_000) * TICK;
+  for (const [side, price] of [
+    ["BUY", bid],
+    ["SELL", ask],
+  ] as const) {
+    const placed = await page.request.post(`${API}/orders`, {
+      headers: { ...headers, "idempotency-key": crypto.randomUUID() },
+      data: {
+        symbol: "BTC_USDT",
+        side,
+        order_type: "LIMIT",
+        time_in_force: "GTC",
+        price,
+        qty: 1_000_000,
+      },
+    });
+    expect(placed.ok(), `seeding a resting ${side} must succeed`).toBeTruthy();
+  }
+}
+
 /** Register through the UI and fund the account through the UI's own deposit. */
 async function signUpAndFund(page: Page, asset: string, amount: string) {
   const username = freshUser("e2e");
@@ -93,7 +145,7 @@ test("registers, deposits, places an order, sees it in the book, cancels it", as
     /^0\.0+$/,
   );
 
-  await row.locator("button.x").click();
+  await row.getByTestId("cancel-order").click();
 
   await expect(page.getByTestId("open-order")).toHaveCount(0);
   await expect(page.locator('[data-testid="ladder-level"][data-mine="true"]')).toHaveCount(0);
@@ -274,6 +326,7 @@ test("the whole screen is usable before signing in, with nothing in the way", as
 test("the book and the tape share one column, and the sweep card does the arithmetic", async ({
   page,
 }) => {
+  await seedBook(page);
   await page.goto("/");
 
   // The header states the day, derived from hourly candles rather than served.
@@ -311,6 +364,7 @@ test("the book and the tape share one column, and the sweep card does the arithm
 });
 
 test("MID and BBO fill the price from the book", async ({ page }) => {
+  await seedBook(page);
   await page.goto("/");
   await expect(page.locator('[data-testid="ladder-level"]').first()).toBeVisible();
 

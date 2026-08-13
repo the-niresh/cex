@@ -45,13 +45,30 @@ export class DepthBook {
 
   symbol: string | null = null;
 
-  /** Rebuild from a REST snapshot. The only way out of a stale book. */
-  reset(snapshot: DepthSnapshot): void {
+  /**
+   * Rebuild from a REST snapshot. The only way out of a stale book.
+   *
+   * Returns whether the snapshot was taken. A snapshot **older** than what has
+   * already been applied is refused, because it is a rollback rather than a
+   * repair: the read path can lag the event path — the engine answers `/depth`
+   * between blocking stream reads — so a resync racing a freshly published
+   * delta gets back a view from before it. Rebuilding from that deletes a
+   * level the exchange really has, and since nothing further changed, no later
+   * delta ever arrives to put it back. The book sits wrong until a reload.
+   *
+   * A refused snapshot leaves the book exactly as it was, `stale` included, so
+   * a caller resyncing to clear a gap must try again rather than assume the
+   * gap is closed.
+   */
+  reset(snapshot: DepthSnapshot): boolean {
+    if (this.depthSeq !== null && snapshot.depth_seq < this.depthSeq) return false;
+
     this.symbol = snapshot.symbol;
     this.bidLevels = new Map(snapshot.bids.map(([price, qty]) => [price, qty]));
     this.askLevels = new Map(snapshot.asks.map(([price, qty]) => [price, qty]));
     this.depthSeq = snapshot.depth_seq;
     this.stale = false;
+    return true;
   }
 
   apply(update: DepthUpdate): ApplyResult {

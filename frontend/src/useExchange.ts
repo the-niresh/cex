@@ -43,6 +43,18 @@ const TAPE_LIMIT = 60;
 let nextPrintKey = 0;
 const BOOK_DEPTH = 14;
 
+/**
+ * How many times a resync will re-ask for a snapshot that came back older than
+ * the stream, and how long it waits between tries.
+ *
+ * The engine answers reads between blocking stream reads, so its `/depth` view
+ * can trail the deltas it has already published. Bounded on purpose: if the
+ * read path is still behind after this, leaving the book visibly stale is
+ * better than retrying forever against an exchange that is not keeping up.
+ */
+const SNAPSHOT_RETRIES = 5;
+const SNAPSHOT_RETRY_MS = 300;
+
 /** The ladder as the screen renders it — plain data, not the live book. */
 interface BookView {
   bids: Level[];
@@ -167,7 +179,18 @@ export function useExchange(): Exchange {
       // Snapshot first, then the stream applies on top of it. The other way
       // round leaves a window whose updates are silently lost.
       const [snapshot, recent] = await Promise.all([api.depth(sym), api.trades(sym, TAPE_LIMIT)]);
-      bookRef.current.reset(snapshot);
+
+      // `reset` refuses a snapshot older than what the stream has already
+      // applied — see DepthBook.reset for why that rollback is silent and
+      // permanent. A refusal is fine for a healthy book: our own state is
+      // simply newer. A *stale* book is different, because only a snapshot can
+      // clear its gap, so give the read path a moment to catch up and ask
+      // again rather than leaving the ladder frozen.
+      let took = bookRef.current.reset(snapshot);
+      for (let attempt = 0; !took && bookRef.current.stale && attempt < SNAPSHOT_RETRIES; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, SNAPSHOT_RETRY_MS));
+        took = bookRef.current.reset(await api.depth(sym));
+      }
       publishBook();
       setTape(
         recent.map((t: PublicTrade) => ({
