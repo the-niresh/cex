@@ -110,6 +110,7 @@ export function Ticket({
     return null;
   }, [market, qty, qtyAtoms, price, priceAtoms, kind, quote, qtyDp, priceDp]);
 
+  const sideLabel = side === "BUY" ? "Buy" : "Sell";
   const spendAsset = market ? (side === "BUY" ? market.quote : market.base) : "";
   const spendBalance = balances.find((b) => b.asset === spendAsset);
   const spendDecimals = market ? (side === "BUY" ? market.quote_decimals : market.base_decimals) : 8n;
@@ -185,15 +186,15 @@ export function Ticket({
         )}
       </PanelHead>
 
-      <div className="flex flex-none flex-col gap-2.5 p-2.5 [&>*]:flex-none">
-        <Segmented className="grid-cols-2" data-testid="side-select">
+      <div className="flex flex-none flex-col gap-4 p-3 [&>*]:flex-none">
+        <Segmented variant="side" className="grid-cols-2" data-testid="side-select">
           <Segment
             data-side="buy"
             tone="buy"
             selected={side === "BUY"}
             onClick={() => setSide("BUY")}
           >
-            BUY
+            Buy
           </Segment>
           <Segment
             data-side="sell"
@@ -201,18 +202,27 @@ export function Ticket({
             selected={side === "SELL"}
             onClick={() => setSide("SELL")}
           >
-            SELL
+            Sell
           </Segment>
         </Segmented>
 
-        <Segmented className="grid-cols-2">
+        <Segmented variant="control" className="grid-cols-2">
           <Segment selected={kind === "LIMIT"} onClick={() => setKind("LIMIT")}>
-            LIMIT
+            Limit
           </Segment>
           <Segment selected={kind === "MARKET"} onClick={() => setKind("MARKET")}>
-            MARKET
+            Market
           </Segment>
         </Segmented>
+
+        <div className="flex font-sans text-micro">
+          <span className="text-ink-3">Balance</span>
+          <span className="tnum ml-auto text-ink">
+            {spendBalance
+              ? `${formatAtoms(spendBalance.available, spendDecimals)} ${spendAsset}`
+              : `0 ${spendAsset}`}
+          </span>
+        </div>
 
         <Field>
           <FieldLabel>
@@ -221,10 +231,11 @@ export function Ticket({
               // Two prices worth one click each: the middle of the spread, and
               // the best price already showing on your own side of it. Both
               // come off the book already on screen.
-              <span className="ml-2.5 flex gap-px" data-testid="price-picks">
+              <span className="ml-2.5 flex items-center gap-1.5" data-testid="price-picks">
                 <Pick onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
                   MID
                 </Pick>
+                <span className="h-4 w-px bg-rule-hi" />
                 <Pick onClick={() => setPriceFrom(bboPrice)} disabled={bboPrice === null}>
                   BBO
                 </Pick>
@@ -272,7 +283,7 @@ export function Ticket({
                 onClick={() => fillPercent(percent)}
                 className="flex min-h-6 cursor-pointer items-center justify-center bg-panel-hi py-1 text-center font-sans text-micro text-ink-3 transition-colors hover:bg-hover hover:text-ink"
               >
-                {percent === 100n ? "MAX" : `${percent}%`}
+                {percent === 100n ? "Max" : `${percent}%`}
               </button>
             ))}
           </div>
@@ -317,12 +328,12 @@ export function Ticket({
           onClick={() => void submit()}
         >
           {!signedIn
-            ? `LOG IN TO ${side}`
+            ? `Log in to ${side.toLowerCase()}`
             : sending
-              ? "SENDING…"
+              ? "Sending…"
               : qty
-                ? `${side} ${qty} ${market?.base ?? ""}`.trim()
-                : side}
+                ? `${sideLabel} ${qty} ${market?.base ?? ""}`.trim()
+                : sideLabel}
         </SubmitButton>
 
         <AvailableLine label="available">
@@ -335,7 +346,7 @@ export function Ticket({
   );
 }
 
-/** One price straight off the book. Outlined, small, and never the loudest thing. */
+/** One price straight off the book. A link, not a button — never the loudest thing. */
 function Pick({
   children,
   ...rest
@@ -344,12 +355,9 @@ function Pick({
     <button
       type="button"
       className={[
-        "flex min-h-5 cursor-pointer items-center px-1.5 py-0.5",
-        "font-sans text-[9.5px] font-bold tracking-[0.12em] text-ink-3",
-        "shadow-[inset_0_0_0_1px_var(--color-rule-hi)] transition-colors",
-        "hover:bg-panel-hi hover:text-ink",
-        "disabled:cursor-default disabled:bg-transparent disabled:text-ink-4",
-        "disabled:shadow-[inset_0_0_0_1px_var(--color-rule)]",
+        "cursor-pointer font-sans text-micro text-control transition-colors",
+        "hover:brightness-125",
+        "disabled:cursor-default disabled:text-ink-4 disabled:hover:brightness-100",
       ].join(" ")}
       {...rest}
     >
@@ -372,11 +380,11 @@ function Readout({
 }) {
   return (
     <div className="flex items-center border-b border-rule px-2 py-1 last:border-b-0">
-      <span className="font-sans text-label font-medium uppercase tracking-[0.13em] text-ink-4">
+      <span className="font-sans text-micro text-ink-3">
         {label}
-        {hint !== undefined && <span className="ml-1.5 text-[9.5px] normal-case">{hint}</span>}
+        {hint !== undefined && <span className="ml-1.5 text-ink-4">{hint}</span>}
       </span>
-      <span className={cn("tnum ml-auto", total ? "text-data text-ink" : "text-ink-2")}>
+      <span className={cn("tnum ml-auto", total ? "text-data text-ink" : "text-micro text-ink-2")}>
         {children}
       </span>
     </div>

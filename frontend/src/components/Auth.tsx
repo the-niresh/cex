@@ -13,7 +13,7 @@ import {
 import { PanelHead, PanelTitle } from "./ui/panel";
 
 interface Props {
-  /** Which tab to open on. The caller decides, so a prompt can open on LOG IN. */
+  /** Which tab to open on. The caller decides, so a prompt can open on Log in. */
   initialMode?: AuthMode;
   onSubmit(mode: AuthMode, credentials: Credentials): Promise<void>;
   onClose(): void;
@@ -79,13 +79,13 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
             ✕
           </button>
         </PanelHead>
-        <div className="flex flex-col gap-2.5 p-3.5">
-          <Segmented className="grid-cols-2" data-testid="auth-mode">
+        <div className="flex flex-col gap-4 p-3">
+          <Segmented variant="control" className="grid-cols-2" data-testid="auth-mode">
             <Segment selected={mode === "login"} onClick={() => setMode("login")}>
-              LOG IN
+              Log in
             </Segment>
             <Segment selected={mode === "register"} onClick={() => setMode("register")}>
-              REGISTER
+              Register
             </Segment>
           </Segmented>
 
@@ -144,7 +144,7 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
             data-testid="auth-submit"
             disabled={busy || !complete}
           >
-            {busy ? "…" : mode === "register" ? "CREATE ACCOUNT" : "LOG IN"}
+            {busy ? "…" : mode === "register" ? "Create account" : "Log in"}
           </SubmitButton>
 
           <div className="font-sans text-micro leading-[1.5] text-ink-4">

@@ -54,8 +54,16 @@ export function PanelHead({
   );
 }
 
-export function PanelTitle({ children }: { children: ReactNode }) {
-  return <h2 className="font-sans text-micro font-medium text-ink">{children}</h2>;
+export function PanelTitle({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLHeadingElement>) {
+  return (
+    <h2 className={cn("font-sans text-micro font-medium text-ink", className)} {...rest}>
+      {children}
+    </h2>
+  );
 }
 
 /**
@@ -127,7 +135,11 @@ export function Scroll({ className, children, ...rest }: { className?: string; c
  * to hold in alignment and should centre its message in the width the user can
  * actually see rather than one they would have to scroll to reach.
  */
-export function Table({ className, children }: { className?: string; children: ReactNode }) {
+export function Table({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
@@ -135,6 +147,7 @@ export function Table({ className, children }: { className?: string; children: R
         "[&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:bg-rule-hi [&::-webkit-scrollbar-track]:bg-transparent",
         className,
       )}
+      {...rest}
     >
       {children}
     </div>
@@ -142,6 +155,14 @@ export function Table({ className, children }: { className?: string; children: R
 }
 
 /** A panel with nothing in it yet. Says so, rather than rendering a void. */
-export function Empty({ children }: { children: ReactNode }) {
-  return <div className="p-4 text-center font-sans text-micro text-ink-4">{children}</div>;
+export function Empty({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn("p-4 text-center font-sans text-micro text-ink-4", className)} {...rest}>
+      {children}
+    </div>
+  );
 }

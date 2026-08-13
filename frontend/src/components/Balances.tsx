@@ -75,7 +75,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
                 data-testid="balance-row"
                 data-asset={balance.asset}
               >
-                <span className="font-sans tracking-[0.06em] text-ink-2">{balance.asset}</span>
+                <span className="font-sans text-ink-2">{balance.asset}</span>
                 <span>
                   <Num atoms={balance.available} decimals={dp} />
                 </span>
@@ -95,8 +95,8 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
         <PanelTitle>Deposit</PanelTitle>
         <Meta>test exchange</Meta>
       </PanelHead>
-      <div className="flex flex-col gap-[7px] p-2.5">
-        <Segmented className="grid-cols-4" data-testid="deposit-assets">
+      <div className="flex flex-col gap-4 p-3">
+        <Segmented variant="control" className="grid-cols-4" data-testid="deposit-assets">
           {assets.map((a) => (
             <Segment key={a} quiet selected={a === asset} onClick={() => setAsset(a)}>
               {a}
@@ -106,7 +106,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
         {/* `minmax(0,1fr)`, not `1fr`. A bare `1fr` floors at the column's
             min-content width, and this column holds a text input whose
             intrinsic width is ~180px — so on a narrow ticket the row grew past
-            the panel and pushed the CREDIT button off the side. */}
+            the panel and pushed the Credit button off the side. */}
         <div className="grid grid-cols-[minmax(0,1fr)_118px] gap-[7px]">
           <FieldInput
             bad={parsed === null && amount !== ""}
@@ -116,7 +116,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
             onChange={(e) => setAmount(e.target.value)}
           />
           <GhostButton disabled={signedIn && !ready} onClick={() => void credit()}>
-            {!signedIn ? "LOG IN" : sending ? "…" : "CREDIT"}
+            {!signedIn ? "Log in" : sending ? "…" : "Credit"}
           </GhostButton>
         </div>
         {parsed !== null && (

@@ -1,4 +1,4 @@
-import { Children, isValidElement, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "./button";
 import { Input } from "./input";
@@ -18,37 +18,30 @@ import { Input } from "./input";
 type Tone = "control" | "buy" | "sell";
 
 /**
- * The track's shape depends on what the choice means, and nothing else says
- * so: a side (BUY/SELL — `tone` is "buy" or "sell") gets the reference's 44px
- * pill. Anything ordinary — an order type, an auth mode, an asset chip —
- * gets the 32px control-radius tab track instead. Segmented reads this off
- * its children's own `tone` rather than asking every caller to say it twice;
- * they already set it, for the buy/sell case, and leave it at the default for
- * everything else.
- */
-function hasSideTone(children: ReactNode): boolean {
-  return Children.toArray(children).some((child) => {
-    if (!isValidElement<{ tone?: Tone }>(child)) return false;
-    return child.props.tone === "buy" || child.props.tone === "sell";
-  });
-}
-
-/**
- * A row of mutually exclusive choices. The 1px gaps show the rule colour
- * underneath in the side-tone case, which is what gives hairline dividers
- * with no borders; the control case insets its selected segment instead.
+ * The track's shape depends on what the choice means: a side (BUY/SELL) gets
+ * the reference's 44px pill. Anything ordinary — an order type, an auth mode,
+ * an asset chip — gets the 32px control-radius tab track instead.
+ *
+ * This used to be inferred by inspecting children for `tone="buy"|"sell"`,
+ * which made the geometry a side effect of what happened to be inside rather
+ * than something the caller stated. An explicit prop says the same thing
+ * without the inspection.
  */
 export function Segmented({
+  variant = "control",
   className,
   children,
   ...rest
-}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
-  const sided = hasSideTone(children);
+}: {
+  variant?: "side" | "control";
+  className?: string;
+  children: ReactNode;
+} & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
         "grid overflow-hidden",
-        sided
+        variant === "side"
           ? "h-11 gap-px rounded-pill bg-rule"
           : "h-8 gap-0.5 rounded-control bg-panel-hi p-0.5",
         className,
@@ -102,21 +95,53 @@ export function Segment({
 }
 
 /** A label, whatever rides beside it, and the control underneath. */
-export function Field({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("flex flex-col gap-[3px]", className)}>{children}</div>;
+export function Field({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn("flex flex-col gap-[3px]", className)} {...rest}>
+      {children}
+    </div>
+  );
 }
 
-export function FieldLabel({ children }: { children: ReactNode }) {
-  return <div className="flex items-baseline font-sans">{children}</div>;
+export function FieldLabel({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn("flex items-baseline font-sans", className)} {...rest}>
+      {children}
+    </div>
+  );
 }
 
-export function FieldName({ children }: { children: ReactNode }) {
-  return <span className="text-micro text-ink-3">{children}</span>;
+export function FieldName({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span className={cn("text-micro text-ink-3", className)} {...rest}>
+      {children}
+    </span>
+  );
 }
 
 /** The rule the field enforces — tick, lot, minimum length. Pushed to the end. */
-export function FieldRule({ children }: { children: ReactNode }) {
-  return <span className="ml-auto text-micro text-ink-4">{children}</span>;
+export function FieldRule({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span className={cn("ml-auto text-micro text-ink-4", className)} {...rest}>
+      {children}
+    </span>
+  );
 }
 
 /**
@@ -218,9 +243,18 @@ export function GhostButton({
 }
 
 /** `available … 12,000 USDT`. The figure the field above is measured against. */
-export function AvailableLine({ label, children }: { label: string; children: ReactNode }) {
+export function AvailableLine({
+  label,
+  className,
+  children,
+  ...rest
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+} & React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className="flex pt-px font-sans text-micro text-ink-4">
+    <div className={cn("flex pt-px font-sans text-micro text-ink-4", className)} {...rest}>
       <span>{label}</span>
       <b className="ml-auto font-mono font-normal text-ink-3">{children}</b>
     </div>
