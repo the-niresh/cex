@@ -27,8 +27,8 @@ export function Tape({ market, prints, tab, onTab }: Props) {
 
       <ColumnHeads className={`${COLS} [&>span:not(:first-child)]:text-right`} data-testid="tape-heads">
         <span>Time</span>
-        <span>Price</span>
-        <span>Size</span>
+        <span>Price{market ? ` (${market.quote})` : ""}</span>
+        <span>Size{market ? ` (${market.base})` : ""}</span>
       </ColumnHeads>
 
       {/* The tape is data too: it goes flat and grey the moment the feed does. */}
@@ -43,7 +43,7 @@ export function Tape({ market, prints, tab, onTab }: Props) {
               <div
                 key={print.key}
                 className={[
-                  "grid h-[18px] items-center border-l-2 px-2.5 tnum",
+                  "grid h-[20px] items-center border-l-2 px-2.5 tnum text-micro",
                   COLS,
                   "[&>span:not(:first-child)]:text-right",
                   buy ? "border-l-buy/60" : "border-l-sell/60",
@@ -51,7 +51,7 @@ export function Tape({ market, prints, tab, onTab }: Props) {
                   print.fresh ? "animate-[tape-flash_1.1s_ease-out]" : "",
                 ].join(" ")}
               >
-                <span className="text-[10.5px] text-ink-4">
+                <span className="text-ink-4">
                   {time}
                   <span className="text-ink-3">{millis}</span>
                 </span>
