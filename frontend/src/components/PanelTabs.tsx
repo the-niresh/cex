@@ -8,7 +8,7 @@ export type BookTab = "book" | "tape";
  */
 export function PanelTabs({ tab, onTab }: { tab: BookTab; onTab(next: BookTab): void }) {
   return (
-    <div className="seg tabs">
+    <div className="seg tabs" data-testid="book-tabs">
       <button type="button" aria-selected={tab === "book"} onClick={() => onTab("book")}>
         BOOK
       </button>

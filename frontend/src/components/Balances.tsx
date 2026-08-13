@@ -65,12 +65,12 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
           balances.map((balance) => {
             const dp = decimalsFor(balance.asset, markets);
             return (
-              <div className="brow" key={balance.asset}>
+              <div className="brow" key={balance.asset} data-testid="balance-row" data-asset={balance.asset}>
                 <span className="asset">{balance.asset}</span>
                 <span className="num">
                   <Num atoms={balance.available} decimals={dp} />
                 </span>
-                <span className={`num lock${balance.locked === 0n ? " zero" : ""}`}>
+                <span className={`num lock${balance.locked === 0n ? " zero" : ""}`} data-testid="balance-locked">
                   <Num atoms={balance.locked} decimals={dp} />
                 </span>
               </div>
@@ -84,7 +84,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
         <span className="meta">test exchange</span>
       </div>
       <div className="deposit">
-        <div className="assets">
+        <div className="assets" data-testid="deposit-assets">
           {assets.map((a) => (
             <button key={a} aria-selected={a === asset} onClick={() => setAsset(a)}>
               {a}

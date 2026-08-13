@@ -63,7 +63,7 @@ export function OrderBook({
 
   if (!market) {
     return (
-      <section className="panel book">
+      <section className="panel book" data-testid="book-panel">
         <div className="phead">
           <PanelTabs tab={tab} onTab={onTab} />
         </div>
@@ -106,6 +106,13 @@ export function OrderBook({
       <div
         key={String(level.price)}
         className={`lvl${own ? " has-mine" : ""}`}
+        // Identity in the testid, state in the data attributes. A test asks for
+        // `[data-testid="ladder-level"][data-mine="true"]` rather than a class,
+        // so restyling cannot silently unhook the suite from the thing it
+        // checks. `has-mine` stays because the stylesheet still hangs off it.
+        data-testid="ladder-level"
+        data-side={from}
+        data-mine={own ? "true" : "false"}
         onClick={() => onPickPrice(level.price)}
         onMouseEnter={() =>
           setSweep({
@@ -126,13 +133,13 @@ export function OrderBook({
         <span className="mine">
           {own ? <Num atoms={own} decimals={market.base_decimals} places={qtyDp} /> : ""}
         </span>
-        <span className="price">
+        <span className="price" data-testid="level-price">
           <Num atoms={level.price} decimals={market.quote_decimals} places={priceDp} />
         </span>
-        <span className="num size">
+        <span className="num size" data-testid="level-size">
           <Num atoms={level.qty} decimals={market.base_decimals} places={qtyDp} />
         </span>
-        <span className="num cum">
+        <span className="num cum" data-testid="level-total">
           <Num atoms={level.total} decimals={market.base_decimals} places={qtyDp} />
         </span>
       </div>
@@ -159,7 +166,7 @@ export function OrderBook({
   const bidShare = depth > 0n ? Number((bidDepth * 10_000n) / depth) / 100 : 50;
 
   return (
-    <section className="panel book">
+    <section className="panel book" data-testid="book-panel">
       <div className="phead">
         <PanelTabs tab={tab} onTab={onTab} />
         <span className="meta">
@@ -173,7 +180,7 @@ export function OrderBook({
         </div>
       )}
 
-      <div className="chead">
+      <div className="chead" data-testid="ladder-heads">
         <span>Mine</span>
         <span>Price</span>
         <span>Size</span>
@@ -222,22 +229,22 @@ export function OrderBook({
         </div>
 
         {sweep && (
-          <div className={`sweep ${sweep.from === "bids" ? "high" : "low"}`}>
+          <div className={`sweep ${sweep.from === "bids" ? "high" : "low"}`} data-testid="sweep">
             <div className="r">
               <span className="k">avg price</span>
-              <span className="v">
+              <span className="v" data-testid="sweep-avg-price">
                 <Num atoms={sweep.avg} decimals={market.quote_decimals} places={priceDp} />
               </span>
             </div>
             <div className="r">
               <span className="k">sum {market.base}</span>
-              <span className="v">
+              <span className="v" data-testid="sweep-sum-base">
                 <Num atoms={sweep.size} decimals={market.base_decimals} places={qtyDp} />
               </span>
             </div>
             <div className="r">
               <span className="k">sum {market.quote}</span>
-              <span className="v">
+              <span className="v" data-testid="sweep-sum-quote">
                 <Num atoms={sweep.value} decimals={market.quote_decimals} places={2} />
               </span>
             </div>
@@ -249,7 +256,7 @@ export function OrderBook({
           one rounding, not two: rounding each half separately puts 59.5 and
           40.5 on screen as "60%" and "41%", which adds to 101. The bar itself
           keeps the exact widths. */}
-      <div className="imbalance" aria-label="resting size, bids against asks">
+      <div className="imbalance" aria-label="resting size, bids against asks" data-testid="imbalance">
         <div className="b" style={{ flexBasis: `${bidShare}%` }}>
           <span>{Math.round(bidShare)}%</span>
         </div>

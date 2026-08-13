@@ -170,7 +170,7 @@ export function Ticket({
       </div>
 
       <div className="body">
-        <div className="seg side">
+        <div className="seg side" data-testid="side-select">
           <button data-side="buy" aria-selected={side === "BUY"} onClick={() => setSide("BUY")}>
             BUY
           </button>
@@ -195,7 +195,7 @@ export function Ticket({
               // Two prices worth one click each: the middle of the spread, and
               // the best price already showing on your own side of it. Both
               // come off the book already on screen.
-              <span className="picks">
+              <span className="picks" data-testid="price-picks">
                 <button type="button" onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
                   MID
                 </button>
@@ -249,7 +249,11 @@ export function Ticket({
           </div>
         </div>
 
-        {problem && <div className="bad-note">{problem}</div>}
+        {problem && (
+          <div className="bad-note" data-testid="ticket-problem">
+            {problem}
+          </div>
+        )}
 
         <div className="readout">
           <div className="r">
@@ -272,7 +276,7 @@ export function Ticket({
           </div>
           <div className="r total">
             <span className="k">{side === "BUY" ? "Total cost" : "Net proceeds"}</span>
-            <span className="v">
+            <span className="v" data-testid="ticket-total">
               {quote && market
                 ? `${formatAtoms(
                     side === "BUY" ? quote.value + quote.fee : quote.value - quote.fee,
@@ -285,6 +289,7 @@ export function Ticket({
 
         <button
           className={`submit${side === "SELL" ? " sell" : ""}`}
+          data-testid="ticket-submit"
           disabled={signedIn && !ready}
           onClick={() => void submit()}
         >

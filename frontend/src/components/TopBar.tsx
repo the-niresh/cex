@@ -76,7 +76,7 @@ export function TopBar({
            are all still stated where they bite — beside the price and quantity
            inputs, and in the ticket's fee readout — whereas nothing on the
            screen said what the market had actually done since yesterday. */
-        <div className="ticker">
+        <div className="ticker" data-testid="ticker">
           <div className="field">
             <span className="k">last</span>
             <span className={`last${lastSide === "SELL" ? " down" : ""}`}>
@@ -154,9 +154,17 @@ export function TopBar({
       </div>
 
       <div className="who">
-        {session?.name && <span className="name">{session.name}</span>}
-        <span className="id">{session ? `${session.user_id.slice(0, 8)}…` : "signed out"}</span>
-        <button onClick={session ? onSignOut : onSignIn}>{session ? "LOG OUT" : "LOG IN"}</button>
+        {session?.name && (
+          <span className="name" data-testid="account-name">
+            {session.name}
+          </span>
+        )}
+        <span className="id" data-testid="account-id">
+          {session ? `${session.user_id.slice(0, 8)}…` : "signed out"}
+        </span>
+        <button onClick={session ? onSignOut : onSignIn} data-testid="account-action">
+          {session ? "LOG OUT" : "LOG IN"}
+        </button>
       </div>
     </header>
   );

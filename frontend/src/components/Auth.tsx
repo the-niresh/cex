@@ -44,7 +44,7 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
   const complete = username !== "" && password !== "" && (mode === "login" || name.trim() !== "");
 
   return (
-    <div className="auth">
+    <div className="auth" data-testid="auth-panel">
       {/* Clicking the dimmed area is the other thing people already try. */}
       <div className="scrim" onClick={onClose} aria-hidden="true" />
       <form onSubmit={(e) => void submit(e)}>
@@ -55,7 +55,7 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
           </button>
         </div>
         <div className="body">
-          <div className="seg kind">
+          <div className="seg kind" data-testid="auth-mode">
             <button type="button" aria-selected={mode === "login"} onClick={() => setMode("login")}>
               LOG IN
             </button>
@@ -120,7 +120,7 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
 
           {failure && <div className="fail">{failure}</div>}
 
-          <button className="submit" type="submit" disabled={busy || !complete}>
+          <button className="submit" type="submit" data-testid="auth-submit" disabled={busy || !complete}>
             {busy ? "…" : mode === "register" ? "CREATE ACCOUNT" : "LOG IN"}
           </button>
 

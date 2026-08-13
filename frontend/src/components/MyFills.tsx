@@ -57,11 +57,15 @@ export function MyFills({ fills, markets }: { fills: MyFill[]; markets: Market[]
                 <div
                   key={`${fill.seq}-${fill.idx}`}
                   className={`fl ${fill.side.toLowerCase()}`}
+                  data-testid="fill-row"
                 >
                   <span className="t">{clock(fill.timestamp_ms)}</span>
                   <span className="mkt">{fill.symbol}</span>
-                  <span className="side">
-                    {fill.side} <span className="role">{fill.role === "MAKER" ? "M" : "T"}</span>
+                  <span className="side" data-testid="fill-side">
+                    {fill.side}{" "}
+                    <span className="role" data-testid="fill-role">
+                      {fill.role === "MAKER" ? "M" : "T"}
+                    </span>
                   </span>
                   <span className="num p">
                     {market && (

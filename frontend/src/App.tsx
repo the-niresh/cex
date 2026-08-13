@@ -74,7 +74,11 @@ export default function App() {
 
   return (
     <>
-      <div className={`screen${looksStale ? " stale" : ""}`}>
+      <div
+        className={`screen${looksStale ? " stale" : ""}`}
+        data-testid="screen"
+        data-stale={looksStale ? "true" : "false"}
+      >
         <TopBar
           markets={x.markets}
           market={x.market}
@@ -151,7 +155,7 @@ export default function App() {
 
         <MyFills fills={x.fills} markets={x.markets} />
 
-        <footer className="statusbar">
+        <footer className="statusbar" data-testid="statusbar">
           <span>
             api <b>{new URL(API_URL).host}</b>
           </span>
@@ -161,27 +165,27 @@ export default function App() {
           </span>
           <span className="sep">│</span>
           <span>
-            depth_seq <b>{x.depthSeq === null ? "—" : String(x.depthSeq)}</b>
+            depth_seq <b data-testid="status-depth-seq">{x.depthSeq === null ? "—" : String(x.depthSeq)}</b>
           </span>
           {/* Two numbers, never a sum. They are measured differently and
               adding them would be the misleading figure this exists to avoid. */}
           <span className="sep">│</span>
           <span>
             engine{" "}
-            <b className={engineDegraded ? "warn" : undefined}>
+            <b className={engineDegraded ? "warn" : undefined} data-testid="status-engine">
               {latency.engineP50 === null ? "—" : `${latency.engineP50}ms`}
             </b>
           </span>
           <span className="sep">│</span>
           <span>
-            network <b>{latency.networkP50 === null ? "—" : `${latency.networkP50}ms`}</b>
+            network <b data-testid="status-network">{latency.networkP50 === null ? "—" : `${latency.networkP50}ms`}</b>
           </span>
           <div className="right">
             <span>
-              resyncs <b>{x.resyncs}</b>
+              resyncs <b data-testid="status-resyncs">{x.resyncs}</b>
             </span>
             <span>
-              updated <b>{silentFor === null ? "—" : `${Math.floor(silentFor / 1000)}s ago`}</b>
+              updated <b data-testid="status-updated">{silentFor === null ? "—" : `${Math.floor(silentFor / 1000)}s ago`}</b>
             </span>
           </div>
         </footer>

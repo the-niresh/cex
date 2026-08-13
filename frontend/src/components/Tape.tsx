@@ -13,14 +13,14 @@ interface Props {
 
 export function Tape({ market, prints, tab, onTab }: Props) {
   return (
-    <section className="panel tape">
+    <section className="panel tape" data-testid="tape-panel">
       <div className="phead">
         <PanelTabs tab={tab} onTab={onTab} />
         <span className="meta">
           last <b>{prints.length}</b>
         </span>
       </div>
-      <div className="chead">
+      <div className="chead" data-testid="tape-heads">
         <span>Time</span>
         <span>Price</span>
         <span>Size</span>

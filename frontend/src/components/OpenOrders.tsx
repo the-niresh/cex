@@ -75,11 +75,11 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
               const partial = order.filled_qty > 0n;
 
               return (
-                <div key={String(order.order_id)} className={`oo ${order.side.toLowerCase()}`}>
+                <div key={String(order.order_id)} className={`oo ${order.side.toLowerCase()}`} data-testid="open-order">
                   <span className="id">#{String(order.order_id)}</span>
                   <span className="age">—</span>
                   <span className="mkt">{order.symbol}</span>
-                  <span className="side">{order.side}</span>
+                  <span className="side" data-testid="order-side">{order.side}</span>
                   <span className="kind">{order.order_type}</span>
                   <span className="num">
                     {order.price === null || !market ? (
@@ -99,9 +99,10 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
                   <span className="prog">
                     <i style={{ width: `${progress}%` }} />
                   </span>
-                  <span className={`st${partial ? " partial" : ""}`}>{order.status}</span>
+                  <span className={`st${partial ? " partial" : ""}`} data-testid="order-status">{order.status}</span>
                   <button
                     className="x"
+                    data-testid="cancel-order"
                     onClick={() => onCancel(order.order_id)}
                     aria-label={`cancel order ${order.order_id}`}
                   >
