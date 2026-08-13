@@ -1,6 +1,17 @@
+/* ⚠️ Layer order, and it is load-bearing.
+   Tailwind v4 puts every utility inside a cascade layer, and unlayered CSS
+   beats layered CSS no matter the specificity. So while `styles.css` was
+   imported normally it silently won against every Tailwind utility on the
+   page — its `*{padding:0}` reset alone was enough to blank out `px-3`.
+   Importing it into a `legacy` layer ranked below `utilities` lets ported
+   components take effect while everything not yet ported keeps working. The
+   layer disappears with the file. */
+@layer theme, base, components, legacy, utilities;
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./styles.css" layer(legacy);
 
 /* ══════════════════════════════════════════════════════════════════════
    Design tokens.

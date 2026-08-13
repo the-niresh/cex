@@ -2,7 +2,16 @@ import { decimalsForStep, feeAsset, formatAtoms } from "../lib/num";
 import type { Market, MyFill } from "../lib/types";
 import { Num, clock } from "./format";
 
-export function MyFills({ fills, markets }: { fills: MyFill[]; markets: Market[] }) {
+export function MyFills({
+  fills,
+  markets,
+  bare = false,
+}: {
+  fills: MyFill[];
+  markets: Market[];
+  /** Rendered inside the tabbed activity panel, which supplies the chrome. */
+  bare?: boolean;
+}) {
   const bySymbol = new Map(markets.map((m) => [m.symbol, m]));
 
   // A fee is charged in whatever that side received — base for a buy, quote
@@ -25,16 +34,20 @@ export function MyFills({ fills, markets }: { fills: MyFill[]; markets: Market[]
     .map(([asset, { total, decimals }]) => `${formatAtoms(total, decimals)} ${asset}`)
     .join(" + ");
 
+  const Wrapper = bare ? "div" : "section";
+
   return (
-    <section className="panel fills">
-      <div className="phead">
-        <h2>My fills</h2>
-        {feeText && (
-          <span className="meta">
-            fees <b>{feeText}</b>
-          </span>
-        )}
-      </div>
+    <Wrapper className={bare ? "fills flex min-h-0 flex-1 flex-col" : "panel fills"}>
+      {!bare && (
+        <div className="phead">
+          <h2>My fills</h2>
+          {feeText && (
+            <span className="meta">
+              fees <b>{feeText}</b>
+            </span>
+          )}
+        </div>
+      )}
       {/* One scroller for headings and rows together — see OpenOrders. */}
       <div className="tbl">
         <div className="chead">
@@ -86,6 +99,6 @@ export function MyFills({ fills, markets }: { fills: MyFill[]; markets: Market[]
           )}
         </div>
       </div>
-    </section>
+    </Wrapper>
   );
 }

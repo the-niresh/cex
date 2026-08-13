@@ -249,6 +249,12 @@ test("two users cross, and neither sees the other's id", async ({ browser }) => 
   await taker.locator('[data-testid="side-select"] button[data-side="sell"]').click();
   await taker.getByTestId("ticket-submit").click();
 
+  // Fills share a panel with open orders now, so ask for them the way a user
+  // would. This is a real layout change rather than a restyle, which is why
+  // the test changed with it — the testids alone cannot absorb a new tab.
+  await maker.getByTestId("activity-tab-fills").click();
+  await taker.getByTestId("activity-tab-fills").click();
+
   // Both see their own fill on their own private feed.
   await expect(maker.getByTestId("fill-row").first()).toBeVisible();
   await expect(taker.getByTestId("fill-row").first()).toBeVisible();

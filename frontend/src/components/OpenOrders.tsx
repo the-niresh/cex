@@ -6,9 +6,11 @@ interface Props {
   orders: Order[];
   markets: Market[];
   onCancel(orderId: bigint): void;
+  /** Rendered inside the tabbed activity panel, which supplies the chrome. */
+  bare?: boolean;
 }
 
-export function OpenOrders({ orders, markets, onCancel }: Props) {
+export function OpenOrders({ orders, markets, onCancel, bare = false }: Props) {
   const bySymbol = new Map(markets.map((m) => [m.symbol, m]));
 
   // What the resting orders are holding, so the number in the header explains
@@ -37,14 +39,18 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
     })
     .join(" + ");
 
+  const Wrapper = bare ? "div" : "section";
+
   return (
-    <section className="panel open-orders">
-      <div className="phead">
-        <h2>Open orders</h2>
-        <span className="meta">
-          {orders.length} live{lockedText && <> · <b>{lockedText}</b> locked</>}
-        </span>
-      </div>
+    <Wrapper className={bare ? "open-orders flex min-h-0 flex-1 flex-col" : "panel open-orders"}>
+      {!bare && (
+        <div className="phead">
+          <h2>Open orders</h2>
+          <span className="meta">
+            {orders.length} live{lockedText && <> · <b>{lockedText}</b> locked</>}
+          </span>
+        </div>
+      )}
       {/* Headings and rows share one horizontal scroller, so they cannot drift
           out of alignment and a panel narrower than the table scrolls instead
           of quietly cutting Status and cancel off the end. */}
@@ -114,6 +120,6 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
           )}
         </div>
       </div>
-    </section>
+    </Wrapper>
   );
 }

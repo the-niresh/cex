@@ -104,8 +104,9 @@ body::after{
 .panel{background:var(--panel);min-width:0;display:flex;flex-direction:column;overflow:hidden}
 /* Placed explicitly. Auto-placement would push the fills panel below the
    full-width open orders row instead of into the column beside the ticket. */
-.open-orders{grid-column:1/3;grid-row:3}
-.fills{grid-column:3/4;grid-row:3}
+/* One panel, two tabs — see ActivityPanel. The pair of half-empty tables that
+   used to split this row is what made a fresh account look like a broken app. */
+.activity{grid-column:1/-1;grid-row:3}
 
 /* ─────────────────────────── panel chrome ─────────────────────────── */
 

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Auth } from "./components/Auth";
 import { Balances } from "./components/Balances";
+import { ActivityPanel } from "./components/ActivityPanel";
 import { Chart } from "./components/Chart";
-import { MyFills } from "./components/MyFills";
-import { OpenOrders } from "./components/OpenOrders";
 import { InstrumentStrip } from "./components/InstrumentStrip";
 import { OrderBook } from "./components/OrderBook";
 import type { BookTab } from "./components/PanelTabs";
@@ -154,9 +153,12 @@ export default function App() {
           />
         </section>
 
-        <OpenOrders orders={x.openOrders} markets={x.markets} onCancel={(id) => void x.cancel(id)} />
-
-        <MyFills fills={x.fills} markets={x.markets} />
+        <ActivityPanel
+          orders={x.openOrders}
+          fills={x.fills}
+          markets={x.markets}
+          onCancel={(id) => void x.cancel(id)}
+        />
 
         <InstrumentStrip
           stats={latency}
