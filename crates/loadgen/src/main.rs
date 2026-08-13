@@ -8,10 +8,11 @@
 //! the time spent waiting on the matching engine, and `server` is
 //! `x-cex-server-us`, the whole request as the API measured it. Both are the
 //! exchange's view of itself, independent of where this process happens to be
-//! running. `server` minus `engine` is the Redis command hop, which is the
-//! only way that segment of the budget can be measured, and `server` is also
-//! what the trading screen displays as its `engine` figure — so its p99 is
-//! the source of that screen's degraded threshold.
+//! running. `server` minus `engine` is the API's own work — routing, auth,
+//! JSON — and *not* the Redis hop, which sits inside `engine` and cannot be
+//! split out without giving the engine a clock it deliberately does not have.
+//! `server` is also what the trading screen displays as its `engine` figure,
+//! so its p99 is the source of that screen's degraded threshold.
 //!
 //! Correlation is done on the private `orders` feed, which carries the
 //! order's own id, not on the public depth feed: several orders can land
@@ -229,8 +230,8 @@ struct Timings {
 
 /// Reads both timing headers, each from its own name. They are not
 /// interchangeable: `server` covers the whole request and `engine` only the
-/// part of it spent waiting on the engine, and the difference between them is
-/// the Redis command hop, which nothing else measures.
+/// part of it spent waiting on the engine, so the difference between them is
+/// the API's own overhead — a budget row nothing else measures.
 fn read_timings(headers: &reqwest::header::HeaderMap) -> Timings {
     Timings {
         engine: parse_timing_us(headers.get(ENGINE_US_HEADER)),

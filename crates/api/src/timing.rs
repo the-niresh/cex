@@ -47,8 +47,9 @@ pub fn record_engine(micros: u64) {
 
 /// The whole request, in microseconds.
 pub const SERVER_US: HeaderName = HeaderName::from_static("x-cex-server-us");
-/// The part of it spent waiting on the engine. The difference between the two
-/// is the Redis command hop.
+/// The part of it spent waiting on the engine, both Redis hops included. The
+/// difference between the two is this process's own work, not the Redis hop —
+/// see the module docs.
 pub const ENGINE_US: HeaderName = HeaderName::from_static("x-cex-engine-us");
 
 pub async fn timing_middleware(req: Request, next: Next) -> Response {

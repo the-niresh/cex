@@ -1646,3 +1646,53 @@ async fn the_timing_headers_are_exposed_to_the_browser() {
     assert!(exposed.contains("x-cex-server-us"), "got: {exposed}");
     assert!(exposed.contains("x-cex-engine-us"), "got: {exposed}");
 }
+
+/// The readout is a rolling window over *every* response, not just the happy
+/// ones. A signed-out screen, or one holding an expired token, gets 401s — and
+/// if those carried no timing header the window would take no samples and the
+/// status bar would sit on `—` with nothing explaining why. The middleware sits
+/// outside `require_auth` precisely so a refused request is still measured.
+#[tokio::test]
+async fn a_refused_request_still_carries_the_timing_headers() {
+    let h = Harness::start().await;
+
+    let (status, headers) = h
+        .call_headers(
+            Request::builder()
+                .method("GET")
+                .uri("/balances")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "no token was sent");
+    assert!(
+        headers.get("x-cex-server-us").is_some(),
+        "a 401 is a response the browser timed like any other"
+    );
+    assert!(headers.get("x-cex-engine-us").is_some());
+}
+
+/// A 404 never reaches a handler at all, so it is the case most likely to slip
+/// past a layer that was installed in the wrong place.
+#[tokio::test]
+async fn an_unrouted_path_still_carries_the_timing_headers() {
+    let h = Harness::start().await;
+
+    let (status, headers) = h
+        .call_headers(
+            Request::builder()
+                .method("GET")
+                .uri("/no-such-route")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert!(
+        headers.get("x-cex-server-us").is_some(),
+        "the timing layer must wrap the fallback too, not just matched routes"
+    );
+}
