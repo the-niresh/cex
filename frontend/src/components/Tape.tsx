@@ -31,7 +31,8 @@ export function Tape({ market, prints, tab, onTab }: Props) {
         <span>Size</span>
       </ColumnHeads>
 
-      <Scroll>
+      {/* The tape is data too: it goes flat and grey the moment the feed does. */}
+      <Scroll className="group-data-[stale=true]/screen:saturate-[.15] group-data-[stale=true]/screen:brightness-[.62]">
         {!market || prints.length === 0 ? (
           <Empty>no prints yet</Empty>
         ) : (

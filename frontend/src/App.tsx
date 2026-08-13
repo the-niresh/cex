@@ -77,7 +77,10 @@ export default function App() {
   return (
     <>
       <div
-        className={`screen${looksStale ? " stale" : ""}`}
+        // `group/screen` so a ported panel can read the stale flag off the
+        // shell — `group-data-[stale=true]/screen:` — instead of the flag being
+        // drilled through as a prop to every panel that dims when the feed does.
+        className={`screen group/screen${looksStale ? " stale" : ""}`}
         data-testid="screen"
         data-stale={looksStale ? "true" : "false"}
       >
