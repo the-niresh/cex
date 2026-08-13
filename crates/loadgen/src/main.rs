@@ -3,9 +3,15 @@
 //! Two latencies per order. `ack` is the HTTP response returning. `visible` is
 //! the order appearing on the private feed, which is when a real trader would
 //! see it. They are different numbers and the gap between them is the event
-//! path, so both are reported. A third histogram, `engine`, records the
-//! server's own `x-cex-engine-us` header value — the exchange's view of
-//! itself, independent of where this process happens to be running.
+//! path, so both are reported. Two more histograms come off the response
+//! headers rather than this process's clock: `engine` is `x-cex-engine-us`,
+//! the time spent waiting on the matching engine, and `server` is
+//! `x-cex-server-us`, the whole request as the API measured it. Both are the
+//! exchange's view of itself, independent of where this process happens to be
+//! running. `server` minus `engine` is the Redis command hop, which is the
+//! only way that segment of the budget can be measured, and `server` is also
+//! what the trading screen displays as its `engine` figure — so its p99 is
+//! the source of that screen's degraded threshold.
 //!
 //! Correlation is done on the private `orders` feed, which carries the
 //! order's own id, not on the public depth feed: several orders can land
@@ -37,6 +43,11 @@ use uuid::Uuid;
 const MID: i64 = 50_000_000_000;
 const TICK: i64 = 10_000;
 const QTY: i64 = 100_000;
+
+/// The part of a request spent waiting on the engine.
+const ENGINE_US_HEADER: &str = "x-cex-engine-us";
+/// The whole request, as the API measured it. Always at least `ENGINE_US_HEADER`.
+const SERVER_US_HEADER: &str = "x-cex-server-us";
 
 /// How long to wait for the server to confirm the `orders` subscription
 /// before giving up. This is a single local round trip with no matching
@@ -92,29 +103,17 @@ async fn main() -> Result<()> {
 
     let mut ack = Samples::new();
     let mut visible = Samples::new();
-    // The exchange's own view of itself, straight off x-cex-engine-us. This is
-    // the only one of the three that is independent of where this process is
-    // running, which is why the screen's degraded threshold is taken from it.
-    let mut engine = Samples::new();
-    let mut engine_header_missing = 0u64;
-    let mut engine_header_malformed = 0u64;
+    let mut engine = HeaderSamples::new(ENGINE_US_HEADER);
+    let mut server = HeaderSamples::new(SERVER_US_HEADER);
 
     for _ in 0..args.count {
         // A market buy, so it takes from the seeded asks rather than resting.
         let started = Instant::now();
-        let (order_id, engine_us) =
+        let (order_id, timings) =
             place(&http, &args.host, &taker, &args.symbol, "BUY", None).await?;
         ack.record(started.elapsed().as_micros() as u64);
-        match engine_us {
-            EngineUs::Present(us) => engine.record(us),
-            EngineUs::Absent => engine_header_missing += 1,
-            EngineUs::Malformed(raw) => {
-                engine_header_malformed += 1;
-                eprintln!(
-                    "warning: order {order_id}: x-cex-engine-us header present but unparsable: {raw:?}"
-                );
-            }
-        }
+        engine.record(order_id, timings.engine);
+        server.record(order_id, timings.server);
 
         wait_for_order(&mut orders_feed, order_id).await?;
         visible.record(started.elapsed().as_micros() as u64);
@@ -123,29 +122,29 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all(&args.out)?;
     ack.write_csv(std::fs::File::create(format!("{}/ack.csv", args.out))?)?;
     visible.write_csv(std::fs::File::create(format!("{}/visible.csv", args.out))?)?;
-    engine.write_csv(std::fs::File::create(format!("{}/engine.csv", args.out))?)?;
+    engine
+        .samples
+        .write_csv(std::fs::File::create(format!("{}/engine.csv", args.out))?)?;
+    server
+        .samples
+        .write_csv(std::fs::File::create(format!("{}/server.csv", args.out))?)?;
 
     println!("host    {}", args.host);
     println!("orders  {}", args.count);
     println!("ack     {:?}", ack.summary());
     println!("visible {:?}", visible.summary());
-    println!("engine  {:?}", engine.summary());
+    println!("engine  {:?}", engine.samples.summary());
+    println!("server  {:?}", server.samples.summary());
     println!("csv     {}/", args.out);
 
-    // A silent shortfall here is worse than a loud one: Task 10 sources its
-    // amber threshold from this histogram's p99, and a partial drop skews
-    // that number without anyone noticing a run went wrong.
+    // A silent shortfall is worse than a loud one, and it is worse for each
+    // header for its own reason: the screen's amber threshold comes from
+    // `server`'s p99, and the budget's Redis-hop row is `server` minus
+    // `engine`, so a partial drop in either skews a published number without
+    // anyone noticing the run went wrong.
     let expected = args.count as u64;
-    let recorded = engine.summary().count;
-    if recorded != expected {
-        anyhow::bail!(
-            "engine histogram recorded only {recorded} of {expected} x-cex-engine-us samples \
-             ({engine_header_missing} responses had no header at all, \
-             {engine_header_malformed} had one that failed to parse as a u64) — \
-             Task 10's amber threshold is sourced from this histogram's p99, so treat this run's \
-             engine numbers as unreliable until the cause is fixed"
-        );
-    }
+    engine.check_complete(expected)?;
+    server.check_complete(expected)?;
 
     Ok(())
 }
@@ -216,31 +215,101 @@ async fn seed_book(
 /// format, the exact same (silent) symptom. Task 10 sources its amber
 /// threshold from this histogram's p99, so a drop here is not a footnote.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum EngineUs {
+enum TimingUs {
     Present(u64),
     Absent,
     Malformed(String),
 }
 
-/// Reads `x-cex-engine-us` out of a response header value, distinguishing
-/// "not sent" from "sent but not a valid u64" rather than merging both into
-/// `None`. Takes the raw `HeaderValue` rather than an already-decoded `&str`
-/// so this is exercised directly by unit tests without a live response.
-fn parse_engine_us(header: Option<&reqwest::header::HeaderValue>) -> EngineUs {
-    let Some(value) = header else {
-        return EngineUs::Absent;
-    };
-    match value.to_str() {
-        Ok(s) => match s.parse::<u64>() {
-            Ok(n) => EngineUs::Present(n),
-            Err(_) => EngineUs::Malformed(s.to_string()),
-        },
-        Err(_) => EngineUs::Malformed("<non-utf8 header value>".to_string()),
+/// Both timing headers off one response.
+struct Timings {
+    engine: TimingUs,
+    server: TimingUs,
+}
+
+/// Reads both timing headers, each from its own name. They are not
+/// interchangeable: `server` covers the whole request and `engine` only the
+/// part of it spent waiting on the engine, and the difference between them is
+/// the Redis command hop, which nothing else measures.
+fn read_timings(headers: &reqwest::header::HeaderMap) -> Timings {
+    Timings {
+        engine: parse_timing_us(headers.get(ENGINE_US_HEADER)),
+        server: parse_timing_us(headers.get(SERVER_US_HEADER)),
     }
 }
 
-/// Returns the new order's id and what the server said about its own
-/// `x-cex-engine-us` timing. A fresh `idempotency-key` every time.
+/// One histogram plus the accounting for every response that failed to supply
+/// the header behind it.
+struct HeaderSamples {
+    header: &'static str,
+    samples: Samples,
+    missing: u64,
+    malformed: u64,
+}
+
+impl HeaderSamples {
+    fn new(header: &'static str) -> Self {
+        HeaderSamples {
+            header,
+            samples: Samples::new(),
+            missing: 0,
+            malformed: 0,
+        }
+    }
+
+    fn record(&mut self, order_id: u64, value: TimingUs) {
+        match value {
+            TimingUs::Present(us) => self.samples.record(us),
+            TimingUs::Absent => self.missing += 1,
+            TimingUs::Malformed(raw) => {
+                self.malformed += 1;
+                eprintln!(
+                    "warning: order {order_id}: {} header present but unparsable: {raw:?}",
+                    self.header
+                );
+            }
+        }
+    }
+
+    /// Fails the whole run if any sample went unrecorded. A run that quietly
+    /// measured 1,900 of 2,000 orders publishes a percentile drawn from a set
+    /// nobody knows is incomplete.
+    fn check_complete(&self, expected: u64) -> Result<()> {
+        let recorded = self.samples.summary().count;
+        if recorded != expected {
+            anyhow::bail!(
+                "the {} histogram recorded only {recorded} of {expected} samples \
+                 ({} responses had no header at all, {} had one that failed to parse \
+                 as a u64) — published numbers are derived from this histogram, so treat \
+                 this run as unreliable until the cause is fixed",
+                self.header,
+                self.missing,
+                self.malformed
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Reads one timing header out of a response header value, distinguishing
+/// "not sent" from "sent but not a valid u64" rather than merging both into
+/// `None`. Takes the raw `HeaderValue` rather than an already-decoded `&str`
+/// so this is exercised directly by unit tests without a live response.
+fn parse_timing_us(header: Option<&reqwest::header::HeaderValue>) -> TimingUs {
+    let Some(value) = header else {
+        return TimingUs::Absent;
+    };
+    match value.to_str() {
+        Ok(s) => match s.parse::<u64>() {
+            Ok(n) => TimingUs::Present(n),
+            Err(_) => TimingUs::Malformed(s.to_string()),
+        },
+        Err(_) => TimingUs::Malformed("<non-utf8 header value>".to_string()),
+    }
+}
+
+/// Returns the new order's id and what the server said about its own timing.
+/// A fresh `idempotency-key` every time.
 ///
 /// A repeated key is answered straight from the idempotency log without the
 /// engine ever seeing it, which would record a cache hit as a matching time.
@@ -252,7 +321,7 @@ async fn place(
     symbol: &str,
     side: &str,
     price: Option<i64>,
-) -> Result<(u64, EngineUs)> {
+) -> Result<(u64, Timings)> {
     let mut body = serde_json::json!({
         "symbol": symbol,
         "side": side,
@@ -273,14 +342,14 @@ async fn place(
         .await?
         .error_for_status()?;
 
-    let engine_us = parse_engine_us(raw.headers().get("x-cex-engine-us"));
+    let timings = read_timings(raw.headers());
 
     let response: serde_json::Value = raw.json().await?;
     let order_id = response["order_id"]
         .as_u64()
         .context("no order_id in the order response")?;
 
-    Ok((order_id, engine_us))
+    Ok((order_id, timings))
 }
 
 type Feed =
@@ -409,6 +478,7 @@ async fn wait_for_order_inner(feed: &mut Feed, order_id: u64) -> Result<()> {
 mod tests {
     use super::*;
     use cex_proto::{OrderStatus, OrderType, Side};
+    use reqwest::header::HeaderValue;
     use cex_ws::wire::{DepthUpdate, Envelope, OrderUpdate, Payload};
 
     fn envelope(data: Payload) -> Envelope {
@@ -480,34 +550,66 @@ mod tests {
     }
 
     #[test]
-    fn parse_engine_us_reads_a_present_and_valid_header() {
+    fn parse_timing_us_reads_a_present_and_valid_header() {
         let value = reqwest::header::HeaderValue::from_static("1234");
-        assert_eq!(parse_engine_us(Some(&value)), EngineUs::Present(1234));
+        assert_eq!(parse_timing_us(Some(&value)), TimingUs::Present(1234));
     }
 
     #[test]
-    fn parse_engine_us_reports_absent_when_there_is_no_header() {
-        assert_eq!(parse_engine_us(None), EngineUs::Absent);
+    fn parse_timing_us_reports_absent_when_there_is_no_header() {
+        assert_eq!(parse_timing_us(None), TimingUs::Absent);
     }
 
     /// The failure Important 3 is about: a header that showed up but is not a
     /// valid u64 must be reported, not folded into the same "nothing to see
     /// here" bucket as a header that never showed up at all.
     #[test]
-    fn parse_engine_us_reports_malformed_rather_than_dropping_a_present_but_unparsable_header() {
+    fn parse_timing_us_reports_malformed_rather_than_dropping_a_present_but_unparsable_header() {
         let value = reqwest::header::HeaderValue::from_static("not-a-number");
         assert_eq!(
-            parse_engine_us(Some(&value)),
-            EngineUs::Malformed("not-a-number".to_string())
+            parse_timing_us(Some(&value)),
+            TimingUs::Malformed("not-a-number".to_string())
         );
     }
 
     #[test]
-    fn parse_engine_us_reports_malformed_for_a_non_utf8_header_value() {
+    fn parse_timing_us_reports_malformed_for_a_non_utf8_header_value() {
         let value = reqwest::header::HeaderValue::from_bytes(&[0xFF, 0xFE]).unwrap();
         assert!(matches!(
-            parse_engine_us(Some(&value)),
-            EngineUs::Malformed(_)
+            parse_timing_us(Some(&value)),
+            TimingUs::Malformed(_)
         ));
+    }
+
+    /// The two headers measure different things and both are load-bearing:
+    /// the budget's Redis-hop row is `server minus engine`, and the screen's
+    /// amber threshold comes from `server`'s p99. Reading one header name
+    /// twice would make the hop exactly zero and the threshold too tight,
+    /// with both numbers still looking entirely plausible.
+    #[test]
+    fn reads_the_server_and_engine_timings_from_their_own_header_names() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(ENGINE_US_HEADER, HeaderValue::from_static("100"));
+        headers.insert(SERVER_US_HEADER, HeaderValue::from_static("250"));
+
+        let timings = read_timings(&headers);
+
+        assert_eq!(timings.engine, TimingUs::Present(100));
+        assert_eq!(timings.server, TimingUs::Present(250));
+    }
+
+    /// `server` covers the whole request and `engine` only the part of it
+    /// spent waiting on the engine, so a response carrying one and not the
+    /// other is a half-measured sample, not a usable one. Each has to be
+    /// accounted for on its own.
+    #[test]
+    fn a_response_missing_only_one_of_the_two_headers_is_counted_against_that_one() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(ENGINE_US_HEADER, HeaderValue::from_static("100"));
+
+        let timings = read_timings(&headers);
+
+        assert_eq!(timings.engine, TimingUs::Present(100));
+        assert_eq!(timings.server, TimingUs::Absent);
     }
 }
