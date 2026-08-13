@@ -33,7 +33,7 @@ export function ActivityPanel({ orders, fills, markets, onCancel }: Props) {
     <Tabs
       value={tab}
       onValueChange={(next) => setTab(String(next))}
-      className="col-span-full row-start-3 flex min-h-0 flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel max-[879px]:row-auto max-[879px]:min-h-[190px]"
+      className="col-span-full row-start-3 flex min-h-0 flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel max-stack:row-auto max-stack:min-h-[190px]"
       data-testid="activity"
     >
       <div className="flex h-6 flex-none items-center gap-1 border-b border-rule bg-panel-hi px-2">

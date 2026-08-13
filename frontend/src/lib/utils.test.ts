@@ -27,6 +27,11 @@ describe("cn", () => {
 
   it("treats the theme's radii as one group", () => {
     expect(cn("rounded-panel", "rounded-control")).toBe("rounded-control");
+    expect(cn("rounded-control", "rounded-pill")).toBe("rounded-pill");
+  });
+
+  it("knows the field size, the largest step", () => {
+    expect(cn("text-field", "text-ink")).toBe("text-field text-ink");
   });
 
   it("still merges stock utilities the ordinary way", () => {

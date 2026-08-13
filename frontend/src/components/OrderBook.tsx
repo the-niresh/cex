@@ -71,7 +71,7 @@ export function OrderBook({
 
   if (!market) {
     return (
-      <Panel className="max-[879px]:min-h-[430px]" data-testid="book-panel">
+      <Panel className="max-stack:min-h-[430px]" data-testid="book-panel">
         <PanelHead>
           <PanelTabs tab={tab} onTab={onTab} />
         </PanelHead>
@@ -198,7 +198,7 @@ export function OrderBook({
   const bidShare = depth > 0n ? Number((bidDepth * 10_000n) / depth) / 100 : 50;
 
   return (
-    <Panel className="max-[879px]:min-h-[430px]" data-testid="book-panel">
+    <Panel className="max-stack:min-h-[430px]" data-testid="book-panel">
       <PanelHead>
         <PanelTabs tab={tab} onTab={onTab} />
         <Meta>

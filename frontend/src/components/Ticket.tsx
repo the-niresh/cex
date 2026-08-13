@@ -284,7 +284,7 @@ export function Ticket({
           </div>
         )}
 
-        <div className="border border-rule bg-sunken">
+        <div className="border border-rule bg-field">
           <Readout label="Notional">
             {quote && market
               ? `${formatAtoms(quote.value, market.quote_decimals)} ${market.quote}`

@@ -110,7 +110,7 @@ export function SunkenInput({
   return (
     <div
       className={cn(
-        "flex items-center border bg-sunken",
+        "flex items-center border bg-field",
         bad ? "border-sell" : "border-rule-hi",
         "focus-within:border-control focus-within:shadow-[inset_0_0_0_1px_var(--color-control-dim)]",
         className,

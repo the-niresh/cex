@@ -17,8 +17,8 @@ import { extendTailwindMerge } from "tailwind-merge";
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
-      text: ["data", "label", "micro"],
-      radius: ["panel", "control"],
+      text: ["data", "label", "micro", "field"],
+      radius: ["panel", "control", "pill"],
     },
   },
 });

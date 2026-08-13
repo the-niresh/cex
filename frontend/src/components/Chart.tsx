@@ -7,6 +7,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { withAlpha } from "../lib/color";
 import { decimalsForStep } from "../lib/num";
 import type { Candle, Interval, Market } from "../lib/types";
 import { Empty, Meta, Panel, PanelHead, PanelTitle } from "./ui/panel";
@@ -38,20 +39,27 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
+    // ⚠️ lightweight-charts paints into a canvas, and canvas colours cannot be
+    // `var(--x)` — the string is not a colour and the library silently keeps
+    // whatever was there. So the tokens are resolved to real values here, once,
+    // rather than hardcoded a second time in this file.
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string) => css.getPropertyValue(name).trim();
+
     const chart = createChart(container, {
       layout: {
         background: { color: "transparent" },
-        textColor: "#818d9c",
+        textColor: token("--color-ink-3"),
         fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-        fontSize: 10,
+        fontSize: 11,
       },
       grid: {
-        vertLines: { color: "#171b21" },
-        horzLines: { color: "#171b21" },
+        vertLines: { color: token("--color-rule") },
+        horzLines: { color: token("--color-rule") },
       },
-      rightPriceScale: { borderColor: "#232a33" },
+      rightPriceScale: { borderColor: token("--color-rule-hi") },
       timeScale: {
-        borderColor: "#232a33",
+        borderColor: token("--color-rule-hi"),
         timeVisible: true,
         secondsVisible: false,
         // `fitContent` below spreads whatever bars exist across the panel. On a
@@ -61,19 +69,19 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
         maxBarSpacing: 18,
       },
       crosshair: {
-        vertLine: { color: "#818d9c", width: 1, style: 2, labelBackgroundColor: "#101317" },
-        horzLine: { color: "#818d9c", width: 1, style: 2, labelBackgroundColor: "#101317" },
+        vertLine: { color: token("--color-ink-3"), width: 1, style: 2, labelBackgroundColor: token("--color-panel-hi") },
+        horzLine: { color: token("--color-ink-3"), width: 1, style: 2, labelBackgroundColor: token("--color-panel-hi") },
       },
       autoSize: true,
     });
 
     const price = chart.addSeries(CandlestickSeries, {
-      upColor: "#17b98a",
-      downColor: "#e2504f",
-      borderUpColor: "#17b98a",
-      borderDownColor: "#e2504f",
-      wickUpColor: "#17b98a",
-      wickDownColor: "#e2504f",
+      upColor: token("--color-buy"),
+      downColor: token("--color-sell"),
+      borderUpColor: token("--color-buy"),
+      borderDownColor: token("--color-sell"),
+      wickUpColor: token("--color-buy"),
+      wickDownColor: token("--color-sell"),
     });
 
     const volume = chart.addSeries(HistogramSeries, {
@@ -104,6 +112,11 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     const volume = volumeRef.current;
     if (!price || !volume || !market) return;
 
+    // Volume is context, not the subject, so it is drawn at a third strength.
+    // ⚠️ `rgba`, not `color-mix` — see the note on `withAlpha`.
+    const css = getComputedStyle(document.documentElement);
+    const ghost = (name: string) => withAlpha(css.getPropertyValue(name), 0.32);
+
     const quoteUnit = Number(10n ** market.quote_decimals);
     const baseUnit = Number(10n ** market.base_decimals);
     const toPrice = (atoms: bigint) => Number(atoms) / quoteUnit;
@@ -122,7 +135,7 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
       candles.map((c) => ({
         time: (Number(c.time_ms) / 1000) as UTCTimestamp,
         value: Number(c.volume) / baseUnit,
-        color: c.close >= c.open ? "rgba(23,185,138,.32)" : "rgba(226,80,79,.32)",
+        color: c.close >= c.open ? ghost("--color-buy") : ghost("--color-sell"),
       })),
     );
 
@@ -148,7 +161,7 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     // is given — so a container that sizes itself from its content grows every
     // time the observer fires, and the panel ran to a thousand pixels on a
     // phone. The old rule set a floor and no ceiling, and did the same.
-    <Panel className="max-[879px]:h-[300px]" data-testid="chart-panel">
+    <Panel className="max-stack:h-[300px]" data-testid="chart-panel">
       <PanelHead>
         <PanelTitle>Chart</PanelTitle>
         <Meta>

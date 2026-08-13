@@ -79,7 +79,7 @@ export function TopBar({
       className={[
         "col-span-full flex min-w-0 flex-row flex-nowrap items-stretch overflow-hidden",
         "min-h-9 rounded-panel border border-rule bg-panel-hi [&>*]:min-h-9",
-        "max-[879px]:flex-wrap",
+        "max-stack:flex-wrap",
       ].join(" ")}
     >
       <div className="flex flex-none items-center gap-2 border-r border-rule pl-3 pr-3.5">
@@ -95,7 +95,7 @@ export function TopBar({
         className={[
           "flex min-w-[150px] flex-[0_1_auto] overflow-x-auto",
           "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          "max-[879px]:flex-[1_1_auto]",
+          "max-stack:flex-[1_1_auto]",
         ].join(" ")}
         data-testid="markets"
       >
@@ -150,7 +150,7 @@ export function TopBar({
           className={[
             "flex min-w-0 flex-[1_1_auto] flex-wrap items-center gap-x-[22px] gap-y-0.5",
             "ml-1 px-4.5 py-1.5",
-            "max-[879px]:order-1 max-[879px]:ml-0 max-[879px]:flex-[0_0_100%]",
+            "max-stack:order-1 max-stack:ml-0 max-stack:flex-[0_0_100%]",
           ].join(" ")}
           data-testid="ticker"
         >
@@ -243,7 +243,7 @@ export function TopBar({
       <div
         className={[
           "ml-auto flex flex-none items-center gap-[9px] border-l border-rule px-3",
-          "max-[879px]:order-2",
+          "max-stack:order-2",
         ].join(" ")}
       >
         <i
@@ -261,7 +261,7 @@ export function TopBar({
       <div
         className={[
           "flex flex-none items-center gap-2.5 border-l border-rule px-3",
-          "max-[879px]:order-2",
+          "max-stack:order-2",
         ].join(" ")}
       >
         {session?.name && (

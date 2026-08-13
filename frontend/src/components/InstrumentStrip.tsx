@@ -52,7 +52,7 @@ export function InstrumentStrip({
         // still a surface, so it takes the same border and radius as one.
         "col-span-full flex items-stretch gap-5 rounded-panel border border-rule bg-panel-hi px-3",
         // Stacked on a phone it has to wrap rather than push the page sideways.
-        "max-[879px]:h-auto max-[879px]:min-h-[22px] max-[879px]:flex-wrap max-[879px]:gap-y-0.5",
+        "max-stack:h-auto max-stack:min-h-[22px] max-stack:flex-wrap max-stack:gap-y-0.5",
       ].join(" ")}
     >
       <Gauge

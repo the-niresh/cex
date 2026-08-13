@@ -95,12 +95,12 @@ export default function App() {
           // LOG OUT with it — and a 1280px viewport is exactly what a 1920
           // screen at 150% zoom gives you, which is not an exotic setup. So the
           // same three columns, tightened, down to an 852px floor.
-          "max-[1111px]:grid-cols-[minmax(260px,1fr)_minmax(300px,370px)_minmax(290px,320px)]",
+          "max-tight:grid-cols-[minmax(260px,1fr)_minmax(300px,370px)_minmax(290px,320px)]",
           // Under ~880px no side-by-side arrangement leaves the ladder or the
           // ticket a usable width, so stop pretending: one column, each panel
           // its own row, and the document scrolls like any other page.
-          "max-[879px]:h-auto max-[879px]:min-h-screen",
-          "max-[879px]:grid-cols-[minmax(0,1fr)] max-[879px]:grid-rows-none max-[879px]:auto-rows-auto",
+          "max-stack:h-auto max-stack:min-h-screen",
+          "max-stack:grid-cols-[minmax(0,1fr)] max-stack:grid-rows-none max-stack:auto-rows-auto",
         ].join(" ")}
         data-testid="screen"
         // `stale` dims the live data; `degraded` switches order entry off. They
