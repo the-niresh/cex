@@ -219,13 +219,13 @@ export default function App() {
           ].join(" ")}
           role="alert"
         >
-          <span className="flex-none pt-px font-sans text-[9.5px] font-bold tracking-[0.14em] text-sell">
-            ERR
+          <span className="flex-none pt-px font-sans text-micro font-medium text-sell">
+            Error
           </span>
           <span>{x.error}</span>
           <button
             type="button"
-            className="ml-auto flex-none cursor-pointer text-ink-4 hover:text-ink"
+            className="ml-auto flex min-h-6 min-w-6 flex-none cursor-pointer items-center justify-center text-ink-4 hover:text-ink"
             onClick={x.clearError}
             aria-label="dismiss"
           >

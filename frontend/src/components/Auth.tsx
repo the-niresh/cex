@@ -72,7 +72,7 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
           <PanelTitle>cex · spot</PanelTitle>
           <button
             type="button"
-            className="ml-auto cursor-pointer px-0.5 text-[11px] leading-none text-ink-4 hover:text-ink"
+            className="ml-auto flex min-h-6 min-w-6 cursor-pointer items-center justify-center text-[11px] leading-none text-ink-4 hover:text-ink"
             aria-label="close"
             onClick={onClose}
           >
