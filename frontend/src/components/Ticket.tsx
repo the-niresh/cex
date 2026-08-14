@@ -4,7 +4,6 @@ import { cn } from "../lib/utils";
 import { decimalsForStep, feeOn, formatAtoms, isAligned, notional, parseAtoms } from "../lib/num";
 import type { Balance, Market, Side } from "../lib/types";
 import {
-  AvailableLine,
   Field,
   FieldLabel,
   FieldName,
@@ -215,48 +214,58 @@ export function Ticket({
           </Segment>
         </Segmented>
 
+        {/* What you have to spend on the side you are on. It sits above the
+            fields it constrains and above the % buttons that divide it, which
+            is the only place it can be read *before* a number is typed. There
+            used to be a second copy of this figure under the submit button
+            wearing a different label. */}
         <div className="flex font-sans text-micro">
-          <span className="text-ink-3">Balance</span>
-          <span className="tnum ml-auto text-ink">
+          <span className="text-ink-3">Available</span>
+          <span className="tnum ml-auto text-ink" data-testid="ticket-available">
             {spendBalance
               ? `${formatAtoms(spendBalance.available, spendDecimals)} ${spendAsset}`
               : `0 ${spendAsset}`}
           </span>
         </div>
 
-        <Field>
-          <FieldLabel>
-            <FieldName>Price</FieldName>
-            {market && kind === "LIMIT" && (bestBid !== null || bestAsk !== null) && (
-              // Two prices worth one click each: the middle of the spread, and
-              // the best price already showing on your own side of it. Both
-              // come off the book already on screen.
-              <span className="ml-2.5 flex items-center gap-1.5" data-testid="price-picks">
-                <Pick onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
-                  MID
-                </Pick>
-                <span className="h-4 w-px bg-rule-hi" />
-                <Pick onClick={() => setPriceFrom(bboPrice)} disabled={bboPrice === null}>
-                  BBO
-                </Pick>
-              </span>
-            )}
-            {market && (
-              <FieldRule>
-                tick {formatAtoms(market.tick_size, market.quote_decimals, { places: priceDp })}
-              </FieldRule>
-            )}
-          </FieldLabel>
-          <FieldInput
-            unit={market?.quote ?? ""}
-            value={kind === "MARKET" ? "" : price}
-            placeholder={kind === "MARKET" ? "market" : ""}
-            disabled={kind === "MARKET"}
-            inputMode="decimal"
-            aria-label="price"
-            onChange={(e) => onPriceChange(e.target.value)}
-          />
-        </Field>
+        {/* A market order has no price to state, so it renders no price field.
+            It used to render a disabled one reading "market" under a tick rule
+            that governs nothing — 70px of furniture in a rail that already
+            overflows. `price` lives in the shell, so switching back to Limit
+            brings back whatever was typed. */}
+        {kind === "LIMIT" && (
+          <Field>
+            <FieldLabel>
+              <FieldName>Price</FieldName>
+              {market && (bestBid !== null || bestAsk !== null) && (
+                // Two prices worth one click each: the middle of the spread, and
+                // the best price already showing on your own side of it. Both
+                // come off the book already on screen.
+                <span className="ml-2.5 flex items-center gap-1.5" data-testid="price-picks">
+                  <Pick onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
+                    MID
+                  </Pick>
+                  <span className="h-4 w-px bg-rule-hi" />
+                  <Pick onClick={() => setPriceFrom(bboPrice)} disabled={bboPrice === null}>
+                    BBO
+                  </Pick>
+                </span>
+              )}
+              {market && (
+                <FieldRule>
+                  tick {formatAtoms(market.tick_size, market.quote_decimals, { places: priceDp })}
+                </FieldRule>
+              )}
+            </FieldLabel>
+            <FieldInput
+              unit={market?.quote ?? ""}
+              value={price}
+              inputMode="decimal"
+              aria-label="price"
+              onChange={(e) => onPriceChange(e.target.value)}
+            />
+          </Field>
+        )}
 
         <Field>
           <FieldLabel>
@@ -296,7 +305,10 @@ export function Ticket({
         )}
 
         <div className="border border-rule bg-field">
-          <Readout label="Notional">
+          {/* A market order has no price of its own, so its notional is worked
+              out against the best price on the book — an estimate, and the
+              readout says so rather than implying the engine agreed to it. */}
+          <Readout label="Notional" hint={kind === "MARKET" ? "est. at best" : undefined}>
             {quote && market
               ? `${formatAtoms(quote.value, market.quote_decimals)} ${market.quote}`
               : "—"}
@@ -335,12 +347,6 @@ export function Ticket({
                 ? `${sideLabel} ${qty} ${market?.base ?? ""}`.trim()
                 : sideLabel}
         </SubmitButton>
-
-        <AvailableLine label="available">
-          {spendBalance
-            ? `${formatAtoms(spendBalance.available, spendDecimals)} ${spendAsset}`
-            : `0 ${spendAsset}`}
-        </AvailableLine>
       </div>
     </>
   );
@@ -380,9 +386,12 @@ function Readout({
 }) {
   return (
     <div className="flex items-center border-b border-rule px-2 py-1 last:border-b-0">
+      {/* The qualifier is bracketed rather than just spaced. "Fee taker 5 bps"
+          read as one run-on phrase; "Fee (taker 5 bps)" reads as a label and
+          the small print that qualifies it. */}
       <span className="font-sans text-micro text-ink-3">
         {label}
-        {hint !== undefined && <span className="ml-1.5 text-ink-4">{hint}</span>}
+        {hint !== undefined && <span className="ml-1.5 text-ink-4">({hint})</span>}
       </span>
       <span className={cn("tnum ml-auto", total ? "text-data text-ink" : "text-micro text-ink-2")}>
         {children}
