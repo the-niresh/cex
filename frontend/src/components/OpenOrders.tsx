@@ -20,16 +20,20 @@ interface Props {
  * the numbers stay in tabular alignment.
  */
 const COLS = [
-  "grid-cols-[56px_56px_92px_46px_52px_100px_92px_92px_minmax(40px,1fr)_104px_24px] gap-x-2",
+  "grid-cols-[56px_56px_92px_46px_52px_100px_92px_92px_minmax(40px,1fr)_80px_24px] gap-x-2",
   "[&>:nth-child(n+6)]:text-right [&>:nth-child(11)]:text-center",
 ].join(" ");
 
 /**
  * Under this the table scrolls sideways rather than crushing its columns.
- * Status went from 76px to 104px when the raw enums became words — the widest
- * one the engine can send is "Partially filled".
+ *
+ * Status went 76px → 80px when the raw enums became words: "Partially filled"
+ * is the widest the engine can send and measures 77px at this font and size,
+ * so 76 was one pixel short and anything above 80 is slack. ⚠️ Slack here is
+ * not free — it is what decides whether this table fits the stacked layout at
+ * 860px or scrolls sideways inside it.
  */
-const MIN_WIDTH = 852;
+const MIN_WIDTH = 828;
 
 export function OpenOrders({ orders, markets, onCancel }: Props) {
   const bySymbol = new Map(markets.map((m) => [m.symbol, m]));
