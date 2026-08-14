@@ -479,8 +479,8 @@ async fn wait_for_order_inner(feed: &mut Feed, order_id: u64) -> Result<()> {
 mod tests {
     use super::*;
     use cex_proto::{OrderStatus, OrderType, Side};
-    use reqwest::header::HeaderValue;
     use cex_ws::wire::{DepthUpdate, Envelope, OrderUpdate, Payload};
+    use reqwest::header::HeaderValue;
 
     fn envelope(data: Payload) -> Envelope {
         Envelope {
