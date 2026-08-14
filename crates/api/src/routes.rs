@@ -21,11 +21,12 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::auth::Tokens;
+use crate::cache::ReadCache;
 use crate::loopback::{Loopback, LoopbackError};
 use crate::users::{NewUser, UserStore, UsersError};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderName, HeaderValue, Method};
-use cex_persist::HistoryStore;
+use cex_persist::{CandleRow, FillRow, HistoryStore};
 use std::collections::HashMap;
 use std::time::Duration;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -41,7 +42,28 @@ struct Inner {
     tokens: Tokens,
     /// Read-only here. Only `persist` ever writes these tables.
     history: HistoryStore,
+    /// The public tape, per `(symbol, limit)`.
+    trades_cache: ReadCache<(String, i64), Vec<FillRow>>,
+    /// The public chart, per `(symbol, bucket seconds, limit)`.
+    candles_cache: ReadCache<(String, i64, i64), Vec<CandleRow>>,
 }
+
+/// How long a history answer is reused before asking the database again.
+///
+/// The tape and the chart are both driven live by the WebSocket feed, so this
+/// window only affects the first paint and a reconnect — a second of age there
+/// is invisible, and it is what keeps the database load flat as viewers arrive.
+const HISTORY_TTL: Duration = Duration::from_secs(2);
+
+/// How long the last good answer may still be served after a read starts
+/// failing. Long enough to ride out a restart or a blip without the chart going
+/// blank; short enough that a real outage is eventually reported rather than
+/// hidden behind data nobody should still trust.
+const HISTORY_MAX_STALE: Duration = Duration::from_secs(60);
+
+/// Distinct `(symbol, …)` keys held per cache. Real traffic uses a handful; the
+/// bound is there because the key comes from the query string.
+const HISTORY_CACHE_KEYS: usize = 256;
 
 impl AppState {
     pub fn new(
@@ -56,6 +78,8 @@ impl AppState {
                 users,
                 tokens,
                 history,
+                trades_cache: ReadCache::new(HISTORY_TTL, HISTORY_MAX_STALE, HISTORY_CACHE_KEYS),
+                candles_cache: ReadCache::new(HISTORY_TTL, HISTORY_MAX_STALE, HISTORY_CACHE_KEYS),
             }),
         }
     }
@@ -542,15 +566,20 @@ async fn candles(
     let bucket = bucket_seconds(interval)?;
     let limit = parse_limit_with_default(params.get("limit").map(|s| s.as_str()), DEFAULT_CANDLES)?;
 
+    // Everyone watching this market wants the same bars, so they are fetched
+    // once for all of them. See `cache` for why that is a load-shape decision
+    // rather than a speed one.
+    let history = &state.inner.history;
     let rows = state
         .inner
-        .history
-        .candles(&symbol, bucket, limit)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, symbol, interval, "reading candles failed");
-            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "could not read candles")
-        })?;
+        .candles_cache
+        .get_or_load((symbol.clone(), bucket, limit), || async {
+            history.candles(&symbol, bucket, limit).await.map_err(|e| {
+                tracing::error!(error = %e, symbol, interval, "reading candles failed");
+                ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "could not read candles")
+            })
+        })
+        .await?;
 
     // Same ambiguity as the tape: a market nobody has traded looks exactly like
     // a typo, so only an empty answer is worth the extra round trip.
@@ -595,20 +624,23 @@ async fn trades(
 ) -> ApiResult<Json<serde_json::Value>> {
     let limit = parse_limit(params.get("limit").map(|s| s.as_str()))?;
 
+    // Shared between everyone watching this market, same as the chart above.
+    let history = &state.inner.history;
     let rows = state
         .inner
-        .history
-        .fills_for_symbol(&symbol, limit)
-        .await
-        .map_err(|e| {
-            // The caller gets nothing useful from a database error, and the
-            // detail belongs in the log rather than in a public response.
-            tracing::error!(error = %e, symbol, "reading trade history failed");
-            ApiError::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "could not read trade history",
-            )
-        })?;
+        .trades_cache
+        .get_or_load((symbol.clone(), limit), || async {
+            history.fills_for_symbol(&symbol, limit).await.map_err(|e| {
+                // The caller gets nothing useful from a database error, and the
+                // detail belongs in the log rather than in a public response.
+                tracing::error!(error = %e, symbol, "reading trade history failed");
+                ApiError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "could not read trade history",
+                )
+            })
+        })
+        .await?;
 
     // An empty result is ambiguous: a market that has not traded yet looks
     // exactly like a typo. Only then is it worth a round trip to find out

@@ -44,4 +44,7 @@ base64 = "0.23.1"
 cex-engine = { path = "../engine" }
 http-body-util = "0.1.4"
 tempfile.workspace = true
+# `test-util` is not part of tokio's `full`, and the cache tests advance the
+# clock rather than sleeping through real seconds.
+tokio = { workspace = true, features = ["test-util"] }
 tower = "0.5.3"

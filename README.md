@@ -140,6 +140,11 @@ npm run typecheck && npm run lint && npm test
 npm run e2e          # playwright, against the running stack
 ```
 
+`npm run e2e` needs `api` on `localhost:8080` and `ws` on `localhost:8081` — the dev server proxies
+to both, and without them every spec fails on `ECONNREFUSED` rather than on anything it tested. A
+deployed stack behind a reverse proxy does not count: those ports have to be reachable on this
+box. Start `persist` before `api` on a fresh database, for the reason in the known limitations.
+
 Nothing asks for an account until something moves money — the book, tape, chart and ticket are all
 usable signed out, and the sign-in panel opens on BUY, SELL or CREDIT. The layout holds from 320px
 to 1920px, and every one of its 44 text styles is checked against WCAG AA by a script that walks
@@ -148,5 +153,5 @@ the rendered page.
 ## More
 
 [docs/internals.md](docs/internals.md) — the REST and WebSocket contract, integer scaling, the
-design rules the engine is held to, idempotency, how exactly one engine is guaranteed, and the
-known limitations.
+design rules the engine is held to, idempotency, how exactly one engine is guaranteed, the history
+read path and the outage that taught us how it fails, and the known limitations.

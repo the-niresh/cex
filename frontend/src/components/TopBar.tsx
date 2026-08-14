@@ -80,6 +80,17 @@ export function TopBar({
       ].join(" ")}
     >
       <div className="flex flex-none items-center gap-2 border-r border-rule pl-3 pr-3.5">
+        {/* Sized in CSS and given its dimensions in the markup, so the row does
+            not jump a pixel taller the moment the image finishes loading. */}
+        <img
+          src="/logo.png"
+          alt=""
+          width={25}
+          height={32}
+          className="h-8 w-auto flex-none select-none"
+          draggable={false}
+          data-testid="brand-logo"
+        />
         <span className="font-sans text-[11px] font-bold tracking-tight text-ink">CEX</span>
         <span className="font-sans text-micro tracking-[0.06em] text-ink-4">spot</span>
         {/* Says what this venue is, where someone actually looks.

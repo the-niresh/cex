@@ -22,6 +22,7 @@ use cex_proto::{Event, EventBatch, OrderId, OrderStatus, OrderType, Seq, Side, U
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgRow};
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Row, Transaction};
 use std::str::FromStr;
+use std::time::Duration;
 use tracing::warn;
 
 #[derive(Debug, thiserror::Error)]
@@ -214,6 +215,18 @@ fn row_to_candle(row: PgRow) -> CandleRow {
 
 const SCHEMA_SQL: &str = include_str!("../migrations/0002_history.sql");
 
+/// How long a caller waits for a pooled connection before being told no.
+///
+/// sqlx defaults this to thirty seconds, which is not a wait — it is a hang. A
+/// saturated pool would hold a request open for half a minute and then fail
+/// anyway, by which time the browser had already given up and the screen had
+/// gone blank with no explanation. Five seconds is comfortably above a cold
+/// connect to a managed database, and fails while somebody is still watching.
+///
+/// This bounds the *symptom*. What stops the pool saturating in the first place
+/// is not asking it for so much — see the read cache in the api crate.
+const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
+
 // ───────────────────────── the store ─────────────────────────
 
 #[derive(Clone)]
@@ -248,6 +261,7 @@ impl HistoryStore {
 
         let pool = PgPoolOptions::new()
             .max_connections(8)
+            .acquire_timeout(ACQUIRE_TIMEOUT)
             .connect_with(opts)
             .await
             .map_err(db)?;

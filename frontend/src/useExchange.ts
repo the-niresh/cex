@@ -3,6 +3,7 @@ import * as api from "./lib/api";
 import { DepthBook, type Level } from "./lib/book";
 import { Feed, type FeedStatus } from "./lib/feed";
 import { liveFillFrom, mergeFills } from "./lib/fills";
+import { nextResyncBackoffMs, resyncWaitMs } from "./lib/resync";
 import { clearSession, loadSession, saveSession } from "./lib/session";
 import type {
   AuthMode,
@@ -54,6 +55,20 @@ const BOOK_DEPTH = 14;
  */
 const SNAPSHOT_RETRIES = 5;
 const SNAPSHOT_RETRY_MS = 300;
+
+/**
+ * How often the chart asks for candles again.
+ *
+ * Candles are the one thing on the screen the socket does not carry: the feed
+ * sends depth and prints, and nothing aggregates them into bars. So the chart
+ * needs a clock of its own.
+ *
+ * It used to borrow the resync counter for this, which meant every depth gap
+ * pulled two candle requests along behind it and made a book problem into three
+ * times the database load. A market has to trade for a whole minute to add a
+ * bar, so asking this often is already generous.
+ */
+const CHART_REFRESH_MS = 15_000;
 
 /** The ladder as the screen renders it — plain data, not the live book. */
 interface BookView {
@@ -128,6 +143,11 @@ export function useExchange(): Exchange {
 
   const [status, setStatus] = useState<FeedStatus>("connecting");
   const [resyncs, setResyncs] = useState(0);
+  // Bumped only when the socket comes back, never on a depth gap. The chart is
+  // worth refetching after a real disconnection, because the feed carries no
+  // candles and we may have missed minutes of them; a gap in the depth stream
+  // says nothing about the chart at all.
+  const [reconnects, setReconnects] = useState(0);
   const [lastUpdateMs, setLastUpdateMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -172,7 +192,18 @@ export function useExchange(): Exchange {
   //
   // The one path back to a trustworthy screen. Called on connect, on a depth
   // gap, and whenever the market changes.
-  const resync = useCallback(async () => {
+  //
+  // Only ever one at a time. Gaps arrive faster than a round trip can answer
+  // them, and firing a fresh refetch at each one produced far more requests
+  // than the API could serve — which made the refetches slower, which caused
+  // more gaps. A second request while one is already running is remembered
+  // rather than sent, and runs once when the first finishes; that keeps the
+  // "something changed, look again" guarantee without the pile-up.
+  const resyncRunning = useRef(false);
+  const resyncWanted = useRef(false);
+  const resyncBackoffMs = useRef(0);
+
+  const resyncOnce = useCallback(async () => {
     const sym = symbolRef.current;
     const token = tokenRef.current;
     try {
@@ -218,6 +249,41 @@ export function useExchange(): Exchange {
       failed(e);
     }
   }, [failed, publishBook]);
+
+  /**
+   * Ask for a resync. Runs one now, or notes that another is wanted.
+   *
+   * The wait between rounds only grows when the previous round left the book
+   * still stale — see `RESYNC_BACKOFF_MIN_MS`. A round that fixed the book
+   * clears it, so the next gap is answered as quickly as the first.
+   */
+  const resync = useCallback(async () => {
+    if (resyncRunning.current) {
+      resyncWanted.current = true;
+      return;
+    }
+
+    resyncRunning.current = true;
+    try {
+      do {
+        resyncWanted.current = false;
+
+        const wait = resyncWaitMs(resyncBackoffMs.current, Math.random());
+        if (wait > 0) {
+          await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+
+        await resyncOnce();
+
+        resyncBackoffMs.current = nextResyncBackoffMs(
+          resyncBackoffMs.current,
+          bookRef.current.stale,
+        );
+      } while (resyncWanted.current);
+    } finally {
+      resyncRunning.current = false;
+    }
+  }, [resyncOnce]);
 
   const refreshAccount = useCallback(async () => {
     const token = tokenRef.current;
@@ -291,7 +357,10 @@ export function useExchange(): Exchange {
       },
       onStatus: setStatus,
       onResync() {
+        // A fresh socket. Unlike a depth gap this really can mean the chart
+        // missed something, so it is the one place that asks for candles again.
         setResyncs((n) => n + 1);
+        setReconnects((n) => n + 1);
         void resync();
       },
     });
@@ -322,28 +391,44 @@ export function useExchange(): Exchange {
     void resync();
   }, [symbol, session, resync]);
 
+  // The chart's own clock. Nothing on the feed carries candles, so without this
+  // the bars would sit at whatever they were when the page loaded.
   useEffect(() => {
     const controller = new AbortController();
-    api
-      .candles(symbol, interval, 200, controller.signal)
-      .then(setCandles)
-      .catch((e: unknown) => {
-        if (!controller.signal.aborted) failed(e);
-      });
-    return () => controller.abort();
-  }, [symbol, interval, failed, resyncs]);
+    const load = () =>
+      api
+        .candles(symbol, interval, 200, controller.signal)
+        .then(setCandles)
+        .catch((e: unknown) => {
+          if (!controller.signal.aborted) failed(e);
+        });
+
+    void load();
+    const timer = setInterval(() => void load(), CHART_REFRESH_MS);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [symbol, interval, failed, reconnects]);
 
   // 24 hourly buckets, whatever the chart happens to be showing.
   useEffect(() => {
     const controller = new AbortController();
-    api
-      .candles(symbol, "1h", 24, controller.signal)
-      .then(setDayCandles)
-      .catch((e: unknown) => {
-        if (!controller.signal.aborted) failed(e);
-      });
-    return () => controller.abort();
-  }, [symbol, failed, resyncs]);
+    const load = () =>
+      api
+        .candles(symbol, "1h", 24, controller.signal)
+        .then(setDayCandles)
+        .catch((e: unknown) => {
+          if (!controller.signal.aborted) failed(e);
+        });
+
+    void load();
+    const timer = setInterval(() => void load(), CHART_REFRESH_MS);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [symbol, failed, reconnects]);
 
   // ── derived ───────────────────────────────────────────────────────────
 

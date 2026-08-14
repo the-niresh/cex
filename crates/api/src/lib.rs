@@ -4,6 +4,7 @@
 //! the engine. That is what makes it safe to run as many copies as you need.
 
 pub mod auth;
+pub mod cache;
 pub mod loopback;
 pub mod routes;
 pub mod timing;
