@@ -1,3 +1,4 @@
+import { sentenceCase } from "../lib/labels";
 import { decimalsForStep } from "../lib/num";
 import type { Market, Order } from "../lib/types";
 import { Num } from "./format";
@@ -19,12 +20,16 @@ interface Props {
  * the numbers stay in tabular alignment.
  */
 const COLS = [
-  "grid-cols-[56px_56px_92px_46px_52px_100px_92px_92px_minmax(40px,1fr)_76px_24px] gap-x-2",
+  "grid-cols-[56px_56px_92px_46px_52px_100px_92px_92px_minmax(40px,1fr)_104px_24px] gap-x-2",
   "[&>:nth-child(n+6)]:text-right [&>:nth-child(11)]:text-center",
 ].join(" ");
 
-/** Under this the table scrolls sideways rather than crushing its columns. */
-const MIN_WIDTH = 824;
+/**
+ * Under this the table scrolls sideways rather than crushing its columns.
+ * Status went from 76px to 104px when the raw enums became words — the widest
+ * one the engine can send is "Partially filled".
+ */
+const MIN_WIDTH = 852;
 
 export function OpenOrders({ orders, markets, onCancel }: Props) {
   const bySymbol = new Map(markets.map((m) => [m.symbol, m]));
@@ -80,7 +85,9 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
                 >
                   {order.side}
                 </span>
-                <span className="font-sans text-micro text-ink-3">{order.order_type}</span>
+                <span className="font-sans text-micro text-ink-3">
+                  {sentenceCase(order.order_type)}
+                </span>
                 <span>
                   {order.price === null || !market ? (
                     "MKT"
@@ -108,7 +115,7 @@ export function OpenOrders({ orders, markets, onCancel }: Props) {
                   }`}
                   data-testid="order-status"
                 >
-                  {order.status}
+                  {sentenceCase(order.status)}
                 </span>
                 {/* 11px of glyph in a 24px row; the row is as tall as it gets,
                     so the target is widened instead to keep it clickable. */}
