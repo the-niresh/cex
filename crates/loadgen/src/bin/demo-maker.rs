@@ -22,8 +22,8 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use cex_loadgen::quotes::{ladder, walk, Rng};
-use cex_loadgen::venue::{cancel, fund, place_limit, place_market, register};
+use cex_loadgen::quotes::{ladder, opening_mid, walk, Rng};
+use cex_loadgen::venue::{cancel, fund, place_limit, place_market, register, touch};
 use cex_proto::Side;
 use clap::Parser;
 
@@ -90,12 +90,23 @@ async fn main() -> Result<()> {
             .unwrap_or(0x5EED)
     });
     let mut rng = Rng::new(seed);
-    let band = (MID - args.band_ticks * TICK, MID + args.band_ticks * TICK);
-    let mut mid = MID;
+
+    // Where the market actually is, not where this tool assumed it was. Skipping
+    // this against a venue trading 119 ticks away from `MID` put every ask below
+    // the best bid and sold into the book on contact.
+    let (best_bid, best_ask) = touch(&http, &args.host, &args.symbol)
+        .await
+        .context("read the book before quoting")?;
+    let mut mid = opening_mid(best_bid, best_ask, TICK, MID);
+    let band = (mid - args.band_ticks * TICK, mid + args.band_ticks * TICK);
 
     println!(
         "demo-maker: {} on {} — {} levels/side, refresh {}s, seed {seed}",
         args.symbol, args.host, args.levels, args.refresh
+    );
+    println!(
+        "demo-maker: book shows bid {:?} ask {:?} — quoting around {}",
+        best_bid, best_ask, mid
     );
 
     // What this process has resting right now. Cancelled at the top of every
