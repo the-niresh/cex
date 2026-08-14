@@ -32,6 +32,29 @@ describe("LatencyWindow", () => {
     expect(w.stats().network.count).toBe(0);
   });
 
+  test("counts responses that arrived without usable timings", () => {
+    // The case this exists for: a deployed API built before the timing
+    // middleware answers every request perfectly well and reports nothing. All
+    // three gauges then sit at "—", which is indistinguishable from a screen
+    // nobody has used yet — so the count is what lets the strip say which.
+    const w = new LatencyWindow(50);
+    expect(w.stats().unreported).toBe(0);
+
+    w.add(120, null, null);
+    w.add(95, 40_000, null);
+    expect(w.stats().unreported).toBe(2);
+    expect(w.stats().engine.count).toBe(0);
+  });
+
+  test("stops reporting unusable responses once anything measures", () => {
+    // One good sample proves the server reports, so the earlier misses are
+    // noise rather than a diagnosis.
+    const w = new LatencyWindow(50);
+    w.add(120, null, null);
+    w.add(...engineCall(200, 40_000, 30_000));
+    expect(w.stats().unreported).toBe(0);
+  });
+
   test("network is total minus the server's own time", () => {
     const w = new LatencyWindow(50);
     w.add(...engineCall(200, 40_000, 30_000));

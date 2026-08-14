@@ -1,4 +1,5 @@
 import { API_URL } from "../lib/api";
+import { describeSilence } from "../lib/health";
 import { ENGINE_P99_BASELINE_MS, type LatencyStats, type Reading, type Sample } from "../lib/latency";
 import { Sparkline } from "./Sparkline";
 
@@ -43,6 +44,12 @@ export function InstrumentStrip({
   // Distinct from `feedDegraded`: this is the exchange being slow, that is the
   // book being untrustworthy. Both go amber, for different reasons.
   const engineSlow = stats.engine.p50 !== null && stats.engine.p50 > ENGINE_P99_BASELINE_MS;
+
+  // The exchange is answering, but without the headers these gauges are made
+  // of, so all three would sit at "—" looking like a screen that has not warmed
+  // up yet. Say which it is: a deployed API older than `crates/api/src/timing.rs`
+  // reads exactly like an idle one otherwise.
+  const noTimings = stats.unreported > 0;
 
   return (
     <footer
@@ -89,6 +96,14 @@ export function InstrumentStrip({
       />
 
       <div className="ml-auto flex items-center gap-4 self-center text-micro text-ink-4">
+        {noTimings && (
+          <span className="flex items-baseline gap-1.5 whitespace-nowrap text-warn">
+            <span>Timings</span>
+            <b className="font-normal" data-testid="status-no-timings">
+              not reported
+            </b>
+          </span>
+        )}
         {/* Which exchange this screen is actually talking to. Worth keeping
             visible: localhost and the deployed host look identical otherwise. */}
         <Fact label="Api" value={new URL(API_URL).host} />
@@ -96,7 +111,7 @@ export function InstrumentStrip({
         <Fact label="Resyncs" value={String(resyncs)} testid="status-resyncs" />
         <Fact
           label="Updated"
-          value={silentForMs === null ? "—" : `${Math.floor(silentForMs / 1000)}s`}
+          value={silentForMs === null ? "—" : describeSilence(silentForMs)}
           testid="status-updated"
         />
         <span className="flex items-center gap-1.5">

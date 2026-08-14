@@ -34,6 +34,13 @@ export interface LatencyStats {
   engine: Reading;
   history: Reading;
   network: Reading;
+  /**
+   * Responses seen while no reading has a single sample — i.e. the exchange
+   * answered, but without the timing headers this strip is made of. Non-zero
+   * means the deployed API predates `crates/api/src/timing.rs`, or a proxy in
+   * front of it is dropping the headers.
+   */
+  unreported: number;
 }
 
 export interface Sample {
@@ -63,6 +70,17 @@ function reading(values: number[], places: number): Reading {
 export class LatencyWindow {
   private readonly samples: Sample[] = [];
 
+  /**
+   * Responses that arrived without usable timing headers.
+   *
+   * ⚠️ Without this the strip cannot tell "nobody has made a request yet" from
+   * "the server is not reporting", and renders an identical row of dashes for
+   * both. That is exactly what a deployed API built before `timing.rs` looks
+   * like, and it took a `curl -D -` to find out rather than a glance at the
+   * screen the number is printed on.
+   */
+  private unreported = 0;
+
   constructor(private readonly capacity = 50) {}
 
   /**
@@ -75,8 +93,14 @@ export class LatencyWindow {
    * "did this reach the engine" is exactly what the engine header answers.
    */
   add(totalMs: number, serverUs: number | null, engineUs: number | null): void {
-    if (serverUs === null || !Number.isFinite(serverUs)) return;
-    if (engineUs === null || !Number.isFinite(engineUs)) return;
+    if (serverUs === null || !Number.isFinite(serverUs)) {
+      this.unreported += 1;
+      return;
+    }
+    if (engineUs === null || !Number.isFinite(engineUs)) {
+      this.unreported += 1;
+      return;
+    }
 
     const serverMs = serverUs / 1000;
     // Zero is meaningful, not missing: the middleware sets the header on every
@@ -118,6 +142,9 @@ export class LatencyWindow {
       engine: reading(engine, 1),
       history: reading(history, 0),
       network: reading(network, 0),
+      // Only interesting while nothing has been measured. Once a single sample
+      // lands, the server is plainly reporting and the count is noise.
+      unreported: this.samples.length === 0 ? this.unreported : 0,
     };
   }
 }
