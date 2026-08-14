@@ -9,7 +9,7 @@ import type { BookTab } from "./components/PanelTabs";
 import { Tape } from "./components/Tape";
 import { Ticket } from "./components/Ticket";
 import { TopBar } from "./components/TopBar";
-import { Panel } from "./components/ui/panel";
+import { Panel, ScrollShade } from "./components/ui/panel";
 import { latencySeries as readLatencySeries, latencyStats, onLatency } from "./lib/api";
 import { feedHealth } from "./lib/health";
 import { decimalsForStep, formatAtoms } from "./lib/num";
@@ -167,8 +167,12 @@ export default function App() {
             Three panels in one column need ~545px; under that — a 1366×768
             laptop once the browser has taken its chrome — the deposit block
             used to fall out of the bottom of a clipped container, so funding
-            an account became impossible on a short screen. Scroll, not clip. */}
-        <Panel className="overflow-y-auto" data-testid="ticket-rail">
+            an account became impossible on a short screen. Scroll, not clip.
+
+            `ScrollShade` because scrolling silently is nearly as bad as
+            clipping: the cut lands mid-row and reads as a broken table. */}
+        <Panel data-testid="ticket-rail">
+          <ScrollShade>
           <Ticket
             market={x.market}
             balances={x.balances}
@@ -187,6 +191,7 @@ export default function App() {
             onRequireSignIn={openAuth}
             onDeposit={x.credit}
           />
+          </ScrollShade>
         </Panel>
 
         <ActivityPanel
