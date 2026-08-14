@@ -19,6 +19,14 @@ path = "src/lib.rs"
 name = "loadgen"
 path = "src/main.rs"
 
+# Same crate because it needs the same three things the driver already has —
+# register, fund, place — and a second crate would only duplicate them. Also
+# absent from Dockerfile: it drives a deployed exchange from outside, it is not
+# part of one.
+[[bin]]
+name = "demo-maker"
+path = "src/bin/demo-maker.rs"
+
 [dependencies]
 cex-proto.workspace = true
 cex-ws = { path = "../ws" }

@@ -32,6 +32,25 @@ export interface FeedHealth {
 }
 
 /**
+ * How long the silence has lasted, in words a person reads at a glance.
+ *
+ * Raw seconds stop being readable about a minute in: a deployed market that
+ * nobody is trading reports four-figure counts, and "no updates for 1841s" is
+ * a number to be decoded rather than a duration to be felt.
+ */
+export function describeSilence(ms: number): string {
+  // ⚠️ Clamped, because this can arrive negative. The shell re-reads the clock
+  // once a second, but a print sets the last-update stamp the instant it lands,
+  // so for up to a second `now - lastUpdate` is below zero — and the strip
+  // rendered a confident "Updated -1s".
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+/**
  * Two questions the screen used to conflate into one.
  *
  * "Can I trust this book?" and "has anything happened lately?" have different
@@ -47,11 +66,11 @@ export function feedHealth({ bookStale, status, silentForMs }: FeedInputs): Feed
   // A gap is the more serious of the two and names itself first: it says what
   // is wrong, where the silence only says what has not happened.
   const reason = bookStale
-    ? "STALE — SEQUENCE GAP, RESYNCING"
+    ? "Stale — sequence gap, resyncing"
     : status !== "live"
-      ? `STALE — SOCKET ${status.toUpperCase()}`
+      ? `Stale — socket ${status}`
       : silent
-        ? `NO UPDATES FOR ${Math.floor((silentForMs ?? 0) / 1000)}S`
+        ? `No updates for ${describeSilence(silentForMs ?? 0)}`
         : null;
 
   return { degraded, fresh: !degraded && !silent, reason };

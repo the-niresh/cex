@@ -75,9 +75,9 @@ export default function App() {
   return (
     <>
       <div
-        // `group/screen` so a panel can read the stale flag off the shell —
-        // `group-data-[stale=true]/screen:` — instead of the flag being drilled
-        // through as a prop to every panel that dims when the feed does.
+        // `group/screen` so a panel can read the feed's condition off the shell
+        // — `group-data-[degraded=true]/screen:` — instead of the flag being
+        // drilled through as a prop to every panel that reacts to it.
         className={[
           "group/screen grid h-screen gap-2 bg-bg p-2",
           // chart · book-or-trades · ticket. The book and the tape share a
@@ -107,8 +107,11 @@ export default function App() {
           "max-stack:grid-cols-[minmax(0,1fr)] max-stack:grid-rows-none max-stack:auto-rows-auto",
         ].join(" ")}
         data-testid="screen"
-        // `stale` dims the live data; `degraded` switches order entry off. They
-        // are separate attributes because they are separate claims.
+        // Separate attributes because they are separate claims. `degraded` —
+        // the book cannot be trusted — is the one with consequences: it dims
+        // the data and switches order entry off. `stale` only says the picture
+        // has stopped moving, which on a quiet market is not a fault and now
+        // costs nothing but a line of grey text above the ladder.
         data-stale={health.fresh ? "false" : "true"}
         data-degraded={health.degraded ? "true" : "false"}
       >
