@@ -18,6 +18,14 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
+        // The commit itself: solid, not tinted, so it never reads as
+        // disabled next to the grey it turns into when it actually is.
+        buy: "rounded-pill bg-buy text-bg hover:brightness-90",
+        sell: "rounded-pill bg-sell text-bg hover:brightness-90",
+        // The secondary commit: outlined, so it never competes with the one
+        // above it.
+        "trade-ghost":
+          "rounded-control border-rule-hi bg-transparent text-ink-2 hover:bg-panel-hi hover:text-ink",
       },
       size: {
         default:
@@ -31,6 +39,8 @@ const buttonVariants = cva(
         "icon-sm":
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
+        // The ticket's commit and its ghost sibling: 40px, per the reference.
+        trade: "h-10 gap-1.5 px-4 text-data font-medium",
       },
     },
     defaultVariants: {

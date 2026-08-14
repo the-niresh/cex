@@ -5,94 +5,118 @@
 /* ══════════════════════════════════════════════════════════════════════
    Design tokens.
 
-   These are the values the old stylesheet solved for, moved into Tailwind's
-   theme rather than re-picked by eye. Two things here are load-bearing and
-   must survive any restyle:
+   Solved against the Backpack reference
+   (figma.com/design/wPBwXCTEZLkzbHOYui3CWH), not copied from it. Three things
+   here are load-bearing and must survive any restyle:
 
      · Every grey is solved for a contrast ratio against the surface it sits
-       on, not chosen because it looked right. The ramp bottoms out at 4.5:1.
+       on, not chosen because it looked right. The ramp bottoms out at 4.5:1
+       against `--color-field`, the lightest surface any text sits on.
+       ⚠️ The reference's own muted grey (#75798a) fails that at 3.71:1, and
+       its red fails on a control at 4.20:1. Both were re-solved here. Do not
+       paste values back in from the Figma file without re-checking them.
      · Hue means something. Green and red mean *side*. Azure means *control* —
        it marks what can be pressed, and never carries data. Amber means
        *degraded*. Everything else is grey. A fourth decorative hue would make
        all three of those stop reading as signals.
+     · Controls sit *above* the panel, not sunk into it: `--color-field` is
+       lighter than `--color-panel`. The old screen had that the other way
+       round and everything you could type into read as a hole.
 
    ⚠️ shadcn's init writes its own token layer, and three of its defaults
    fight this one. They are corrected below rather than left to win:
      · `--background` ships white; this screen is dark-only.
-     · `--font-sans` ships Geist; the numbers are IBM Plex Mono, so the labels
-       are its sibling Plex Sans or the two families disagree.
+     · `--font-sans` ships Geist; the interface is Inter.
      · shadcn's `--color-accent` means "subtle hover surface", which collides
        with the azure meaning "control". Ours is `--color-control` for that
        reason — renaming it was cheaper than fighting the framework over a word.
    ══════════════════════════════════════════════════════════════════════ */
 
 @theme {
-  /* ── surfaces ─────────────────────────────────────────────────────── */
-  --color-bg: #060708;
-  --color-panel: #0b0d10;
-  --color-panel-hi: #101317;
-  --color-rule: #171b21;
-  --color-rule-hi: #232a33;
+  /* ── surfaces, darkest to lightest ────────────────────────────────────
+     The page is the ground, a panel is a card on it, and a control is a card
+     on the panel. Three steps, and each one is what separates a region — not
+     a border. */
+  --color-bg: #0e0f14;
+  --color-panel: #14151b;
+  --color-panel-hi: #191a20; /* panel heads, segmented tracks */
+  --color-field: #202127; /* inputs, pills, anything you press or type into */
 
-  /* ── ink, with the ratio each was solved for (worst case, on panel-hi) ── */
-  --color-ink: #d7dbe0; /* 13.4:1 — the numbers themselves */
-  --color-ink-2: #9ea7b3; /*  7.6:1 — secondary values */
-  --color-ink-3: #818d9c; /*  5.5:1 — labels, dimmed data */
-  --color-ink-4: #717e8f; /*  4.5:1 — column headings. WCAG floor. */
+  /* Hairlines. Kept solid rather than translucent so the 1px-gap trick — a
+     grid gap over a rule-coloured ground — renders the same on every surface. */
+  --color-rule: #23242c;
+  --color-rule-hi: #303240;
 
-  /* ── the three signals ────────────────────────────────────────────── */
-  --color-buy: #17b98a;
-  --color-sell: #e2504f;
+  /* ── ink, with the ratio each was solved for against `--color-field` ────
+     The floor is 4.5:1 there, which is the worst case on this screen. */
+  --color-ink: #f4f4f6; /* 14.6:1 — the numbers themselves */
+  --color-ink-2: #969faf; /*  6.0:1 — secondary values */
+  --color-ink-3: #8994a5; /*  5.2:1 — labels, dimmed data */
+  --color-ink-4: #7e899c; /*  4.5:1 — column headings. WCAG floor. */
+
+  /* ── the three signals ──────────────────────────────────────────────── */
+  --color-buy: #00c278; /* 6.9:1 */
+  --color-sell: #e45a59; /* 4.5:1 — lifted off the reference's red, which failed */
   --color-warn: #d99a2b;
-  --color-control: #6099da;
-  --color-control-dim: #4c7eb6;
+  --color-control: #4c94ff; /* 5.3:1 */
+  --color-control-dim: #3a72c4;
 
-  /* A control that carries a side is filled and ringed in that side's hue
-     rather than painted flat, so BUY and SELL are told apart before the word
-     is read. One fill and one edge each — the old stylesheet had two fills a
-     couple of percent apart for no reason anyone could state. */
-  --color-buy-fill: color-mix(in oklab, #17b98a 18%, #0b0d10);
-  --color-buy-fill-hi: color-mix(in oklab, #17b98a 28%, #0b0d10);
-  --color-buy-line: color-mix(in oklab, #17b98a 55%, transparent);
-  --color-sell-fill: color-mix(in oklab, #e2504f 18%, #0b0d10);
-  --color-sell-fill-hi: color-mix(in oklab, #e2504f 28%, #0b0d10);
-  --color-sell-line: color-mix(in oklab, #e2504f 55%, transparent);
+  /* A control that carries a side is filled and ringed in that side's hue, so
+     BUY and SELL are told apart before the word is read. The *primary* commit
+     is solid rather than tinted — a tinted one reads as disabled next to it. */
+  --color-buy-fill: color-mix(in oklab, #00c278 16%, #14151b);
+  --color-buy-fill-hi: color-mix(in oklab, #00c278 26%, #14151b);
+  --color-buy-line: color-mix(in oklab, #00c278 45%, transparent);
+  --color-sell-fill: color-mix(in oklab, #e45a59 16%, #14151b);
+  --color-sell-fill-hi: color-mix(in oklab, #e45a59 26%, #14151b);
+  --color-sell-line: color-mix(in oklab, #e45a59 45%, transparent);
 
-  /* Below the panel, not above it: what you type into reads as a well cut
-     into the surface rather than a card sitting on it. */
-  --color-sunken: #080a0c;
   /* Two hover grounds, and the difference is deliberate: a row is being
      scanned, so it lifts barely; a control is being aimed at, so it lifts
      enough to confirm the cursor is on it. */
-  --color-row-hover: #12161c;
-  --color-hover: #161b22;
+  --color-row-hover: #1a1b22;
+  --color-hover: #262832;
 
   /* ── type ─────────────────────────────────────────────────────────────
-     Numbers are monospace so digits align in a column and the eye can
-     compare magnitudes down a ladder. Labels are the sans sibling of that
-     same family, so they harmonise without a taste argument — and so they
-     stop competing with the data for attention, which is what made the old
-     all-mono screen read as a wall. */
+     Inter carries the interface. Plex Mono carries the numbers, because digits
+     have to line up down a ladder — the reference sets everything in Inter and
+     gets away with it by showing far fewer numbers per screen than a book does.
+
+     ⚠️ Labels are sentence case at regular weight. The old screen set them in
+     bold caps with wide tracking, which is most of why it read as shouting. */
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  /* Up from 11.5 / 10. The old scale was below comfortable reading, which is
-     a strange thing to optimise for on a screen nobody stares at for eight
-     hours. */
-  --text-data: 0.78125rem; /* 12.5px — prices, sizes, every number */
-  --text-label: 0.6875rem; /* 11px — column heads, field labels */
-  --text-micro: 0.625rem; /* 10px — units, footnotes, the strip's captions */
+  --text-micro: 0.75rem; /* 12px/16 — labels, column heads, captions, meta */
+  --text-micro--line-height: 1rem;
+  --text-label: 0.8125rem; /* 13px/19.5 — tabs and secondary controls */
+  --text-label--line-height: 1.21875rem;
+  --text-data: 0.875rem; /* 14px/20 — buttons and primary interface text */
+  --text-data--line-height: 1.25rem;
+  --text-field: 1.125rem; /* 18px/28 — what you type into */
+  --text-field--line-height: 1.75rem;
 
-  /* Enough to read as a surface, not enough to read as consumer fintech. */
-  --radius-panel: 6px;
-  --radius-control: 4px;
+  /* ── shape ────────────────────────────────────────────────────────────
+     Two steps, and the larger one is reserved for the things you act on, so
+     roundness itself marks what is pressable. */
+  --radius-panel: 8px;
+  --radius-control: 8px;
+  --radius-pill: 12px;
+
+  /* ── breakpoints ──────────────────────────────────────────────────────
+     Named, because `max-[879px]:` appeared seventeen times as a raw value and
+     a redesign would only have multiplied the copies.
+       · `max-tight` — three columns, tightened
+       · `max-stack` — one column, and the page scrolls */
+  --breakpoint-tight: 1112px;
+  --breakpoint-stack: 880px;
 }
 
 /* shadcn's semantic layer, pointed at the palette above. The screen is
    dark-only and always has been, so these live on :root rather than under a
    `.dark` class nothing ever sets. */
 :root {
-  --radius: 6px;
+  --radius: 8px;
 
   --background: var(--color-bg);
   --foreground: var(--color-ink);
@@ -116,7 +140,7 @@
 
   --destructive: var(--color-sell);
   --border: var(--color-rule);
-  --input: var(--color-rule-hi);
+  --input: var(--color-field);
   --ring: var(--color-control);
 }
 
@@ -194,7 +218,8 @@
 
   /* Below the width where any grid works, the whole thing becomes an ordinary
      scrolling page — see the shell's breakpoints in App.tsx. */
-  @media (max-width: 879px) {
+  /* Matches `--breakpoint-stack`; a media query cannot read a custom property. */
+  @media (width < 880px) {
     body {
       overflow-y: auto;
     }

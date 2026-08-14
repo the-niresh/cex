@@ -108,21 +108,21 @@ async function signUpAndFund(page: Page, asset: string, amount: string) {
   await page.goto("/");
 
   // Nothing asks for an account on arrival, so the panel has to be opened —
-  // and it opens on LOG IN, so registering means switching tabs.
+  // and it opens on Log in, so registering means switching tabs.
   await page.getByTestId("account-action").click();
-  await page.getByRole("button", { name: "REGISTER" }).click();
+  await page.getByRole("button", { name: "Register" }).click();
   // Exact, or this also matches the "username" field.
   await page.getByLabel("name", { exact: true }).fill(`Trader ${username}`);
   await page.getByLabel("username").fill(username);
   await page.getByLabel("password").fill("a-good-password");
-  await page.getByRole("button", { name: "CREATE ACCOUNT" }).click();
+  await page.getByRole("button", { name: "Create account" }).click();
 
   // The overlay goes once a session exists.
   await expect(page.getByTestId("auth-panel")).toBeHidden();
 
   await page.getByTestId("deposit-assets").getByText(asset, { exact: true }).click();
   await page.getByLabel("deposit amount").fill(amount);
-  await page.getByRole("button", { name: "CREDIT" }).click();
+  await page.getByRole("button", { name: "Credit" }).click();
 
   await expect(page.getByTestId("balance-row").filter({ hasText: asset })).toBeVisible();
   return username;
@@ -145,7 +145,7 @@ test("registers, deposits, places an order, sees it in the book, cancels it", as
   const row = page.getByTestId("open-order").first();
   await expect(row).toBeVisible();
   await expect(row.getByTestId("order-side")).toHaveText("BUY");
-  await expect(row.getByTestId("order-status")).toContainText("OPEN");
+  await expect(row.getByTestId("order-status")).toContainText("Open");
 
   await expect(page.locator('[data-testid="ladder-level"][data-mine="true"]')).toHaveCount(1);
   await expect(page.locator('[data-testid="ladder-level"][data-mine="true"] [data-testid="level-price"]')).toContainText(price.split(".")[0]!.slice(0, 2));
@@ -267,8 +267,8 @@ test("two users cross, and neither sees the other's id", async ({ browser }) => 
   await expect(taker.getByTestId("fill-row").first().getByTestId("fill-side")).toContainText("SELL");
 
   // The maker rested, the taker aggressed, and each is told which they were.
-  await expect(maker.getByTestId("fill-row").first().getByTestId("fill-role")).toHaveText("M");
-  await expect(taker.getByTestId("fill-row").first().getByTestId("fill-role")).toHaveText("T");
+  await expect(maker.getByTestId("fill-row").first().getByTestId("fill-role")).toHaveText("Maker");
+  await expect(taker.getByTestId("fill-row").first().getByTestId("fill-role")).toHaveText("Taker");
 
   // Neither page contains the other's user id anywhere.
   const makerId = await maker.getByTestId("account-id").textContent();
@@ -401,7 +401,7 @@ test("the book and the tape share one column, and the sweep card does the arithm
   await expect(sweep).toBeVisible();
   // The best bid alone, so the sweep's size is that level's own size and the
   // average is its own price — the one case checkable without re-deriving it.
-  await expect(sweep).toContainText("avg price");
+  await expect(sweep).toContainText("Avg price");
   const shownSize = await level.getByTestId("level-total").innerText();
   await expect(sweep.getByTestId("sweep-sum-base")).toHaveText(shownSize);
 
@@ -445,14 +445,14 @@ test("pressing BUY while signed out asks for an account instead of doing nothing
   // The button is live, not dead — a disabled control would teach a visitor
   // nothing about why nothing happened.
   const submit = page.getByTestId("ticket-submit");
-  await expect(submit).toHaveText("LOG IN TO BUY");
+  await expect(submit).toHaveText("Log in to buy");
   await expect(submit).toBeEnabled();
 
   await submit.click();
   await expect(page.getByTestId("auth-panel")).toBeVisible();
 
-  // It opens on LOG IN, not REGISTER — most arrivals already have an account.
-  await expect(page.locator('[data-testid="auth-mode"] button[aria-selected="true"]')).toHaveText("LOG IN");
+  // It opens on Log in, not Register — most arrivals already have an account.
+  await expect(page.locator('[data-testid="auth-mode"] button[aria-selected="true"]')).toHaveText("Log in");
 
   // And it is dismissible: the book is public, so nobody is trapped here.
   await page.keyboard.press("Escape");
@@ -460,7 +460,7 @@ test("pressing BUY while signed out asks for an account instead of doing nothing
 
   // SELL says so too.
   await page.locator('[data-testid="side-select"] button[data-side="sell"]').click();
-  await expect(page.getByTestId("ticket-submit")).toHaveText("LOG IN TO SELL");
+  await expect(page.getByTestId("ticket-submit")).toHaveText("Log in to sell");
 });
 
 test("registering asks for a name, and the name comes back on the next sign in", async ({
@@ -471,7 +471,7 @@ test("registering asks for a name, and the name comes back on the next sign in",
 
   await page.goto("/");
   await page.getByTestId("account-action").click();
-  await page.getByRole("button", { name: "REGISTER" }).click();
+  await page.getByRole("button", { name: "Register" }).click();
 
   // A name is required to register — the button stays dead without one.
   await page.getByLabel("username").fill(username);
@@ -495,4 +495,39 @@ test("registering asks for a name, and the name comes back on the next sign in",
   await page.getByTestId("auth-submit").click();
 
   await expect(page.getByTestId("account-name")).toHaveText(displayName);
+});
+
+test("a market order states no price, and fills against the book", async ({ page }) => {
+  // A resting ask to trade against — seeded through the API, because this test
+  // is about the ticket, not about someone else's order entry.
+  await seedBook(page);
+  await signUpAndFund(page, "USDT", "500000");
+
+  await page.getByRole("button", { name: "Market", exact: true }).click();
+
+  // A market order has no price to state, so the ticket does not pretend to
+  // take one. It used to render a disabled field reading "market" under a tick
+  // rule that governed nothing.
+  await expect(page.getByLabel("price")).toHaveCount(0);
+  await expect(page.getByTestId("price-picks")).toHaveCount(0);
+
+  // The estimate still works — it references the best price on the book — and
+  // says out loud that it is an estimate.
+  await page.getByLabel("quantity").fill("0.01000");
+  await expect(page.getByTestId("ticket-total")).not.toHaveText("—");
+
+  await expect(page.getByTestId("ticket-submit")).toBeEnabled();
+  await page.getByTestId("ticket-submit").click();
+
+  // It crossed rather than rested: a fill, and nothing left on the book.
+  await page.getByTestId("activity-tab-fills").click();
+  const fill = page.getByTestId("fill-row").first();
+  await expect(fill).toBeVisible();
+  await expect(fill.getByTestId("fill-side")).toContainText("BUY");
+  await expect(fill.getByTestId("fill-role")).toHaveText("Taker");
+  await expect(page.getByTestId("open-order")).toHaveCount(0);
+
+  // Switching back brings the price field — and whatever was typed — back.
+  await page.getByRole("button", { name: "Limit", exact: true }).click();
+  await expect(page.getByLabel("price")).toBeVisible();
 });

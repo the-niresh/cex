@@ -12,12 +12,12 @@ export function PanelTabs({ tab, onTab }: { tab: BookTab; onTab(next: BookTab): 
   return (
     // Pulled left by the head's own padding so the first tab starts on the same
     // line as every other panel title, rather than one indent further in.
-    <div className="-ml-2.5 flex self-stretch" data-testid="book-tabs">
+    <div className="-ml-2.5 flex gap-1 self-stretch" data-testid="book-tabs">
       <Tab tab={tab} value="book" onTab={onTab}>
-        BOOK
+        Book
       </Tab>
       <Tab tab={tab} value="tape" onTab={onTab}>
-        TRADES
+        Trades
       </Tab>
     </div>
   );
@@ -41,12 +41,12 @@ function Tab({
       aria-selected={selected}
       onClick={() => onTab(value)}
       className={cn(
-        "flex min-h-6 cursor-pointer items-center px-2.5",
-        "font-sans text-micro font-bold uppercase tracking-[0.14em] transition-colors",
+        "flex min-h-6 cursor-pointer items-center rounded-control px-2.5",
+        "font-sans text-label transition-colors",
         selected
-          ? // A rule under the selected tab, in the control hue — the same mark
-            // the market tabs and the timeframes carry.
-            "text-ink shadow-[inset_0_-2px_0_var(--color-control)]"
+          ? // The same pill the order-type tabs carry: a field-toned surface
+            // on the active choice, not an underline in the control hue.
+            "bg-field text-ink"
           : "text-ink-4 hover:text-ink-2",
       )}
     >

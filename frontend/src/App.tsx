@@ -9,7 +9,7 @@ import type { BookTab } from "./components/PanelTabs";
 import { Tape } from "./components/Tape";
 import { Ticket } from "./components/Ticket";
 import { TopBar } from "./components/TopBar";
-import { Panel } from "./components/ui/panel";
+import { Panel, ScrollShade } from "./components/ui/panel";
 import { latencySeries as readLatencySeries, latencyStats, onLatency } from "./lib/api";
 import { feedHealth } from "./lib/health";
 import { decimalsForStep, formatAtoms } from "./lib/num";
@@ -79,7 +79,7 @@ export default function App() {
         // `group-data-[stale=true]/screen:` — instead of the flag being drilled
         // through as a prop to every panel that dims when the feed does.
         className={[
-          "group/screen grid h-screen gap-[5px] bg-bg p-[5px]",
+          "group/screen grid h-screen gap-2 bg-bg p-2",
           // chart · book-or-trades · ticket. The book and the tape share a
           // column through the tabs in their panel head, which is what took the
           // floor from 1353px to 1112px — most of the width problem solved by
@@ -89,18 +89,22 @@ export default function App() {
           // clips, and a folded topbar needs the row to grow with it. The last
           // row is fixed rather than `auto` because `auto` lets the grid
           // squeeze the instrument strip under 100vh and clip its sparklines.
-          "grid-cols-[minmax(420px,1fr)_370px_320px] grid-rows-[auto_minmax(0,1fr)_132px_60px]",
+          //
+          // The third row grew from 132px to 160px alongside the activity
+          // panel's row height (19/21px to 24px) — otherwise the taller rows
+          // would have meant fewer of them fit in the same space.
+          "grid-cols-[minmax(420px,1fr)_370px_320px] grid-rows-[auto_minmax(0,1fr)_160px_60px]",
           // Three columns want 1112px. Below that the ticket column would fall
           // off the side of a screen that cannot scroll, taking BUY, SELL and
           // LOG OUT with it — and a 1280px viewport is exactly what a 1920
           // screen at 150% zoom gives you, which is not an exotic setup. So the
           // same three columns, tightened, down to an 852px floor.
-          "max-[1111px]:grid-cols-[minmax(260px,1fr)_minmax(300px,370px)_minmax(290px,320px)]",
+          "max-tight:grid-cols-[minmax(260px,1fr)_minmax(300px,370px)_minmax(290px,320px)]",
           // Under ~880px no side-by-side arrangement leaves the ladder or the
           // ticket a usable width, so stop pretending: one column, each panel
           // its own row, and the document scrolls like any other page.
-          "max-[879px]:h-auto max-[879px]:min-h-screen",
-          "max-[879px]:grid-cols-[minmax(0,1fr)] max-[879px]:grid-rows-none max-[879px]:auto-rows-auto",
+          "max-stack:h-auto max-stack:min-h-screen",
+          "max-stack:grid-cols-[minmax(0,1fr)] max-stack:grid-rows-none max-stack:auto-rows-auto",
         ].join(" ")}
         data-testid="screen"
         // `stale` dims the live data; `degraded` switches order entry off. They
@@ -163,8 +167,12 @@ export default function App() {
             Three panels in one column need ~545px; under that — a 1366×768
             laptop once the browser has taken its chrome — the deposit block
             used to fall out of the bottom of a clipped container, so funding
-            an account became impossible on a short screen. Scroll, not clip. */}
-        <Panel className="overflow-y-auto" data-testid="ticket-rail">
+            an account became impossible on a short screen. Scroll, not clip.
+
+            `ScrollShade` because scrolling silently is nearly as bad as
+            clipping: the cut lands mid-row and reads as a broken table. */}
+        <Panel data-testid="ticket-rail">
+          <ScrollShade>
           <Ticket
             market={x.market}
             balances={x.balances}
@@ -183,6 +191,7 @@ export default function App() {
             onRequireSignIn={openAuth}
             onDeposit={x.credit}
           />
+          </ScrollShade>
         </Panel>
 
         <ActivityPanel
@@ -215,13 +224,13 @@ export default function App() {
           ].join(" ")}
           role="alert"
         >
-          <span className="flex-none pt-px font-sans text-[9.5px] font-bold tracking-[0.14em] text-sell">
-            ERR
+          <span className="flex-none pt-px font-sans text-micro font-medium text-sell">
+            Error
           </span>
           <span>{x.error}</span>
           <button
             type="button"
-            className="ml-auto flex-none cursor-pointer text-ink-4 hover:text-ink"
+            className="ml-auto flex min-h-6 min-w-6 flex-none cursor-pointer items-center justify-center text-ink-4 hover:text-ink"
             onClick={x.clearError}
             aria-label="dismiss"
           >

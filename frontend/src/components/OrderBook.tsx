@@ -13,6 +13,21 @@ import { ColumnHeads, Empty, Meta, Panel, PanelHead } from "./ui/panel";
  */
 const COLS = "grid-cols-[1fr_92px_74px_82px] gap-x-2 [&>span]:text-right";
 
+/**
+ * How far the depth bar may reach, measured leftward from the row's right edge:
+ * the row's right padding, then the Total and Size columns and the gaps between
+ * them. A bar at 100% therefore stops in the gap before the Price column and
+ * never runs under a price.
+ *
+ * ⚠️ It has to be a length, not a percentage. As `width: 100%` the deepest
+ * level swept the whole row — which was tolerable while the bar grew from the
+ * left away from the numbers, and stopped being tolerable the moment it was
+ * anchored right, because then the bar's *strongest* end is the end sitting on
+ * the price. Every column it spans is fixed, so this stays correct at any panel
+ * width; only the Mine column takes the slack.
+ */
+const DEPTH_TRACK_PX = 10 + 82 + 8 + 74 + 8;
+
 interface Props {
   market: Market | null;
   bids: Level[];
@@ -71,7 +86,7 @@ export function OrderBook({
 
   if (!market) {
     return (
-      <Panel className="max-[879px]:min-h-[430px]" data-testid="book-panel">
+      <Panel className="max-stack:min-h-[430px]" data-testid="book-panel">
         <PanelHead>
           <PanelTabs tab={tab} onTab={onTab} />
         </PanelHead>
@@ -115,7 +130,7 @@ export function OrderBook({
       <div
         key={String(level.price)}
         className={[
-          "group/lvl tnum relative grid h-[19px] flex-none cursor-pointer items-center border-l-2 px-2.5",
+          "group/lvl tnum relative grid h-[22px] flex-none cursor-pointer items-center border-l-2 px-2.5 text-micro",
           COLS,
           "hover:bg-hover",
           // The bar sits behind; everything else is lifted over it.
@@ -147,21 +162,22 @@ export function OrderBook({
           if (e.key === "Enter" || e.key === " ") onPickPrice(level.price);
         }}
       >
-        {/* Depth bar: grows from the price edge, never crossing into the size
-            columns' legibility. Cumulative, not level size — that is what
-            actually informs. It needs enough weight for the eye to read shape
-            down the ladder before it reads any number. */}
+        {/* Depth bar: anchored to the right edge, growing leftward under the
+            size and total figures and stopping short of the price column, so
+            the price column stays clear at every depth. Cumulative, not level
+            size — that is what actually informs. It needs enough weight for the
+            eye to read shape down the ladder before it reads any number. */}
         <i
-          className={`absolute inset-y-px left-0 z-0 border-r ${
-            asks ? "border-r-sell/55 bg-sell/22" : "border-r-buy/55 bg-buy/22"
+          className={`absolute inset-y-px right-0 z-0 border-l ${
+            asks ? "border-l-sell/55 bg-sell/22" : "border-l-buy/55 bg-buy/22"
           }`}
-          style={{ width: `${width}%` }}
+          style={{ width: `${(width * DEPTH_TRACK_PX) / 100}px` }}
         />
-        <span className={`text-[10.5px] ${own ? "text-ink-2" : "text-ink-4"}`}>
+        <span className={own ? "text-ink-2" : "text-ink-4"}>
           {own ? <Num atoms={own} decimals={market.base_decimals} places={qtyDp} /> : ""}
         </span>
         <span
-          className={`tracking-[0.01em] underline-offset-[3px] group-hover/lvl:underline ${
+          className={`underline-offset-[3px] group-hover/lvl:underline ${
             asks ? "text-sell" : "text-buy"
           }`}
           data-testid="level-price"
@@ -198,7 +214,7 @@ export function OrderBook({
   const bidShare = depth > 0n ? Number((bidDepth * 10_000n) / depth) / 100 : 50;
 
   return (
-    <Panel className="max-[879px]:min-h-[430px]" data-testid="book-panel">
+    <Panel className="max-stack:min-h-[430px]" data-testid="book-panel">
       <PanelHead>
         <PanelTabs tab={tab} onTab={onTab} />
         <Meta>
@@ -216,21 +232,21 @@ export function OrderBook({
         <div
           className={[
             "flex h-5 flex-none items-center gap-2 px-2.5",
-            "font-sans text-micro font-bold tracking-[0.13em] text-warn",
+            "font-sans text-micro text-warn",
             "border-b border-warn/35",
             "bg-[repeating-linear-gradient(-45deg,color-mix(in_oklab,var(--color-warn)_11%,transparent)_0_6px,transparent_6px_12px)]",
           ].join(" ")}
           data-testid="staleband"
         >
-          <span>{staleReason ?? "STALE — RESYNCING"}</span>
+          <span>{staleReason ?? "Stale — resyncing"}</span>
         </div>
       )}
 
       <ColumnHeads className={COLS} data-testid="ladder-heads">
         <span>Mine</span>
-        <span>Price</span>
-        <span>Size</span>
-        <span>Total</span>
+        <span>Price ({market.quote})</span>
+        <span>Size ({market.base})</span>
+        <span>Total ({market.base})</span>
       </ColumnHeads>
 
       {/* `relative` so the sweep card can be placed against the half being
@@ -249,8 +265,13 @@ export function OrderBook({
         </div>
 
         <div className="flex h-[38px] flex-none items-center gap-3.5 border-y border-rule-hi bg-panel-hi px-2.5">
+          {/* 15px, not the top bar's 22px. Both readouts are the same number in
+              the same green, and two headline prices on one screen means
+              neither is the headline. The top bar's is captioned and sits with
+              the day's stats, so it keeps the size; this one only has to
+              out-rank the 12px ladder rows it separates. */}
           <span
-            className={`tnum text-[18px] font-medium tracking-[-0.01em] ${
+            className={`tnum text-[15px] font-medium ${
               lastSide === "SELL" ? "text-sell" : "text-buy"
             }`}
           >
@@ -266,10 +287,8 @@ export function OrderBook({
             )}
           </span>
           <div className="ml-auto text-right leading-[1.2]">
-            <span className="block font-sans text-[9.5px] font-medium uppercase tracking-[0.14em] text-ink-4">
-              spread
-            </span>
-            <span className="tnum text-[11px] text-ink-2">
+            <span className="block font-sans text-micro text-ink-4">Spread</span>
+            <span className="tnum text-micro text-ink-2">
               {spread === null ? (
                 "—"
               ) : (
@@ -303,13 +322,13 @@ export function OrderBook({
             ].join(" ")}
             data-testid="sweep"
           >
-            <SweepRow label="avg price" testId="sweep-avg-price">
+            <SweepRow label="Avg price" testId="sweep-avg-price">
               <Num atoms={sweep.avg} decimals={market.quote_decimals} places={priceDp} />
             </SweepRow>
-            <SweepRow label={`sum ${market.base}`} testId="sweep-sum-base">
+            <SweepRow label={`Sum ${market.base}`} testId="sweep-sum-base">
               <Num atoms={sweep.size} decimals={market.base_decimals} places={qtyDp} />
             </SweepRow>
-            <SweepRow label={`sum ${market.quote}`} testId="sweep-sum-quote">
+            <SweepRow label={`Sum ${market.quote}`} testId="sweep-sum-quote">
               <Num atoms={sweep.value} decimals={market.quote_decimals} places={2} />
             </SweepRow>
           </div>
@@ -322,7 +341,7 @@ export function OrderBook({
           keeps the exact widths. */}
       {/* Resting size, bids against asks. Reads as one bar, not two panels. */}
       <div
-        className="tnum flex h-4 flex-none border-t border-rule text-micro tracking-[0.06em] [&>div]:flex [&>div]:min-w-0 [&>div]:items-center [&>div]:overflow-hidden"
+        className="tnum flex h-4 flex-none border-t border-rule text-micro [&>div]:flex [&>div]:min-w-0 [&>div]:items-center [&>div]:overflow-hidden"
         aria-label="resting size, bids against asks"
         data-testid="imbalance"
       >
@@ -352,10 +371,8 @@ function SweepRow({
 }) {
   return (
     <div className="flex items-baseline gap-3 leading-[1.5]">
-      <span className="font-sans text-[9.5px] font-medium uppercase tracking-[0.13em] text-ink-4">
-        {label}
-      </span>
-      <span className="tnum ml-auto text-[10.5px] text-ink" data-testid={testId}>
+      <span className="font-sans text-micro text-ink-4">{label}</span>
+      <span className="tnum ml-auto text-micro text-ink" data-testid={testId}>
         {children}
       </span>
     </div>
