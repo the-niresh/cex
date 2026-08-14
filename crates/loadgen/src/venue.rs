@@ -48,6 +48,40 @@ pub async fn fund(http: &reqwest::Client, host: &str, who: &User, amount: i64) -
     Ok(())
 }
 
+/// The best bid and best ask currently resting, either of which may be absent.
+///
+/// Read before quoting: a maker that does not know where the market is will
+/// price its ladder somewhere else and trade with everything in between.
+pub async fn touch(
+    http: &reqwest::Client,
+    host: &str,
+    symbol: &str,
+) -> Result<(Option<i64>, Option<i64>)> {
+    let book: serde_json::Value = http
+        .get(format!("{host}/depth/{symbol}"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    // `[[price, qty], ...]`, and the API does not promise an order, so take the
+    // extreme of each side rather than the first element.
+    let side = |key: &str, best: fn(&[i64]) -> Option<i64>| -> Option<i64> {
+        let prices: Vec<i64> = book[key]
+            .as_array()?
+            .iter()
+            .filter_map(|level| level.get(0)?.as_i64())
+            .collect();
+        best(&prices)
+    };
+
+    Ok((
+        side("bids", |p| p.iter().copied().max()),
+        side("asks", |p| p.iter().copied().min()),
+    ))
+}
+
 /// Rest a limit order. Returns its id, so it can be cancelled later.
 pub async fn place_limit(
     http: &reqwest::Client,
