@@ -13,6 +13,21 @@ import { ColumnHeads, Empty, Meta, Panel, PanelHead } from "./ui/panel";
  */
 const COLS = "grid-cols-[1fr_92px_74px_82px] gap-x-2 [&>span]:text-right";
 
+/**
+ * How far the depth bar may reach, measured leftward from the row's right edge:
+ * the row's right padding, then the Total and Size columns and the gaps between
+ * them. A bar at 100% therefore stops in the gap before the Price column and
+ * never runs under a price.
+ *
+ * ⚠️ It has to be a length, not a percentage. As `width: 100%` the deepest
+ * level swept the whole row — which was tolerable while the bar grew from the
+ * left away from the numbers, and stopped being tolerable the moment it was
+ * anchored right, because then the bar's *strongest* end is the end sitting on
+ * the price. Every column it spans is fixed, so this stays correct at any panel
+ * width; only the Mine column takes the slack.
+ */
+const DEPTH_TRACK_PX = 10 + 82 + 8 + 74 + 8;
+
 interface Props {
   market: Market | null;
   bids: Level[];
@@ -148,15 +163,15 @@ export function OrderBook({
         }}
       >
         {/* Depth bar: anchored to the right edge, growing leftward under the
-            size and total figures so the price column stays clear. Cumulative,
-            not level size — that is what actually informs. It needs enough
-            weight for the eye to read shape down the ladder before it reads
-            any number. */}
+            size and total figures and stopping short of the price column, so
+            the price column stays clear at every depth. Cumulative, not level
+            size — that is what actually informs. It needs enough weight for the
+            eye to read shape down the ladder before it reads any number. */}
         <i
           className={`absolute inset-y-px right-0 z-0 border-l ${
             asks ? "border-l-sell/55 bg-sell/22" : "border-l-buy/55 bg-buy/22"
           }`}
-          style={{ width: `${width}%` }}
+          style={{ width: `${(width * DEPTH_TRACK_PX) / 100}px` }}
         />
         <span className={own ? "text-ink-2" : "text-ink-4"}>
           {own ? <Num atoms={own} decimals={market.base_decimals} places={qtyDp} /> : ""}
@@ -250,8 +265,13 @@ export function OrderBook({
         </div>
 
         <div className="flex h-[38px] flex-none items-center gap-3.5 border-y border-rule-hi bg-panel-hi px-2.5">
+          {/* 15px, not the top bar's 22px. Both readouts are the same number in
+              the same green, and two headline prices on one screen means
+              neither is the headline. The top bar's is captioned and sits with
+              the day's stats, so it keeps the size; this one only has to
+              out-rank the 12px ladder rows it separates. */}
           <span
-            className={`tnum text-[22px] font-medium ${
+            className={`tnum text-[15px] font-medium ${
               lastSide === "SELL" ? "text-sell" : "text-buy"
             }`}
           >
