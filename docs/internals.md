@@ -93,6 +93,135 @@ the engine republishes events whenever recovery replays the command log. Both ar
 way. A batch and the row recording that it was written commit in **one transaction**, so a crash
 anywhere leaves history exactly as it was and the redelivery that follows re-does the work cleanly.
 
+## The history read path
+
+Everything above is the trading path. This is the other one, and it has different rules.
+
+`GET /trades` and `GET /candles` do not touch the engine. They read the tables `persist` writes.
+That means they are the only public reads that leave the box, and they behave nothing like the
+rest of the API — the engine answers in microseconds from memory, and these answer at whatever
+speed a database on the other side of the internet allows.
+
+In August 2026 that difference took the screen down, and the way it was misdiagnosed is worth
+more than the fix.
+
+### What the visitor saw
+
+The chart said `no trades in this window yet · 0 bars` and a red toast said
+`could not read trade history`. The data was there the whole time: `/candles` returned 44 real
+bars. The request took **29.9s** and the browser gave up at **30s**. It lost by a tenth of
+a second.
+
+### Four wrong answers, and what killed each one
+
+Each of these was believed, acted on, and then killed by a measurement. They are listed because
+the wrong turns are the reusable part — the fix itself is ten lines.
+
+**1. "The deploy broke it."** Killed by timing the endpoints separately. Engine-served paths
+(`/depth`, `/markets`) answered in 21 ms throughout. Only the two database-backed paths were slow,
+and a deploy does not know the difference. Rolling back would have changed nothing.
+
+**2. "It is a missing index."** Killed by reading the schema. `fills_symbol_idx` is
+`(symbol, seq DESC, idx DESC)` and the query is `WHERE symbol = $1 ORDER BY seq DESC, idx DESC
+LIMIT $2`. It already matched exactly. The table also turned out to hold **185 rows** and
+**136 kB** — a full `count(*)` over all of it took 207 ms. There was no query to optimise.
+
+**3. "It is the distance to the database."** Half true, and the half that was false mattered
+more. Production Postgres is Neon in `us-east-1`, and a warm round trip from this box is
+**196 ms**, steady. That is real and it is the multiplier. But `SELECT 1` also costs 196 ms, and
+196 ms is not 30 s. Distance alone could not produce the outage, and stopping here would have
+meant paying to move regions and still having the bug.
+
+**4. "Pool starvation is ruled out — acquire is only 2 s."** This was the expensive one, and it
+came from misreading a log line:
+
+```
+acquired_after_secs=22.026  slow_acquire_threshold_secs=2.0
+```
+
+`2.0` is the **threshold the warning fires above**. It is a setting, not a measurement. The
+measurement is the other field. Read correctly, across 63,029 samples in one two-hour run:
+
+| | |
+|---|---|
+| median | 19.04 s |
+| p95 | 29.55 s |
+| max | 30.01 s |
+
+That max is sqlx's default `acquire_timeout`. Waiting for a connection *was* the entire 30 s, and
+the number that appeared to exonerate it was the one field in the line that could not.
+
+> **The habit worth keeping.** A log line that carries both a reading and the setting that
+> produced it will be misread eventually. When a number matches a configured limit exactly,
+> that is a reason to suspect you are reading the limit, not evidence about the system.
+
+### What was actually wrong
+
+Two things multiplying, neither sufficient alone.
+
+**The ceiling.** The pool is `max_connections(8)`. At 196 ms per query each connection serves
+about 5 queries a second, so the whole API can serve about **40 database queries a second**, no
+matter how small they are. That ceiling is fixed by the distance, not by the hardware.
+
+**The demand.** The browser went over it. Every gap in the depth stream fired `resync()`, and the
+resync counter was also a dependency of both chart effects — so one gap cost **three**
+database-backed requests. Nothing coalesced them and nothing backed off, so a slow response caused
+more gaps, which caused more requests, which made responses slower. Resyncs went from 111 to 1078
+in sixty seconds. 20,601 requests hit the 30 s timeout and returned 500, and those 500s were what
+the browser retried.
+
+A load-dependent collapse, which is why it never reproduced on a quiet box.
+
+### The fix
+
+The shape of the fix follows from the shape of the ceiling. 40 queries a second cannot be raised
+without moving the database, so demand had to stop scaling with the number of people watching.
+
+* **One shared answer per market** — `crates/api/src/cache.rs`. `/trades` and `/candles` are the
+  same answer for everybody, so they are fetched once for everybody and reused for two seconds.
+  One loader runs at a time per key, so a crowd arriving at a cold cache costs one round trip
+  rather than one each. Measured against a real Postgres, counting statements that reach it:
+  **100 concurrent requests produced 100 queries before, and 1 after.**
+* **A stale answer beats no answer.** If a read fails, the last good value is served for up to
+  60 seconds. A chart two seconds old is right; a blank chart because one request failed is the
+  bug. Past 60 seconds it reports the error instead of showing data nobody should still trust.
+* **Fail in 5 s, not 30.** `acquire_timeout` is set explicitly in both pools. sqlx's default of
+  30 s is not a wait, it is a hang — long enough that the browser has already given up.
+* **One resync at a time, and back off from the ones that do not help** —
+  `frontend/src/lib/resync.ts`. The backoff grows only when a resync finishes with the book still
+  stale, and resets the moment one works. Backing off from *gaps* would slow down the normal case;
+  backing off from *retries that changed nothing* is the thing worth doing.
+* **The chart got its own clock.** A depth gap says nothing about candles. It refetches every 15 s
+  on a timer instead, which also fixed a quieter bug: the chart only ever updated when a resync
+  happened, so on a healthy connection it never updated at all.
+
+### Why the engine never noticed
+
+Through all of it, matching stayed at 0.5–1.8 ms and `/depth` answered in 21 ms.
+
+That is not luck. `docs/internals.md` has said from the start that Postgres is history only and
+never on the trading path, and this is what that rule buys. A database 8,000 miles away spent two
+hours failing every third request, and the order book, the match loop and the live feed did not
+slow down by a microsecond, because none of them can reach it. The engine holds every balance and
+every resting order in memory and answers from there; `persist` reads the event stream behind it
+and can fall as far behind as it likes.
+
+The separation is worth more than any tuning, and it is only worth anything because it is
+absolute. An engine that touched the database on *one* path, rarely, would have been dragged down
+with everything else — and it would have been the hardest kind of bug to find, because it would
+only appear under the load that made the database slow.
+
+**How the speed is kept, in one line each:**
+
+* Nothing on the trading path does I/O that can block. The engine's state is in memory; the only
+  writes are appends to a Redis stream it never waits on.
+* Reads that need a database are not on that path, and cannot be moved onto it without deleting
+  the rule above.
+* Every published latency number is measured, not estimated, and says which command produced it.
+  See *The latency budget*.
+* The numbers are re-measured on an idle box. A latency figure is a property of the machine as
+  much as of the program.
+
 ## Market data
 
 
@@ -335,6 +464,12 @@ The network row is deliberately blank rather than estimated. Filling it needs th
 run against the deployed exchange and subtracted from the localhost run, which requires the
 deployed build to be emitting these headers in the first place.
 
+**Every number here is the trading path.** The history reads — `/trades` and `/candles` — are a
+different order of magnitude and always will be, because they cross the internet to a managed
+database while the engine answers from memory. Do not average the two together, and do not let a
+history read onto the path these numbers describe. See *The history read path* for what that
+costs and how it is contained.
+
 ## Retrying safely
 
 
@@ -479,3 +614,14 @@ Named rather than buried, because each is a real thing to fix:
   read can be answered by the outgoing engine from state the incoming one has already moved past,
   and two consecutive reads can show `seq` going backwards. The fix is to pass the stop signal
   into `run` so its own cleanup always executes, rather than adding another call site to forget.
+* **The history reads still have a hard ceiling of about 40 queries a second.** The cache keeps
+  demand under it no matter how many people are watching, which is what makes the ceiling
+  survivable — but the ceiling itself is set by 8 pooled connections against a database roughly
+  196 ms away, and nothing in the API can raise it. Moving history to a local Postgres would
+  delete the limit outright rather than manage it; that is a cost decision, not a code one.
+  See *The history read path*.
+* **A first boot against an empty database races.** `api` and `persist` each create their own
+  tables at startup, and against a genuinely fresh database the two collide with
+  `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`. Only ever bites
+  on the very first boot, and starting `persist` first steps around it, but the ordering is a
+  requirement nothing states or enforces.
