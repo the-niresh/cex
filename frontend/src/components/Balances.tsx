@@ -2,6 +2,11 @@ import { useState } from "react";
 import { formatAtoms, parseAtoms } from "../lib/num";
 import type { Balance, Market } from "../lib/types";
 import { Num } from "./format";
+import { AvailableLine, GhostButton, Segment, Segmented, FieldInput } from "./ui/form";
+import { ColumnHeads, Empty, Meta, PanelHead, PanelTitle, Scroll } from "./ui/panel";
+
+/** Headings and rows share one column template, so they cannot drift apart. */
+const COLS = "grid-cols-[44px_1fr_104px] gap-x-2.5 [&>span:not(:first-child)]:text-right";
 
 interface Props {
   balances: Balance[];
@@ -47,70 +52,77 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
 
   return (
     <>
-      <div className="phead">
-        <h2>Balances</h2>
-        <span className="meta">{balances.length} assets</span>
-      </div>
-      <div className="chead">
+      <PanelHead className="border-t border-rule">
+        <PanelTitle>Balances</PanelTitle>
+        <Meta>{balances.length} assets</Meta>
+      </PanelHead>
+      <ColumnHeads className={COLS}>
         <span>Asset</span>
         <span>Available</span>
         <span>Locked</span>
-      </div>
-      <div className="scroll">
+      </ColumnHeads>
+      {/* Yields height to the panels around it, but never down to a sliver. */}
+      <Scroll className="min-h-14">
         {balances.length === 0 ? (
-          <div className="empty">
-            {signedIn ? "no balances — deposit below" : "sign in to hold a balance"}
-          </div>
+          <Empty>{signedIn ? "no balances — deposit below" : "sign in to hold a balance"}</Empty>
         ) : (
           balances.map((balance) => {
             const dp = decimalsFor(balance.asset, markets);
             return (
-              <div className="brow" key={balance.asset}>
-                <span className="asset">{balance.asset}</span>
-                <span className="num">
+              <div
+                key={balance.asset}
+                className={`tnum grid h-5 items-center px-2.5 hover:bg-row-hover ${COLS}`}
+                data-testid="balance-row"
+                data-asset={balance.asset}
+              >
+                <span className="font-sans text-ink-2">{balance.asset}</span>
+                <span>
                   <Num atoms={balance.available} decimals={dp} />
                 </span>
-                <span className={`num lock${balance.locked === 0n ? " zero" : ""}`}>
+                <span
+                  className={balance.locked === 0n ? "text-ink-4" : "text-ink-3"}
+                  data-testid="balance-locked"
+                >
                   <Num atoms={balance.locked} decimals={dp} />
                 </span>
               </div>
             );
           })
         )}
-      </div>
+      </Scroll>
 
-      <div className="phead">
-        <h2>Deposit</h2>
-        <span className="meta">test exchange</span>
-      </div>
-      <div className="deposit">
-        <div className="assets">
+      <PanelHead className="border-t border-rule">
+        <PanelTitle>Deposit</PanelTitle>
+        <Meta>test exchange</Meta>
+      </PanelHead>
+      <div className="flex flex-col gap-4 p-3">
+        <Segmented variant="control" className="grid-cols-4" data-testid="deposit-assets">
           {assets.map((a) => (
-            <button key={a} aria-selected={a === asset} onClick={() => setAsset(a)}>
+            <Segment key={a} quiet selected={a === asset} onClick={() => setAsset(a)}>
               {a}
-            </button>
+            </Segment>
           ))}
-        </div>
-        <div className="row">
-          <div className={`input${parsed === null && amount !== "" ? " bad" : ""}`}>
-            <input
-              value={amount}
-              inputMode="decimal"
-              aria-label="deposit amount"
-              onChange={(e) => setAmount(e.target.value)}
-            />
-          </div>
-          <button className="ghost" disabled={signedIn && !ready} onClick={() => void credit()}>
-            {!signedIn ? "LOG IN" : sending ? "…" : "CREDIT"}
-          </button>
+        </Segmented>
+        {/* `minmax(0,1fr)`, not `1fr`. A bare `1fr` floors at the column's
+            min-content width, and this column holds a text input whose
+            intrinsic width is ~180px — so on a narrow ticket the row grew past
+            the panel and pushed the Credit button off the side. */}
+        <div className="grid grid-cols-[minmax(0,1fr)_118px] gap-[7px]">
+          <FieldInput
+            bad={parsed === null && amount !== ""}
+            value={amount}
+            inputMode="decimal"
+            aria-label="deposit amount"
+            onChange={(e) => setAmount(e.target.value)}
+          />
+          <GhostButton disabled={signedIn && !ready} onClick={() => void credit()}>
+            {!signedIn ? "Log in" : sending ? "…" : "Credit"}
+          </GhostButton>
         </div>
         {parsed !== null && (
-          <div className="avail">
-            <span>credits</span>
-            <b>
-              {formatAtoms(parsed, decimals)} {asset}
-            </b>
-          </div>
+          <AvailableLine label="credits">
+            {formatAtoms(parsed, decimals)} {asset}
+          </AvailableLine>
         )}
       </div>
     </>

@@ -187,3 +187,47 @@ describe("the spread", () => {
     expect(book.spread()).toBeNull();
   });
 });
+
+describe("a snapshot that is older than the book", () => {
+  // The bug this guards: the read path can lag the event path. The engine
+  // answers `/depth` between blocking stream reads, so a resync racing a
+  // freshly published delta gets back a view from *before* it. Rebuilding
+  // from that rolls the book backwards, deleting a level the exchange really
+  // has — and because nothing further changes, no later delta ever puts it
+  // back. The screen sits there wrong until someone reloads.
+  it("is refused rather than rolling the book backwards", () => {
+    const book = new DepthBook();
+    book.reset(snapshot(9n));
+
+    const newLevel = 31_111_110_000n;
+    expect(book.apply(update(10n, [{ side: "BUY", price: newLevel, qty: 1_000_000n }]))).toBe(
+      "applied",
+    );
+    expect(book.bids().some((l) => l.price === newLevel)).toBe(true);
+
+    // The lagging snapshot arrives, still describing the world at seq 9.
+    const accepted = book.reset(snapshot(9n));
+
+    expect(accepted).toBe(false);
+    expect(book.depthSeq).toBe(10n);
+    expect(
+      book.bids().some((l) => l.price === newLevel),
+      "the applied delta must survive a stale snapshot",
+    ).toBe(true);
+  });
+
+  it("still accepts a snapshot at or ahead of the book", () => {
+    const book = new DepthBook();
+    book.reset(snapshot(9n));
+
+    expect(book.reset(snapshot(9n))).toBe(true);
+    expect(book.reset(snapshot(12n))).toBe(true);
+    expect(book.depthSeq).toBe(12n);
+  });
+
+  it("accepts any snapshot when there is no book yet", () => {
+    const book = new DepthBook();
+    expect(book.reset(snapshot(3n))).toBe(true);
+    expect(book.depthSeq).toBe(3n);
+  });
+});

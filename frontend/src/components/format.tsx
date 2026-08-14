@@ -24,7 +24,7 @@ export function Num({
   return (
     <>
       {text.slice(0, dot)}
-      <span className="d">{text.slice(dot)}</span>
+      <span className="text-ink-3">{text.slice(dot)}</span>
     </>
   );
 }

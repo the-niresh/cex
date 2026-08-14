@@ -13,8 +13,10 @@ frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
 
-# Documentation
+# Plans and specs. Working notes and handoffs, kept on disk and out of the
+# repo — unlike docs/, which documents the exchange itself and stays in.
 docs/superpowers/
+.superpowers/
 
 # Session scaffolding — briefs written to hand context to a new session, not
 # part of the exchange.

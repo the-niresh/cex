@@ -7,8 +7,11 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { cn } from "@/lib/utils";
+import { withAlpha } from "../lib/color";
 import { decimalsForStep } from "../lib/num";
 import type { Candle, Interval, Market } from "../lib/types";
+import { Empty, Meta, Panel, PanelHead, PanelTitle } from "./ui/panel";
 
 const INTERVALS: Interval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
 
@@ -37,20 +40,27 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
+    // ⚠️ lightweight-charts paints into a canvas, and canvas colours cannot be
+    // `var(--x)` — the string is not a colour and the library silently keeps
+    // whatever was there. So the tokens are resolved to real values here, once,
+    // rather than hardcoded a second time in this file.
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string) => css.getPropertyValue(name).trim();
+
     const chart = createChart(container, {
       layout: {
         background: { color: "transparent" },
-        textColor: "#818d9c",
+        textColor: token("--color-ink-3"),
         fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-        fontSize: 10,
+        fontSize: 11,
       },
       grid: {
-        vertLines: { color: "#171b21" },
-        horzLines: { color: "#171b21" },
+        vertLines: { color: token("--color-rule") },
+        horzLines: { color: token("--color-rule") },
       },
-      rightPriceScale: { borderColor: "#232a33" },
+      rightPriceScale: { borderColor: token("--color-rule-hi") },
       timeScale: {
-        borderColor: "#232a33",
+        borderColor: token("--color-rule-hi"),
         timeVisible: true,
         secondsVisible: false,
         // `fitContent` below spreads whatever bars exist across the panel. On a
@@ -60,19 +70,19 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
         maxBarSpacing: 18,
       },
       crosshair: {
-        vertLine: { color: "#818d9c", width: 1, style: 2, labelBackgroundColor: "#101317" },
-        horzLine: { color: "#818d9c", width: 1, style: 2, labelBackgroundColor: "#101317" },
+        vertLine: { color: token("--color-ink-3"), width: 1, style: 2, labelBackgroundColor: token("--color-panel-hi") },
+        horzLine: { color: token("--color-ink-3"), width: 1, style: 2, labelBackgroundColor: token("--color-panel-hi") },
       },
       autoSize: true,
     });
 
     const price = chart.addSeries(CandlestickSeries, {
-      upColor: "#17b98a",
-      downColor: "#e2504f",
-      borderUpColor: "#17b98a",
-      borderDownColor: "#e2504f",
-      wickUpColor: "#17b98a",
-      wickDownColor: "#e2504f",
+      upColor: token("--color-buy"),
+      downColor: token("--color-sell"),
+      borderUpColor: token("--color-buy"),
+      borderDownColor: token("--color-sell"),
+      wickUpColor: token("--color-buy"),
+      wickDownColor: token("--color-sell"),
     });
 
     const volume = chart.addSeries(HistogramSeries, {
@@ -103,6 +113,11 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     const volume = volumeRef.current;
     if (!price || !volume || !market) return;
 
+    // Volume is context, not the subject, so it is drawn at a third strength.
+    // ⚠️ `rgba`, not `color-mix` — see the note on `withAlpha`.
+    const css = getComputedStyle(document.documentElement);
+    const ghost = (name: string) => withAlpha(css.getPropertyValue(name), 0.32);
+
     const quoteUnit = Number(10n ** market.quote_decimals);
     const baseUnit = Number(10n ** market.base_decimals);
     const toPrice = (atoms: bigint) => Number(atoms) / quoteUnit;
@@ -121,7 +136,7 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
       candles.map((c) => ({
         time: (Number(c.time_ms) / 1000) as UTCTimestamp,
         value: Number(c.volume) / baseUnit,
-        color: c.close >= c.open ? "rgba(23,185,138,.32)" : "rgba(226,80,79,.32)",
+        color: c.close >= c.open ? ghost("--color-buy") : ghost("--color-sell"),
       })),
     );
 
@@ -142,27 +157,49 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
   }, [candles, market]);
 
   return (
-    <section className="panel chart">
-      <div className="phead">
-        <h2>Chart</h2>
-        <span className="meta">
-          {market?.symbol ?? "—"} · <b>{interval}</b> · {candles.length} bars
-        </span>
-      </div>
-      <div className="tfs">
+    // ⚠️ A fixed height in the stacked layout, not a floor. The rows there are
+    // auto-height, and lightweight-charts sizes its canvas from the container it
+    // is given — so a container that sizes itself from its content grows every
+    // time the observer fires, and the panel ran to a thousand pixels on a
+    // phone. The old rule set a floor and no ceiling, and did the same.
+    <Panel className="max-stack:h-[300px]" data-testid="chart-panel">
+      <PanelHead>
+        <PanelTitle>Chart</PanelTitle>
+        <Meta>
+          {market?.symbol ?? "—"} · <b className="tnum font-medium text-ink-2">{interval}</b> ·{" "}
+          <span className="tnum">{candles.length}</span> bars
+        </Meta>
+      </PanelHead>
+
+      {/* 32px, matching the reference's timeframe row. The reference separates
+          buttons with spacing, not the underline and border-r dividers the old
+          row used — see PanelTabs for the same pill treatment. */}
+      <div className="flex h-8 flex-none items-center gap-1 border-b border-rule bg-panel px-2 py-1">
         {INTERVALS.map((option) => (
           <button
             key={option}
+            type="button"
             aria-selected={option === interval}
             onClick={() => onInterval(option)}
+            className={cn(
+              "flex min-h-6 cursor-pointer items-center rounded-control px-2.5",
+              "font-sans text-label transition-colors",
+              option === interval ? "bg-field text-ink" : "text-ink-4 hover:text-ink-2",
+            )}
           >
             {option === "1d" ? "1D" : option}
           </button>
         ))}
       </div>
-      <div className="plot live" ref={containerRef}>
-        {candles.length === 0 && <div className="empty">no trades in this window yet</div>}
+
+      {/* lightweight-charts paints into this and owns its own canvas sizing.
+          The chart is data too, so it goes flat and grey when the feed does. */}
+      <div
+        className="relative min-h-0 flex-1 bg-transparent group-data-[stale=true]/screen:saturate-[.15] group-data-[stale=true]/screen:brightness-[.62]"
+        ref={containerRef}
+      >
+        {candles.length === 0 && <Empty>no trades in this window yet</Empty>}
       </div>
-    </section>
+    </Panel>
   );
 }

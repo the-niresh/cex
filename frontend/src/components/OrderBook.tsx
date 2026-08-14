@@ -4,6 +4,29 @@ import { decimalsForStep, notional } from "../lib/num";
 import type { Market } from "../lib/types";
 import { Num } from "./format";
 import { PanelTabs, type BookTab } from "./PanelTabs";
+import { ColumnHeads, Empty, Meta, Panel, PanelHead } from "./ui/panel";
+
+/**
+ * Headings and rows share one column template, so they cannot drift apart.
+ * Numbers cluster right in one tight block; the left is left to the depth
+ * histogram, so bar and figure never fight for the same pixels.
+ */
+const COLS = "grid-cols-[1fr_92px_74px_82px] gap-x-2 [&>span]:text-right";
+
+/**
+ * How far the depth bar may reach, measured leftward from the row's right edge:
+ * the row's right padding, then the Total and Size columns and the gaps between
+ * them. A bar at 100% therefore stops in the gap before the Price column and
+ * never runs under a price.
+ *
+ * ⚠️ It has to be a length, not a percentage. As `width: 100%` the deepest
+ * level swept the whole row — which was tolerable while the bar grew from the
+ * left away from the numbers, and stopped being tolerable the moment it was
+ * anchored right, because then the bar's *strongest* end is the end sitting on
+ * the price. Every column it spans is fixed, so this stays correct at any panel
+ * width; only the Mine column takes the slack.
+ */
+const DEPTH_TRACK_PX = 10 + 82 + 8 + 74 + 8;
 
 interface Props {
   market: Market | null;
@@ -63,12 +86,12 @@ export function OrderBook({
 
   if (!market) {
     return (
-      <section className="panel book">
-        <div className="phead">
+      <Panel className="max-stack:min-h-[430px]" data-testid="book-panel">
+        <PanelHead>
           <PanelTabs tab={tab} onTab={onTab} />
-        </div>
-        <div className="empty">waiting for markets</div>
-      </section>
+        </PanelHead>
+        <Empty>waiting for markets</Empty>
+      </Panel>
     );
   }
 
@@ -102,10 +125,27 @@ export function OrderBook({
   const row = (level: Level, max: bigint, value: bigint, from: "asks" | "bids") => {
     const own = mine.get(level.price);
     const width = max > 0n ? Number((level.total * 10_000n) / max) / 100 : 0;
+    const asks = from === "asks";
     return (
       <div
         key={String(level.price)}
-        className={`lvl${own ? " has-mine" : ""}`}
+        className={[
+          "group/lvl tnum relative grid h-[22px] flex-none cursor-pointer items-center border-l-2 px-2.5 text-micro",
+          COLS,
+          "hover:bg-hover",
+          // The bar sits behind; everything else is lifted over it.
+          "[&>span]:relative [&>span]:z-[1]",
+          // A level you have resting in it is marked on the leading edge, in
+          // its own side's hue — the one place in the ladder that is about you
+          // rather than about the market.
+          own ? (asks ? "border-l-sell" : "border-l-buy") : "border-l-transparent",
+        ].join(" ")}
+        // Identity in the testid, state in the data attributes. A test asks for
+        // `[data-testid="ladder-level"][data-mine="true"]` rather than a class,
+        // so restyling cannot silently unhook the suite from the thing it checks.
+        data-testid="ladder-level"
+        data-side={from}
+        data-mine={own ? "true" : "false"}
         onClick={() => onPickPrice(level.price)}
         onMouseEnter={() =>
           setSweep({
@@ -122,17 +162,32 @@ export function OrderBook({
           if (e.key === "Enter" || e.key === " ") onPickPrice(level.price);
         }}
       >
-        <i className="bar" style={{ width: `${width}%` }} />
-        <span className="mine">
+        {/* Depth bar: anchored to the right edge, growing leftward under the
+            size and total figures and stopping short of the price column, so
+            the price column stays clear at every depth. Cumulative, not level
+            size — that is what actually informs. It needs enough weight for the
+            eye to read shape down the ladder before it reads any number. */}
+        <i
+          className={`absolute inset-y-px right-0 z-0 border-l ${
+            asks ? "border-l-sell/55 bg-sell/22" : "border-l-buy/55 bg-buy/22"
+          }`}
+          style={{ width: `${(width * DEPTH_TRACK_PX) / 100}px` }}
+        />
+        <span className={own ? "text-ink-2" : "text-ink-4"}>
           {own ? <Num atoms={own} decimals={market.base_decimals} places={qtyDp} /> : ""}
         </span>
-        <span className="price">
+        <span
+          className={`underline-offset-[3px] group-hover/lvl:underline ${
+            asks ? "text-sell" : "text-buy"
+          }`}
+          data-testid="level-price"
+        >
           <Num atoms={level.price} decimals={market.quote_decimals} places={priceDp} />
         </span>
-        <span className="num size">
+        <span className="text-ink" data-testid="level-size">
           <Num atoms={level.qty} decimals={market.base_decimals} places={qtyDp} />
         </span>
-        <span className="num cum">
+        <span className="text-ink-3" data-testid="level-total">
           <Num atoms={level.total} decimals={market.base_decimals} places={qtyDp} />
         </span>
       </div>
@@ -159,48 +214,81 @@ export function OrderBook({
   const bidShare = depth > 0n ? Number((bidDepth * 10_000n) / depth) / 100 : 50;
 
   return (
-    <section className="panel book">
-      <div className="phead">
+    <Panel className="max-stack:min-h-[430px]" data-testid="book-panel">
+      <PanelHead>
         <PanelTabs tab={tab} onTab={onTab} />
-        <span className="meta">
-          depth_seq <b>{depthSeq === null ? "—" : String(depthSeq)}</b>
-        </span>
-      </div>
+        <Meta>
+          depth_seq{" "}
+          <b className="tnum font-medium text-ink-2">
+            {depthSeq === null ? "—" : String(depthSeq)}
+          </b>
+        </Meta>
+      </PanelHead>
 
+      {/* A stale book must be unmistakable without borrowing the buy/sell hues.
+          So: the live data desaturates and dims, and a hatched bar states the
+          reason in words. */}
       {stale && (
-        <div className="staleband">
-          <span>{staleReason ?? "STALE — RESYNCING"}</span>
+        <div
+          className={[
+            "flex h-5 flex-none items-center gap-2 px-2.5",
+            "font-sans text-micro text-warn",
+            "border-b border-warn/35",
+            "bg-[repeating-linear-gradient(-45deg,color-mix(in_oklab,var(--color-warn)_11%,transparent)_0_6px,transparent_6px_12px)]",
+          ].join(" ")}
+          data-testid="staleband"
+        >
+          <span>{staleReason ?? "Stale — resyncing"}</span>
         </div>
       )}
 
-      <div className="chead">
+      <ColumnHeads className={COLS} data-testid="ladder-heads">
         <span>Mine</span>
-        <span>Price</span>
-        <span>Size</span>
-        <span>Total</span>
-      </div>
+        <span>Price ({market.quote})</span>
+        <span>Size ({market.base})</span>
+        <span>Total ({market.base})</span>
+      </ColumnHeads>
 
-      <div className="ladder" onMouseLeave={() => setSweep(null)}>
+      {/* `relative` so the sweep card can be placed against the half being
+          pointed at. It goes flat and grey the moment the feed does. */}
+      <div
+        className="relative flex min-h-0 flex-1 flex-col group-data-[stale=true]/screen:saturate-[.15] group-data-[stale=true]/screen:brightness-[.62]"
+        onMouseLeave={() => setSweep(null)}
+      >
         {/* Worst ask at the top, so the best one sits against the spread. */}
-        <div className="side asks">
+        <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
           {empty ? (
-            <div className="empty">nothing offered</div>
+            <Empty>nothing offered</Empty>
           ) : (
             asks.map((level, i) => row(level, maxAsk, askValue[i] as bigint, "asks")).reverse()
           )}
         </div>
 
-        <div className="spread">
-          <span className={`last${lastSide === "SELL" ? " down" : ""}`}>
+        <div className="flex h-[38px] flex-none items-center gap-3.5 border-y border-rule-hi bg-panel-hi px-2.5">
+          {/* 15px, not the top bar's 22px. Both readouts are the same number in
+              the same green, and two headline prices on one screen means
+              neither is the headline. The top bar's is captioned and sits with
+              the day's stats, so it keeps the size; this one only has to
+              out-rank the 12px ladder rows it separates. */}
+          <span
+            className={`tnum text-[15px] font-medium ${
+              lastSide === "SELL" ? "text-sell" : "text-buy"
+            }`}
+          >
             {lastPrice === null ? (
               "—"
             ) : (
-              <Num atoms={lastPrice} decimals={market.quote_decimals} places={priceDp} />
+              <>
+                <Num atoms={lastPrice} decimals={market.quote_decimals} places={priceDp} />
+                <span className="align-[2px] text-micro">
+                  {lastSide === "SELL" ? " ▼" : " ▲"}
+                </span>
+              </>
             )}
           </span>
-          <div className="gap">
-            <span className="k">spread</span>
-            <span className="v">
+          <div className="ml-auto text-right leading-[1.2]">
+            <span className="block font-sans text-micro text-ink-4">Spread</span>
+            <span className="tnum text-micro text-ink-2">
               {spread === null ? (
                 "—"
               ) : (
@@ -213,34 +301,36 @@ export function OrderBook({
           </div>
         </div>
 
-        <div className="side bids">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {empty ? (
-            <div className="empty">no bids yet</div>
+            <Empty>no bids yet</Empty>
           ) : (
             bids.map((level, i) => row(level, maxBid, bidValue[i] as bigint, "bids"))
           )}
         </div>
 
+        {/* What taking everything down to the hovered level would cost. It
+            parks in the half you are *not* pointing at — hovering a bid puts it
+            up among the asks and vice versa — so it never covers the rows being
+            read and never chases the cursor. */}
         {sweep && (
-          <div className={`sweep ${sweep.from === "bids" ? "high" : "low"}`}>
-            <div className="r">
-              <span className="k">avg price</span>
-              <span className="v">
-                <Num atoms={sweep.avg} decimals={market.quote_decimals} places={priceDp} />
-              </span>
-            </div>
-            <div className="r">
-              <span className="k">sum {market.base}</span>
-              <span className="v">
-                <Num atoms={sweep.size} decimals={market.base_decimals} places={qtyDp} />
-              </span>
-            </div>
-            <div className="r">
-              <span className="k">sum {market.quote}</span>
-              <span className="v">
-                <Num atoms={sweep.value} decimals={market.quote_decimals} places={2} />
-              </span>
-            </div>
+          <div
+            className={[
+              "pointer-events-none absolute right-2.5 z-[3] min-w-[172px] px-2 py-[5px]",
+              "bg-panel-hi shadow-[inset_0_0_0_1px_var(--color-rule-hi),0_6px_18px_rgb(0_0_0/.45)]",
+              sweep.from === "bids" ? "top-1.5" : "bottom-1.5",
+            ].join(" ")}
+            data-testid="sweep"
+          >
+            <SweepRow label="Avg price" testId="sweep-avg-price">
+              <Num atoms={sweep.avg} decimals={market.quote_decimals} places={priceDp} />
+            </SweepRow>
+            <SweepRow label={`Sum ${market.base}`} testId="sweep-sum-base">
+              <Num atoms={sweep.size} decimals={market.base_decimals} places={qtyDp} />
+            </SweepRow>
+            <SweepRow label={`Sum ${market.quote}`} testId="sweep-sum-quote">
+              <Num atoms={sweep.value} decimals={market.quote_decimals} places={2} />
+            </SweepRow>
           </div>
         )}
       </div>
@@ -249,14 +339,42 @@ export function OrderBook({
           one rounding, not two: rounding each half separately puts 59.5 and
           40.5 on screen as "60%" and "41%", which adds to 101. The bar itself
           keeps the exact widths. */}
-      <div className="imbalance" aria-label="resting size, bids against asks">
-        <div className="b" style={{ flexBasis: `${bidShare}%` }}>
+      {/* Resting size, bids against asks. Reads as one bar, not two panels. */}
+      <div
+        className="tnum flex h-4 flex-none border-t border-rule text-micro [&>div]:flex [&>div]:min-w-0 [&>div]:items-center [&>div]:overflow-hidden"
+        aria-label="resting size, bids against asks"
+        data-testid="imbalance"
+      >
+        <div className="justify-start bg-buy/22 pl-2.5 text-buy" style={{ flexBasis: `${bidShare}%` }}>
           <span>{Math.round(bidShare)}%</span>
         </div>
-        <div className="s" style={{ flexBasis: `${100 - bidShare}%` }}>
+        <div
+          className="justify-end bg-sell/22 pr-2.5 text-sell"
+          style={{ flexBasis: `${100 - bidShare}%` }}
+        >
           <span>{100 - Math.round(bidShare)}%</span>
         </div>
       </div>
-    </section>
+    </Panel>
+  );
+}
+
+/** One line of the sweep card: a caption and the figure it names. */
+function SweepRow({
+  label,
+  testId,
+  children,
+}: {
+  label: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-baseline gap-3 leading-[1.5]">
+      <span className="font-sans text-micro text-ink-4">{label}</span>
+      <span className="tnum ml-auto text-micro text-ink" data-testid={testId}>
+        {children}
+      </span>
+    </div>
   );
 }

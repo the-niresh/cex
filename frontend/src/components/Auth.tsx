@@ -1,8 +1,19 @@
 import { useEffect, useState } from "react";
 import type { AuthMode, Credentials } from "../lib/types";
+import {
+  Field,
+  FieldLabel,
+  FieldName,
+  FieldRule,
+  Segment,
+  Segmented,
+  SubmitButton,
+  FieldInput,
+} from "./ui/form";
+import { PanelHead, PanelTitle } from "./ui/panel";
 
 interface Props {
-  /** Which tab to open on. The caller decides, so a prompt can open on LOG IN. */
+  /** Which tab to open on. The caller decides, so a prompt can open on Log in. */
   initialMode?: AuthMode;
   onSubmit(mode: AuthMode, credentials: Credentials): Promise<void>;
   onClose(): void;
@@ -44,87 +55,99 @@ export function Auth({ initialMode = "login", onSubmit, onClose }: Props) {
   const complete = username !== "" && password !== "" && (mode === "login" || name.trim() !== "");
 
   return (
-    <div className="auth">
-      {/* Clicking the dimmed area is the other thing people already try. */}
-      <div className="scrim" onClick={onClose} aria-hidden="true" />
-      <form onSubmit={(e) => void submit(e)}>
-        <div className="phead">
-          <h2>cex · spot</h2>
-          <button type="button" className="close" aria-label="close" onClick={onClose}>
+    // Translucent on purpose: this only opens when someone tries to trade, and
+    // the book behind it is public and still streaming while it is up.
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 backdrop-blur-[2px]"
+      data-testid="auth-panel"
+    >
+      {/* Clicking the dimmed area is the other thing people already try. The
+          form sits above this, so its own clicks never reach it. */}
+      <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
+      <form
+        className="relative flex w-80 flex-col rounded-panel border border-rule bg-panel"
+        onSubmit={(e) => void submit(e)}
+      >
+        <PanelHead>
+          <PanelTitle>cex · spot</PanelTitle>
+          <button
+            type="button"
+            className="ml-auto flex min-h-6 min-w-6 cursor-pointer items-center justify-center text-[11px] leading-none text-ink-4 hover:text-ink"
+            aria-label="close"
+            onClick={onClose}
+          >
             ✕
           </button>
-        </div>
-        <div className="body">
-          <div className="seg kind">
-            <button type="button" aria-selected={mode === "login"} onClick={() => setMode("login")}>
-              LOG IN
-            </button>
-            <button
-              type="button"
-              aria-selected={mode === "register"}
-              onClick={() => setMode("register")}
-            >
-              REGISTER
-            </button>
-          </div>
+        </PanelHead>
+        <div className="flex flex-col gap-4 p-3">
+          <Segmented variant="control" className="grid-cols-2" data-testid="auth-mode">
+            <Segment selected={mode === "login"} onClick={() => setMode("login")}>
+              Log in
+            </Segment>
+            <Segment selected={mode === "register"} onClick={() => setMode("register")}>
+              Register
+            </Segment>
+          </Segmented>
 
           {mode === "register" && (
-            <div className="field">
-              <div className="flabel">
-                <span className="k">Name</span>
-                <span className="rule">what we call you</span>
-              </div>
-              <div className="input">
-                <input
-                  value={name}
-                  autoComplete="name"
-                  aria-label="name"
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-            </div>
+            <Field>
+              <FieldLabel>
+                <FieldName>Name</FieldName>
+                <FieldRule>what we call you</FieldRule>
+              </FieldLabel>
+              <FieldInput
+                value={name}
+                autoComplete="name"
+                aria-label="name"
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
           )}
 
-          <div className="field">
-            <div className="flabel">
-              <span className="k">Username</span>
-            </div>
-            <div className="input">
-              <input
-                value={username}
-                autoComplete="username"
-                aria-label="username"
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
-          </div>
+          <Field>
+            <FieldLabel>
+              <FieldName>Username</FieldName>
+            </FieldLabel>
+            <FieldInput
+              value={username}
+              autoComplete="username"
+              aria-label="username"
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </Field>
 
-          <div className="field">
-            <div className="flabel">
-              <span className="k">Password</span>
+          <Field>
+            <FieldLabel>
+              <FieldName>Password</FieldName>
               {/* What the API actually enforces (MIN_PASSWORD_LEN in
                   crates/api/src/users.rs). Stating a stricter rule than
                   anything checks just teaches people the labels here lie. */}
-              <span className="rule">8+ characters</span>
+              <FieldRule>8+ characters</FieldRule>
+            </FieldLabel>
+            <FieldInput
+              type="password"
+              value={password}
+              autoComplete={mode === "register" ? "new-password" : "current-password"}
+              aria-label="password"
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Field>
+
+          {failure && (
+            <div className="bg-sell/10 px-2 py-1.5 text-[10.5px] leading-[1.4] text-sell shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-sell)_35%,transparent)]">
+              {failure}
             </div>
-            <div className="input">
-              <input
-                type="password"
-                value={password}
-                autoComplete={mode === "register" ? "new-password" : "current-password"}
-                aria-label="password"
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
+          )}
 
-          {failure && <div className="fail">{failure}</div>}
+          <SubmitButton
+            type="submit"
+            data-testid="auth-submit"
+            disabled={busy || !complete}
+          >
+            {busy ? "…" : mode === "register" ? "Create account" : "Log in"}
+          </SubmitButton>
 
-          <button className="submit" type="submit" disabled={busy || !complete}>
-            {busy ? "…" : mode === "register" ? "CREATE ACCOUNT" : "LOG IN"}
-          </button>
-
-          <div className="note">
+          <div className="font-sans text-micro leading-[1.5] text-ink-4">
             The token is held in memory and <code>sessionStorage</code> — it is gone when this tab
             closes. The book and the tape are public: close this and watch without an account.
           </div>

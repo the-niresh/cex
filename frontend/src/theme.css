@@ -1,0 +1,244 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* ══════════════════════════════════════════════════════════════════════
+   Design tokens.
+
+   Solved against the Backpack reference
+   (figma.com/design/wPBwXCTEZLkzbHOYui3CWH), not copied from it. Three things
+   here are load-bearing and must survive any restyle:
+
+     · Every grey is solved for a contrast ratio against the surface it sits
+       on, not chosen because it looked right. The ramp bottoms out at 4.5:1
+       against `--color-field`, the lightest surface any text sits on.
+       ⚠️ The reference's own muted grey (#75798a) fails that at 3.71:1, and
+       its red fails on a control at 4.20:1. Both were re-solved here. Do not
+       paste values back in from the Figma file without re-checking them.
+     · Hue means something. Green and red mean *side*. Azure means *control* —
+       it marks what can be pressed, and never carries data. Amber means
+       *degraded*. Everything else is grey. A fourth decorative hue would make
+       all three of those stop reading as signals.
+     · Controls sit *above* the panel, not sunk into it: `--color-field` is
+       lighter than `--color-panel`. The old screen had that the other way
+       round and everything you could type into read as a hole.
+
+   ⚠️ shadcn's init writes its own token layer, and three of its defaults
+   fight this one. They are corrected below rather than left to win:
+     · `--background` ships white; this screen is dark-only.
+     · `--font-sans` ships Geist; the interface is Inter.
+     · shadcn's `--color-accent` means "subtle hover surface", which collides
+       with the azure meaning "control". Ours is `--color-control` for that
+       reason — renaming it was cheaper than fighting the framework over a word.
+   ══════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── surfaces, darkest to lightest ────────────────────────────────────
+     The page is the ground, a panel is a card on it, and a control is a card
+     on the panel. Three steps, and each one is what separates a region — not
+     a border. */
+  --color-bg: #0e0f14;
+  --color-panel: #14151b;
+  --color-panel-hi: #191a20; /* panel heads, segmented tracks */
+  --color-field: #202127; /* inputs, pills, anything you press or type into */
+
+  /* Hairlines. Kept solid rather than translucent so the 1px-gap trick — a
+     grid gap over a rule-coloured ground — renders the same on every surface. */
+  --color-rule: #23242c;
+  --color-rule-hi: #303240;
+
+  /* ── ink, with the ratio each was solved for against `--color-field` ────
+     The floor is 4.5:1 there, which is the worst case on this screen. */
+  --color-ink: #f4f4f6; /* 14.6:1 — the numbers themselves */
+  --color-ink-2: #969faf; /*  6.0:1 — secondary values */
+  --color-ink-3: #8994a5; /*  5.2:1 — labels, dimmed data */
+  --color-ink-4: #7e899c; /*  4.5:1 — column headings. WCAG floor. */
+
+  /* ── the three signals ──────────────────────────────────────────────── */
+  --color-buy: #00c278; /* 6.9:1 */
+  --color-sell: #e45a59; /* 4.5:1 — lifted off the reference's red, which failed */
+  --color-warn: #d99a2b;
+  --color-control: #4c94ff; /* 5.3:1 */
+  --color-control-dim: #3a72c4;
+
+  /* A control that carries a side is filled and ringed in that side's hue, so
+     BUY and SELL are told apart before the word is read. The *primary* commit
+     is solid rather than tinted — a tinted one reads as disabled next to it. */
+  --color-buy-fill: color-mix(in oklab, #00c278 16%, #14151b);
+  --color-buy-fill-hi: color-mix(in oklab, #00c278 26%, #14151b);
+  --color-buy-line: color-mix(in oklab, #00c278 45%, transparent);
+  --color-sell-fill: color-mix(in oklab, #e45a59 16%, #14151b);
+  --color-sell-fill-hi: color-mix(in oklab, #e45a59 26%, #14151b);
+  --color-sell-line: color-mix(in oklab, #e45a59 45%, transparent);
+
+  /* Two hover grounds, and the difference is deliberate: a row is being
+     scanned, so it lifts barely; a control is being aimed at, so it lifts
+     enough to confirm the cursor is on it. */
+  --color-row-hover: #1a1b22;
+  --color-hover: #262832;
+
+  /* ── type ─────────────────────────────────────────────────────────────
+     Inter carries the interface. Plex Mono carries the numbers, because digits
+     have to line up down a ladder — the reference sets everything in Inter and
+     gets away with it by showing far fewer numbers per screen than a book does.
+
+     ⚠️ Labels are sentence case at regular weight. The old screen set them in
+     bold caps with wide tracking, which is most of why it read as shouting. */
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --text-micro: 0.75rem; /* 12px/16 — labels, column heads, captions, meta */
+  --text-micro--line-height: 1rem;
+  --text-label: 0.8125rem; /* 13px/19.5 — tabs and secondary controls */
+  --text-label--line-height: 1.21875rem;
+  --text-data: 0.875rem; /* 14px/20 — buttons and primary interface text */
+  --text-data--line-height: 1.25rem;
+  --text-field: 1.125rem; /* 18px/28 — what you type into */
+  --text-field--line-height: 1.75rem;
+
+  /* ── shape ────────────────────────────────────────────────────────────
+     Two steps, and the larger one is reserved for the things you act on, so
+     roundness itself marks what is pressable. */
+  --radius-panel: 8px;
+  --radius-control: 8px;
+  --radius-pill: 12px;
+
+  /* ── breakpoints ──────────────────────────────────────────────────────
+     Named, because `max-[879px]:` appeared seventeen times as a raw value and
+     a redesign would only have multiplied the copies.
+       · `max-tight` — three columns, tightened
+       · `max-stack` — one column, and the page scrolls */
+  --breakpoint-tight: 1112px;
+  --breakpoint-stack: 880px;
+}
+
+/* shadcn's semantic layer, pointed at the palette above. The screen is
+   dark-only and always has been, so these live on :root rather than under a
+   `.dark` class nothing ever sets. */
+:root {
+  --radius: 8px;
+
+  --background: var(--color-bg);
+  --foreground: var(--color-ink);
+  --card: var(--color-panel);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-panel-hi);
+  --popover-foreground: var(--color-ink);
+
+  /* Azure is the control hue, so it is what shadcn calls "primary". */
+  --primary: var(--color-control);
+  --primary-foreground: var(--color-bg);
+
+  --secondary: var(--color-rule-hi);
+  --secondary-foreground: var(--color-ink-2);
+  --muted: var(--color-rule);
+  --muted-foreground: var(--color-ink-3);
+
+  /* shadcn's "accent" is a hover ground, not a hue with meaning. */
+  --accent: var(--color-rule-hi);
+  --accent-foreground: var(--color-ink);
+
+  --destructive: var(--color-sell);
+  --border: var(--color-rule);
+  --input: var(--color-field);
+  --ring: var(--color-control);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+}
+
+/* The connection dot. Named so it cannot collide with Tailwind's own `pulse`,
+   which fades to half rather than nearly out. */
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes tape-flash {
+  0% {
+    background: color-mix(in oklab, var(--color-ink) 9%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-data);
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+
+    /* Horizontal is `auto`, not `hidden`, on purpose. `hidden` propagates to
+       the viewport and takes the scrollbar *and* the wheel with it, so anything
+       past the right edge stops existing rather than being one swipe away. The
+       layout is meant to never need this; it is here so that when it is needed,
+       the user is inconvenienced rather than locked out. */
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  /* Below the width where any grid works, the whole thing becomes an ordinary
+     scrolling page — see the shell's breakpoints in App.tsx. */
+  /* Matches `--breakpoint-stack`; a media query cannot read a custom property. */
+  @media (width < 880px) {
+    body {
+      overflow-y: auto;
+    }
+  }
+
+  /* The grain. 2% — you should never notice it, only miss it if removed. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 99;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>");
+  }
+
+  /* Every number on the screen, everywhere, without each component opting in. */
+  .tnum {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -1,7 +1,19 @@
 import { useMemo, useState } from "react";
 import type { PlaceOrderRequest } from "../lib/api";
+import { cn } from "../lib/utils";
 import { decimalsForStep, feeOn, formatAtoms, isAligned, notional, parseAtoms } from "../lib/num";
 import type { Balance, Market, Side } from "../lib/types";
+import {
+  Field,
+  FieldLabel,
+  FieldName,
+  FieldRule,
+  Segment,
+  Segmented,
+  SubmitButton,
+  FieldInput,
+} from "./ui/form";
+import { Meta, PanelHead, PanelTitle } from "./ui/panel";
 
 interface Props {
   market: Market | null;
@@ -97,6 +109,7 @@ export function Ticket({
     return null;
   }, [market, qty, qtyAtoms, price, priceAtoms, kind, quote, qtyDp, priceDp]);
 
+  const sideLabel = side === "BUY" ? "Buy" : "Sell";
   const spendAsset = market ? (side === "BUY" ? market.quote : market.base) : "";
   const spendBalance = balances.find((b) => b.asset === spendAsset);
   const spendDecimals = market ? (side === "BUY" ? market.quote_decimals : market.base_decimals) : 8n;
@@ -159,120 +172,157 @@ export function Ticket({
 
   return (
     <>
-      <div className="phead">
-        <h2>Order ticket</h2>
+      <PanelHead>
+        <PanelTitle>Order ticket</PanelTitle>
         {market && (
-          <span className="meta">
-            min <b>{formatAtoms(market.min_notional, market.quote_decimals, { places: 2 })}</b>{" "}
+          <Meta>
+            min{" "}
+            <b className="tnum font-medium text-ink-2">
+              {formatAtoms(market.min_notional, market.quote_decimals, { places: 2 })}
+            </b>{" "}
             {market.quote}
-          </span>
+          </Meta>
         )}
-      </div>
+      </PanelHead>
 
-      <div className="body">
-        <div className="seg side">
-          <button data-side="buy" aria-selected={side === "BUY"} onClick={() => setSide("BUY")}>
-            BUY
-          </button>
-          <button data-side="sell" aria-selected={side === "SELL"} onClick={() => setSide("SELL")}>
-            SELL
-          </button>
+      <div className="flex flex-none flex-col gap-4 p-3 [&>*]:flex-none">
+        <Segmented variant="side" className="grid-cols-2" data-testid="side-select">
+          <Segment
+            data-side="buy"
+            tone="buy"
+            selected={side === "BUY"}
+            onClick={() => setSide("BUY")}
+          >
+            Buy
+          </Segment>
+          <Segment
+            data-side="sell"
+            tone="sell"
+            selected={side === "SELL"}
+            onClick={() => setSide("SELL")}
+          >
+            Sell
+          </Segment>
+        </Segmented>
+
+        <Segmented variant="control" className="grid-cols-2">
+          <Segment selected={kind === "LIMIT"} onClick={() => setKind("LIMIT")}>
+            Limit
+          </Segment>
+          <Segment selected={kind === "MARKET"} onClick={() => setKind("MARKET")}>
+            Market
+          </Segment>
+        </Segmented>
+
+        {/* What you have to spend on the side you are on. It sits above the
+            fields it constrains and above the % buttons that divide it, which
+            is the only place it can be read *before* a number is typed. There
+            used to be a second copy of this figure under the submit button
+            wearing a different label. */}
+        <div className="flex font-sans text-micro">
+          <span className="text-ink-3">Available</span>
+          <span className="tnum ml-auto text-ink" data-testid="ticket-available">
+            {spendBalance
+              ? `${formatAtoms(spendBalance.available, spendDecimals)} ${spendAsset}`
+              : `0 ${spendAsset}`}
+          </span>
         </div>
 
-        <div className="seg kind">
-          <button aria-selected={kind === "LIMIT"} onClick={() => setKind("LIMIT")}>
-            LIMIT
-          </button>
-          <button aria-selected={kind === "MARKET"} onClick={() => setKind("MARKET")}>
-            MARKET
-          </button>
-        </div>
-
-        <div className="field">
-          <div className="flabel">
-            <span className="k">Price</span>
-            {market && kind === "LIMIT" && (bestBid !== null || bestAsk !== null) && (
-              // Two prices worth one click each: the middle of the spread, and
-              // the best price already showing on your own side of it. Both
-              // come off the book already on screen.
-              <span className="picks">
-                <button type="button" onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
-                  MID
-                </button>
-                <button type="button" onClick={() => setPriceFrom(bboPrice)} disabled={bboPrice === null}>
-                  BBO
-                </button>
-              </span>
-            )}
-            {market && (
-              <span className="rule">
-                tick {formatAtoms(market.tick_size, market.quote_decimals, { places: priceDp })}
-              </span>
-            )}
-          </div>
-          <div className="input">
-            <input
-              value={kind === "MARKET" ? "" : price}
-              placeholder={kind === "MARKET" ? "market" : ""}
-              disabled={kind === "MARKET"}
+        {/* A market order has no price to state, so it renders no price field.
+            It used to render a disabled one reading "market" under a tick rule
+            that governs nothing — 70px of furniture in a rail that already
+            overflows. `price` lives in the shell, so switching back to Limit
+            brings back whatever was typed. */}
+        {kind === "LIMIT" && (
+          <Field>
+            <FieldLabel>
+              <FieldName>Price</FieldName>
+              {market && (bestBid !== null || bestAsk !== null) && (
+                // Two prices worth one click each: the middle of the spread, and
+                // the best price already showing on your own side of it. Both
+                // come off the book already on screen.
+                <span className="ml-2.5 flex items-center gap-1.5" data-testid="price-picks">
+                  <Pick onClick={() => setPriceFrom(midPrice)} disabled={midPrice === null}>
+                    MID
+                  </Pick>
+                  <span className="h-4 w-px bg-rule-hi" />
+                  <Pick onClick={() => setPriceFrom(bboPrice)} disabled={bboPrice === null}>
+                    BBO
+                  </Pick>
+                </span>
+              )}
+              {market && (
+                <FieldRule>
+                  tick {formatAtoms(market.tick_size, market.quote_decimals, { places: priceDp })}
+                </FieldRule>
+              )}
+            </FieldLabel>
+            <FieldInput
+              unit={market?.quote ?? ""}
+              value={price}
               inputMode="decimal"
               aria-label="price"
               onChange={(e) => onPriceChange(e.target.value)}
             />
-            <span className="unit">{market?.quote ?? ""}</span>
-          </div>
-        </div>
+          </Field>
+        )}
 
-        <div className="field">
-          <div className="flabel">
-            <span className="k">Quantity</span>
+        <Field>
+          <FieldLabel>
+            <FieldName>Quantity</FieldName>
             {market && (
-              <span className="rule">
+              <FieldRule>
                 lot {formatAtoms(market.lot_size, market.base_decimals, { places: qtyDp })}
-              </span>
+              </FieldRule>
             )}
+          </FieldLabel>
+          <FieldInput
+            unit={market?.base ?? ""}
+            bad={problem !== null}
+            value={qty}
+            inputMode="decimal"
+            aria-label="quantity"
+            onChange={(e) => setQty(e.target.value)}
+          />
+          <div className="grid grid-cols-4 gap-px bg-rule">
+            {([25n, 50n, 75n, 100n] as const).map((percent) => (
+              <button
+                key={String(percent)}
+                type="button"
+                onClick={() => fillPercent(percent)}
+                className="flex min-h-6 cursor-pointer items-center justify-center bg-panel-hi py-1 text-center font-sans text-micro text-ink-3 transition-colors hover:bg-hover hover:text-ink"
+              >
+                {percent === 100n ? "Max" : `${percent}%`}
+              </button>
+            ))}
           </div>
-          <div className={`input${problem ? " bad" : ""}`}>
-            <input
-              value={qty}
-              inputMode="decimal"
-              aria-label="quantity"
-              onChange={(e) => setQty(e.target.value)}
-            />
-            <span className="unit">{market?.base ?? ""}</span>
-          </div>
-          <div className="pcts">
-            <button onClick={() => fillPercent(25n)}>25%</button>
-            <button onClick={() => fillPercent(50n)}>50%</button>
-            <button onClick={() => fillPercent(75n)}>75%</button>
-            <button onClick={() => fillPercent(100n)}>MAX</button>
-          </div>
-        </div>
+        </Field>
 
-        {problem && <div className="bad-note">{problem}</div>}
+        {problem && (
+          <div className="font-sans text-micro leading-[1.4] text-sell" data-testid="ticket-problem">
+            {problem}
+          </div>
+        )}
 
-        <div className="readout">
-          <div className="r">
-            <span className="k">Notional</span>
-            <span className="v">
-              {quote && market
-                ? `${formatAtoms(quote.value, market.quote_decimals)} ${market.quote}`
-                : "—"}
-            </span>
-          </div>
-          <div className="r">
-            <span className="k">
-              Fee<span className="hint">taker {market ? String(market.taker_fee_bps) : "—"} bps</span>
-            </span>
-            <span className="v">
-              {quote && market
-                ? `${formatAtoms(quote.fee, market.quote_decimals)} ${market.quote}`
-                : "—"}
-            </span>
-          </div>
-          <div className="r total">
-            <span className="k">{side === "BUY" ? "Total cost" : "Net proceeds"}</span>
-            <span className="v">
+        <div className="border border-rule bg-field">
+          {/* A market order has no price of its own, so its notional is worked
+              out against the best price on the book — an estimate, and the
+              readout says so rather than implying the engine agreed to it. */}
+          <Readout label="Notional" hint={kind === "MARKET" ? "est. at best" : undefined}>
+            {quote && market
+              ? `${formatAtoms(quote.value, market.quote_decimals)} ${market.quote}`
+              : "—"}
+          </Readout>
+          <Readout
+            label="Fee"
+            hint={`taker ${market ? String(market.taker_fee_bps) : "—"} bps`}
+          >
+            {quote && market
+              ? `${formatAtoms(quote.fee, market.quote_decimals)} ${market.quote}`
+              : "—"}
+          </Readout>
+          <Readout label={side === "BUY" ? "Total cost" : "Net proceeds"} total>
+            <span data-testid="ticket-total">
               {quote && market
                 ? `${formatAtoms(
                     side === "BUY" ? quote.value + quote.fee : quote.value - quote.fee,
@@ -280,32 +330,72 @@ export function Ticket({
                   )} ${market.quote}`
                 : "—"}
             </span>
-          </div>
+          </Readout>
         </div>
 
-        <button
-          className={`submit${side === "SELL" ? " sell" : ""}`}
+        <SubmitButton
+          side={side}
+          data-testid="ticket-submit"
           disabled={signedIn && !ready}
           onClick={() => void submit()}
         >
           {!signedIn
-            ? `LOG IN TO ${side}`
+            ? `Log in to ${side.toLowerCase()}`
             : sending
-              ? "SENDING…"
+              ? "Sending…"
               : qty
-                ? `${side} ${qty} ${market?.base ?? ""}`.trim()
-                : side}
-        </button>
-
-        <div className="avail">
-          <span>available</span>
-          <b>
-            {spendBalance
-              ? `${formatAtoms(spendBalance.available, spendDecimals)} ${spendAsset}`
-              : `0 ${spendAsset}`}
-          </b>
-        </div>
+                ? `${sideLabel} ${qty} ${market?.base ?? ""}`.trim()
+                : sideLabel}
+        </SubmitButton>
       </div>
     </>
+  );
+}
+
+/** One price straight off the book. A link, not a button — never the loudest thing. */
+function Pick({
+  children,
+  ...rest
+}: { children: string } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      type="button"
+      className={[
+        "flex min-h-6 cursor-pointer items-center font-sans text-micro text-control transition-colors",
+        "hover:brightness-125",
+        "disabled:cursor-default disabled:text-ink-4 disabled:hover:brightness-100",
+      ].join(" ")}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** One line of the cost estimate. The total is the one that gets the weight. */
+function Readout({
+  label,
+  hint,
+  total = false,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  total?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center border-b border-rule px-2 py-1 last:border-b-0">
+      {/* The qualifier is bracketed rather than just spaced. "Fee taker 5 bps"
+          read as one run-on phrase; "Fee (taker 5 bps)" reads as a label and
+          the small print that qualifies it. */}
+      <span className="font-sans text-micro text-ink-3">
+        {label}
+        {hint !== undefined && <span className="ml-1.5 text-ink-4">({hint})</span>}
+      </span>
+      <span className={cn("tnum ml-auto", total ? "text-data text-ink" : "text-micro text-ink-2")}>
+        {children}
+      </span>
+    </div>
   );
 }

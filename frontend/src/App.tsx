@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { Auth } from "./components/Auth";
 import { Balances } from "./components/Balances";
+import { ActivityPanel } from "./components/ActivityPanel";
 import { Chart } from "./components/Chart";
-import { MyFills } from "./components/MyFills";
-import { OpenOrders } from "./components/OpenOrders";
+import { InstrumentStrip } from "./components/InstrumentStrip";
 import { OrderBook } from "./components/OrderBook";
 import type { BookTab } from "./components/PanelTabs";
 import { Tape } from "./components/Tape";
 import { Ticket } from "./components/Ticket";
 import { TopBar } from "./components/TopBar";
-import { API_URL, latencyStats, onLatency } from "./lib/api";
-import { WS_URL } from "./lib/feed";
-import { ENGINE_P99_BASELINE_MS } from "./lib/latency";
+import { Panel, ScrollShade } from "./components/ui/panel";
+import { latencySeries as readLatencySeries, latencyStats, onLatency } from "./lib/api";
+import { feedHealth } from "./lib/health";
 import { decimalsForStep, formatAtoms } from "./lib/num";
 import type { AuthMode, Credentials } from "./lib/types";
 import { useExchange } from "./useExchange";
-
-/** After this long without an update the book is called stale, not live. */
-const STALE_AFTER_MS = 8_000;
 
 export default function App() {
   const x = useExchange();
@@ -28,12 +25,16 @@ export default function App() {
   const [bookTab, setBookTab] = useState<BookTab>("book");
 
   const [latency, setLatency] = useState(latencyStats);
-  useEffect(() => onLatency(setLatency), []);
+  const [latencySeries, setLatencySeries] = useState(readLatencySeries);
+  useEffect(
+    () =>
+      onLatency((next) => {
+        setLatency(next);
+        setLatencySeries(readLatencySeries());
+      }),
+    [],
+  );
 
-  // A slow exchange is a degraded connection, so it gets the same amber the
-  // socket already uses. The threshold is the measured p99, not a taste call.
-  const engineDegraded =
-    latency.engineP50 !== null && latency.engineP50 > ENGINE_P99_BASELINE_MS;
 
   // The screen is public. Nothing asks for an account until something is
   // about to move money, and then this opens — never on arrival.
@@ -61,20 +62,56 @@ export default function App() {
   const bestAsk = x.asks[0]?.price ?? null;
 
   const silentFor = x.lastUpdateMs === null ? null : now - x.lastUpdateMs;
-  const looksStale =
-    x.bookStale || x.status !== "live" || (silentFor !== null && silentFor > STALE_AFTER_MS);
 
-  const staleReason = x.bookStale
-    ? "STALE — SEQUENCE GAP, RESYNCING"
-    : x.status !== "live"
-      ? `STALE — SOCKET ${x.status.toUpperCase()}`
-      : silentFor !== null
-        ? `NO UPDATES FOR ${Math.floor(silentFor / 1000)}S`
-        : null;
+  // Two answers, not one. `degraded` means the book cannot be trusted and is
+  // the only thing allowed to stop someone trading; `fresh` only says whether
+  // the picture is moving. See lib/health.ts for why they were separated.
+  const health = feedHealth({
+    bookStale: x.bookStale,
+    status: x.status,
+    silentForMs: silentFor,
+  });
 
   return (
     <>
-      <div className={`screen${looksStale ? " stale" : ""}`}>
+      <div
+        // `group/screen` so a panel can read the stale flag off the shell —
+        // `group-data-[stale=true]/screen:` — instead of the flag being drilled
+        // through as a prop to every panel that dims when the feed does.
+        className={[
+          "group/screen grid h-screen gap-2 bg-bg p-2",
+          // chart · book-or-trades · ticket. The book and the tape share a
+          // column through the tabs in their panel head, which is what took the
+          // floor from 1353px to 1112px — most of the width problem solved by
+          // showing one of two things that were never read at the same moment.
+          //
+          // The first row is `auto`, not `36px`: the topbar folds rather than
+          // clips, and a folded topbar needs the row to grow with it. The last
+          // row is fixed rather than `auto` because `auto` lets the grid
+          // squeeze the instrument strip under 100vh and clip its sparklines.
+          //
+          // The third row grew from 132px to 160px alongside the activity
+          // panel's row height (19/21px to 24px) — otherwise the taller rows
+          // would have meant fewer of them fit in the same space.
+          "grid-cols-[minmax(420px,1fr)_370px_320px] grid-rows-[auto_minmax(0,1fr)_160px_60px]",
+          // Three columns want 1112px. Below that the ticket column would fall
+          // off the side of a screen that cannot scroll, taking BUY, SELL and
+          // LOG OUT with it — and a 1280px viewport is exactly what a 1920
+          // screen at 150% zoom gives you, which is not an exotic setup. So the
+          // same three columns, tightened, down to an 852px floor.
+          "max-tight:grid-cols-[minmax(260px,1fr)_minmax(300px,370px)_minmax(290px,320px)]",
+          // Under ~880px no side-by-side arrangement leaves the ladder or the
+          // ticket a usable width, so stop pretending: one column, each panel
+          // its own row, and the document scrolls like any other page.
+          "max-stack:h-auto max-stack:min-h-screen",
+          "max-stack:grid-cols-[minmax(0,1fr)] max-stack:grid-rows-none max-stack:auto-rows-auto",
+        ].join(" ")}
+        data-testid="screen"
+        // `stale` dims the live data; `degraded` switches order entry off. They
+        // are separate attributes because they are separate claims.
+        data-stale={health.fresh ? "false" : "true"}
+        data-degraded={health.degraded ? "true" : "false"}
+      >
         <TopBar
           markets={x.markets}
           market={x.market}
@@ -83,7 +120,7 @@ export default function App() {
           lastPrice={lastPrint?.price ?? null}
           lastSide={lastPrint?.taker_side ?? null}
           status={x.status}
-          stale={x.bookStale}
+          feedDegraded={health.degraded}
           day={x.day}
           session={x.session}
           onSignIn={openAuth}
@@ -105,8 +142,8 @@ export default function App() {
             asks={x.asks}
             spread={x.spread}
             depthSeq={x.depthSeq}
-            stale={looksStale}
-            staleReason={staleReason}
+            stale={!health.fresh}
+            staleReason={health.reason}
             mine={x.mine}
             lastPrice={lastPrint?.price ?? null}
             lastSide={lastPrint?.taker_side ?? null}
@@ -126,7 +163,16 @@ export default function App() {
           <Tape market={x.market} prints={x.tape} tab={bookTab} onTab={setBookTab} />
         )}
 
-        <section className="panel ticket bal">
+        {/* The right rail carries the ticket, balances and deposit stacked.
+            Three panels in one column need ~545px; under that — a 1366×768
+            laptop once the browser has taken its chrome — the deposit block
+            used to fall out of the bottom of a clipped container, so funding
+            an account became impossible on a short screen. Scroll, not clip.
+
+            `ScrollShade` because scrolling silently is nearly as bad as
+            clipping: the cut lands mid-row and reads as a broken table. */}
+        <Panel data-testid="ticket-rail">
+          <ScrollShade>
           <Ticket
             market={x.market}
             balances={x.balances}
@@ -145,55 +191,49 @@ export default function App() {
             onRequireSignIn={openAuth}
             onDeposit={x.credit}
           />
-        </section>
+          </ScrollShade>
+        </Panel>
 
-        <OpenOrders orders={x.openOrders} markets={x.markets} onCancel={(id) => void x.cancel(id)} />
+        <ActivityPanel
+          orders={x.openOrders}
+          fills={x.fills}
+          markets={x.markets}
+          onCancel={(id) => void x.cancel(id)}
+        />
 
-        <MyFills fills={x.fills} markets={x.markets} />
-
-        <footer className="statusbar">
-          <span>
-            api <b>{new URL(API_URL).host}</b>
-          </span>
-          <span className="sep">│</span>
-          <span>
-            ws <b>{new URL(WS_URL).host}</b> <span className="ok">{x.status}</span>
-          </span>
-          <span className="sep">│</span>
-          <span>
-            depth_seq <b>{x.depthSeq === null ? "—" : String(x.depthSeq)}</b>
-          </span>
-          {/* Two numbers, never a sum. They are measured differently and
-              adding them would be the misleading figure this exists to avoid. */}
-          <span className="sep">│</span>
-          <span>
-            engine{" "}
-            <b className={engineDegraded ? "warn" : undefined}>
-              {latency.engineP50 === null ? "—" : `${latency.engineP50}ms`}
-            </b>
-          </span>
-          <span className="sep">│</span>
-          <span>
-            network <b>{latency.networkP50 === null ? "—" : `${latency.networkP50}ms`}</b>
-          </span>
-          <div className="right">
-            <span>
-              resyncs <b>{x.resyncs}</b>
-            </span>
-            <span>
-              updated <b>{silentFor === null ? "—" : `${Math.floor(silentFor / 1000)}s ago`}</b>
-            </span>
-          </div>
-        </footer>
+        <InstrumentStrip
+          stats={latency}
+          series={latencySeries}
+          depthSeq={x.depthSeq}
+          resyncs={x.resyncs}
+          status={x.status}
+          feedDegraded={health.degraded}
+          silentForMs={silentFor}
+        />
       </div>
 
       {authOpen && x.session === null && <Auth onSubmit={signIn} onClose={closeAuth} />}
 
+      {/* A failed request, dismissible, never blocking the book behind it. */}
       {x.error && (
-        <div className="toast" role="alert">
-          <span className="k">ERR</span>
+        <div
+          className={[
+            "fixed bottom-[30px] right-3 z-[60] flex max-w-[420px] items-start gap-2.5 px-2.5 py-2",
+            "rounded-panel bg-panel-hi text-[10.5px] leading-[1.45] text-ink",
+            "shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-sell)_45%,transparent)]",
+          ].join(" ")}
+          role="alert"
+        >
+          <span className="flex-none pt-px font-sans text-micro font-medium text-sell">
+            Error
+          </span>
           <span>{x.error}</span>
-          <button onClick={x.clearError} aria-label="dismiss">
+          <button
+            type="button"
+            className="ml-auto flex min-h-6 min-w-6 flex-none cursor-pointer items-center justify-center text-ink-4 hover:text-ink"
+            onClick={x.clearError}
+            aria-label="dismiss"
+          >
             ✕
           </button>
         </div>
