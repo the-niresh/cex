@@ -82,6 +82,19 @@ export function TopBar({
       <div className="flex flex-none items-center gap-2 border-r border-rule pl-3 pr-3.5">
         <span className="font-sans text-[11px] font-bold tracking-tight text-ink">CEX</span>
         <span className="font-sans text-micro tracking-[0.06em] text-ink-4">spot</span>
+        {/* Says what this venue is, where someone actually looks.
+            The order flow here is a market-making bot trading with itself, and
+            a reader who works that out for themselves will assume the latency
+            figures are staged too. They are not — they are the exchange timing
+            its own work — so the cheap thing to protect is the real number, by
+            being first to say which part is not real. */}
+        <span
+          className="rounded-pill bg-field px-1.5 py-0.5 font-sans text-micro text-ink-3"
+          title="Demo venue. Deposits are free and the order flow is a market-making bot. The latency figures are real measurements of real matching."
+          data-testid="demo-badge"
+        >
+          Demo
+        </span>
       </div>
 
       {/* The tabs take their own scrollbar rather than pushing what follows off
