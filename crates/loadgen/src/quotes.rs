@@ -58,6 +58,29 @@ pub fn walk(mid: i64, tick: i64, steps: i64, band: (i64, i64)) -> i64 {
     (mid + steps * tick).clamp(band.0, band.1)
 }
 
+/// Where to centre the ladder, given whatever the book already shows.
+///
+/// ⚠️ This is not a nicety. Started from a hardcoded 50,000 against a venue
+/// whose book sat at 50,119.50, every ask this tool quoted landed *below* the
+/// best bid and sold into it on contact — 0.28 BTC of resting liquidity eaten
+/// in three cycles, and prints on the tape at sizes nobody placed on purpose.
+/// A maker that does not look at the book before quoting is a taker.
+///
+/// One side only: centre a tick inside it, so the quotes join that side's queue
+/// rather than crossing it. No book at all: the caller's fallback, which is the
+/// only case where a constant is the right answer.
+pub fn opening_mid(best_bid: Option<i64>, best_ask: Option<i64>, tick: i64, fallback: i64) -> i64 {
+    let raw = match (best_bid, best_ask) {
+        (Some(bid), Some(ask)) => (bid + ask) / 2,
+        (Some(bid), None) => bid + tick,
+        (None, Some(ask)) => ask - tick,
+        (None, None) => fallback,
+    };
+    // Snapped to the tick, or every quote derived from it is off-tick and the
+    // engine rejects the whole ladder.
+    raw - raw.rem_euclid(tick)
+}
+
 /// A small xorshift generator.
 ///
 /// Deliberately not a dependency: this picks which way a demo price drifts and
@@ -167,6 +190,79 @@ mod tests {
         // And it cannot leave, however long it is pushed one way.
         assert_eq!(walk(band.1, TICK, 5, band), band.1);
         assert_eq!(walk(band.0, TICK, -5, band), band.0);
+    }
+
+    #[test]
+    fn centres_the_ladder_on_the_book_that_is_already_there() {
+        // The regression this exists for: a venue trading at 50,119.50 while
+        // the tool assumed 50,000. Quoting from the real touch keeps the ladder
+        // around the market instead of underneath it.
+        let bid = 50_118_500_000;
+        let ask = 50_119_500_000;
+        let mid = opening_mid(Some(bid), Some(ask), TICK, MID);
+        assert!(
+            mid > bid - TICK && mid < ask + TICK,
+            "mid {mid} not near the touch"
+        );
+        assert_eq!(mid % TICK, 0, "mid must sit on a tick");
+
+        // And the ladder built from it must not cross what is resting.
+        let book = ladder(mid, TICK, 12, 100);
+        let my_best_ask = book
+            .iter()
+            .filter(|q| q.side == Side::Sell)
+            .map(|q| q.price)
+            .min()
+            .unwrap();
+        let my_best_bid = book
+            .iter()
+            .filter(|q| q.side == Side::Buy)
+            .map(|q| q.price)
+            .max()
+            .unwrap();
+        assert!(my_best_ask > bid, "would have sold into the resting bid");
+        assert!(my_best_bid < ask, "would have bought into the resting ask");
+    }
+
+    #[test]
+    fn quotes_inside_a_one_sided_book_rather_than_through_it() {
+        // Only bids resting: centring a tick above them means our own bids join
+        // that price rather than lifting anything.
+        let bid = 50_118_500_000;
+        let mid = opening_mid(Some(bid), None, TICK, MID);
+        let book = ladder(mid, TICK, 5, 100);
+        let my_best_ask = book
+            .iter()
+            .filter(|q| q.side == Side::Sell)
+            .map(|q| q.price)
+            .min()
+            .unwrap();
+        assert!(
+            my_best_ask > bid,
+            "an ask at or below the best bid would trade"
+        );
+
+        // Only asks resting: the mirror image.
+        let ask = 50_119_500_000;
+        let mid = opening_mid(None, Some(ask), TICK, MID);
+        let book = ladder(mid, TICK, 5, 100);
+        let my_best_bid = book
+            .iter()
+            .filter(|q| q.side == Side::Buy)
+            .map(|q| q.price)
+            .max()
+            .unwrap();
+        assert!(
+            my_best_bid < ask,
+            "a bid at or above the best ask would trade"
+        );
+    }
+
+    #[test]
+    fn falls_back_only_when_there_is_no_book_at_all() {
+        assert_eq!(opening_mid(None, None, TICK, MID), MID);
+        // And the fallback is snapped too, in case a caller passes an odd one.
+        assert_eq!(opening_mid(None, None, TICK, MID + 3), MID);
     }
 
     #[test]
