@@ -145,7 +145,7 @@ test("registers, deposits, places an order, sees it in the book, cancels it", as
   const row = page.getByTestId("open-order").first();
   await expect(row).toBeVisible();
   await expect(row.getByTestId("order-side")).toHaveText("BUY");
-  await expect(row.getByTestId("order-status")).toContainText("OPEN");
+  await expect(row.getByTestId("order-status")).toContainText("Open");
 
   await expect(page.locator('[data-testid="ladder-level"][data-mine="true"]')).toHaveCount(1);
   await expect(page.locator('[data-testid="ladder-level"][data-mine="true"] [data-testid="level-price"]')).toContainText(price.split(".")[0]!.slice(0, 2));
@@ -267,8 +267,8 @@ test("two users cross, and neither sees the other's id", async ({ browser }) => 
   await expect(taker.getByTestId("fill-row").first().getByTestId("fill-side")).toContainText("SELL");
 
   // The maker rested, the taker aggressed, and each is told which they were.
-  await expect(maker.getByTestId("fill-row").first().getByTestId("fill-role")).toHaveText("M");
-  await expect(taker.getByTestId("fill-row").first().getByTestId("fill-role")).toHaveText("T");
+  await expect(maker.getByTestId("fill-row").first().getByTestId("fill-role")).toHaveText("Maker");
+  await expect(taker.getByTestId("fill-row").first().getByTestId("fill-role")).toHaveText("Taker");
 
   // Neither page contains the other's user id anywhere.
   const makerId = await maker.getByTestId("account-id").textContent();
@@ -495,4 +495,39 @@ test("registering asks for a name, and the name comes back on the next sign in",
   await page.getByTestId("auth-submit").click();
 
   await expect(page.getByTestId("account-name")).toHaveText(displayName);
+});
+
+test("a market order states no price, and fills against the book", async ({ page }) => {
+  // A resting ask to trade against — seeded through the API, because this test
+  // is about the ticket, not about someone else's order entry.
+  await seedBook(page);
+  await signUpAndFund(page, "USDT", "500000");
+
+  await page.getByRole("button", { name: "Market", exact: true }).click();
+
+  // A market order has no price to state, so the ticket does not pretend to
+  // take one. It used to render a disabled field reading "market" under a tick
+  // rule that governed nothing.
+  await expect(page.getByLabel("price")).toHaveCount(0);
+  await expect(page.getByTestId("price-picks")).toHaveCount(0);
+
+  // The estimate still works — it references the best price on the book — and
+  // says out loud that it is an estimate.
+  await page.getByLabel("quantity").fill("0.01000");
+  await expect(page.getByTestId("ticket-total")).not.toHaveText("—");
+
+  await expect(page.getByTestId("ticket-submit")).toBeEnabled();
+  await page.getByTestId("ticket-submit").click();
+
+  // It crossed rather than rested: a fill, and nothing left on the book.
+  await page.getByTestId("activity-tab-fills").click();
+  const fill = page.getByTestId("fill-row").first();
+  await expect(fill).toBeVisible();
+  await expect(fill.getByTestId("fill-side")).toContainText("BUY");
+  await expect(fill.getByTestId("fill-role")).toHaveText("Taker");
+  await expect(page.getByTestId("open-order")).toHaveCount(0);
+
+  // Switching back brings the price field — and whatever was typed — back.
+  await page.getByRole("button", { name: "Limit", exact: true }).click();
+  await expect(page.getByLabel("price")).toBeVisible();
 });
