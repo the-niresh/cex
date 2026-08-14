@@ -39,7 +39,11 @@ export interface FeedHealth {
  * a number to be decoded rather than a duration to be felt.
  */
 export function describeSilence(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
+  // ⚠️ Clamped, because this can arrive negative. The shell re-reads the clock
+  // once a second, but a print sets the last-update stamp the instant it lands,
+  // so for up to a second `now - lastUpdate` is below zero — and the strip
+  // rendered a confident "Updated -1s".
+  const seconds = Math.max(0, Math.floor(ms / 1000));
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`;

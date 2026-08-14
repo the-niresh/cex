@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SILENT_AFTER_MS, feedHealth } from "./health";
+import { SILENT_AFTER_MS, describeSilence, feedHealth } from "./health";
 
 /**
  * The distinction these tests exist to defend: a book that cannot be trusted is
@@ -35,6 +35,15 @@ describe("feedHealth", () => {
     // made four-figure second counts worth formatting in the first place.
     expect(reason(1_841_000)).toBe("No updates for 30m 41s");
     expect(reason(7_320_000)).toBe("No updates for 2h 2m");
+  });
+
+  it("never reports a negative age", () => {
+    // The shell re-reads the clock once a second; a trade stamps the last
+    // update immediately. Between the two, the elapsed time is below zero, and
+    // the strip used to render "Updated -1s" as if it were a measurement.
+    expect(describeSilence(-1)).toBe("0s");
+    expect(describeSilence(-999)).toBe("0s");
+    expect(describeSilence(0)).toBe("0s");
   });
 
   it("degrades on a sequence gap, because the book is then a guess", () => {
