@@ -13,6 +13,7 @@
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgRow};
 use sqlx::{AssertSqlSafe, PgPool, Row};
 use std::str::FromStr;
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::auth::{hash_password, verify_password};
@@ -83,6 +84,13 @@ fn row_to_user(row: PgRow) -> User {
 const SCHEMA_SQL: &str = include_str!("../migrations/0001_users.sql");
 const DISPLAY_NAME_SQL: &str = include_str!("../migrations/0002_user_display_name.sql");
 
+/// How long a caller waits for a pooled connection before being told no. Same
+/// reasoning as the history pool — see `ACQUIRE_TIMEOUT` in `cex-persist`.
+///
+/// A sign-in that fails in five seconds can be retried. One that hangs for
+/// sqlx's default thirty looks like a broken site.
+const ACQUIRE_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Clone)]
 pub struct UserStore {
     pool: PgPool,
@@ -115,6 +123,7 @@ impl UserStore {
 
         let pool = PgPoolOptions::new()
             .max_connections(8)
+            .acquire_timeout(ACQUIRE_TIMEOUT)
             .connect_with(opts)
             .await
             .map_err(|e| UsersError::Db(e.to_string()))?;
