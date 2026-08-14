@@ -225,16 +225,24 @@ export function OrderBook({
         </Meta>
       </PanelHead>
 
-      {/* A stale book must be unmistakable without borrowing the buy/sell hues.
-          So: the live data desaturates and dims, and a hatched bar states the
-          reason in words. */}
+      {/* Two conditions, two treatments — the same split `feedHealth` already
+          makes, which the band used to flatten.
+
+          `degraded` means the book cannot be trusted: hatched amber, and the
+          ladder below goes flat and grey. Anything else here is a *quiet*
+          market — the prices are correct, nobody has traded — and that gets a
+          plain grey note and no dimming at all. Dimming correct data is how you
+          teach someone to distrust a screen that is telling the truth, and on a
+          venue with little traffic the quiet case is the normal one. */}
       {stale && (
         <div
           className={[
             "flex h-5 flex-none items-center gap-2 px-2.5",
-            "font-sans text-micro text-warn",
-            "border-b border-warn/35",
-            "bg-[repeating-linear-gradient(-45deg,color-mix(in_oklab,var(--color-warn)_11%,transparent)_0_6px,transparent_6px_12px)]",
+            "font-sans text-micro",
+            "text-ink-4 border-b border-rule",
+            "group-data-[degraded=true]/screen:text-warn",
+            "group-data-[degraded=true]/screen:border-warn/35",
+            "group-data-[degraded=true]/screen:bg-[repeating-linear-gradient(-45deg,color-mix(in_oklab,var(--color-warn)_11%,transparent)_0_6px,transparent_6px_12px)]",
           ].join(" ")}
           data-testid="staleband"
         >
@@ -250,9 +258,13 @@ export function OrderBook({
       </ColumnHeads>
 
       {/* `relative` so the sweep card can be placed against the half being
-          pointed at. It goes flat and grey the moment the feed does. */}
+          pointed at. It goes flat and grey when the book cannot be trusted —
+          `degraded`, not merely quiet. Keyed off `stale`, this dimmed a correct
+          book every time a market went eight seconds without a trade, which on
+          the deployed venue is most of the time. */}
       <div
-        className="relative flex min-h-0 flex-1 flex-col group-data-[stale=true]/screen:saturate-[.15] group-data-[stale=true]/screen:brightness-[.62]"
+        className="relative flex min-h-0 flex-1 flex-col group-data-[degraded=true]/screen:saturate-[.15] group-data-[degraded=true]/screen:brightness-[.62]"
+        data-testid="ladder-body"
         onMouseLeave={() => setSweep(null)}
       >
         {/* Worst ask at the top, so the best one sits against the spread. */}

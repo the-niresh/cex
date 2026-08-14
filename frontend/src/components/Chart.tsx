@@ -195,7 +195,7 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
       {/* lightweight-charts paints into this and owns its own canvas sizing.
           The chart is data too, so it goes flat and grey when the feed does. */}
       <div
-        className="relative min-h-0 flex-1 bg-transparent group-data-[stale=true]/screen:saturate-[.15] group-data-[stale=true]/screen:brightness-[.62]"
+        className="relative min-h-0 flex-1 bg-transparent group-data-[degraded=true]/screen:saturate-[.15] group-data-[degraded=true]/screen:brightness-[.62]"
         ref={containerRef}
       >
         {candles.length === 0 && <Empty>no trades in this window yet</Empty>}

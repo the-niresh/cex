@@ -340,7 +340,13 @@ test("a quiet market says so but still lets you trade", async ({ page }) => {
     timeout: 30_000,
   });
   await expect(page.getByTestId("screen")).toHaveAttribute("data-degraded", "false");
-  await expect(page.getByTestId("staleband")).toContainText("NO UPDATES FOR");
+  await expect(page.getByTestId("staleband")).toContainText("No updates for");
+
+  // And it stays legible. A quiet market used to desaturate and dim the whole
+  // ladder, which on a venue with little traffic is its normal state — so the
+  // screen spent most of its life looking broken while telling the truth. The
+  // dimming now belongs to `degraded` alone.
+  await expect(page.getByTestId("ladder-body")).toHaveCSS("filter", "none");
 
   // And the whole point: order entry stays open. This used to go dead after
   // eight quiet seconds, which locked people out of a working market.

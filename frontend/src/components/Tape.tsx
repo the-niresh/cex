@@ -32,7 +32,10 @@ export function Tape({ market, prints, tab, onTab }: Props) {
       </ColumnHeads>
 
       {/* The tape is data too: it goes flat and grey the moment the feed does. */}
-      <Scroll className="group-data-[stale=true]/screen:saturate-[.15] group-data-[stale=true]/screen:brightness-[.62]">
+      {/* Dims when the feed cannot be trusted, not when the market is merely
+          quiet: these prints happened, and they stay true however long ago the
+          last one was. */}
+      <Scroll className="group-data-[degraded=true]/screen:saturate-[.15] group-data-[degraded=true]/screen:brightness-[.62]">
         {!market || prints.length === 0 ? (
           <Empty>no prints yet</Empty>
         ) : (

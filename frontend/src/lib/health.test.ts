@@ -23,27 +23,38 @@ describe("feedHealth", () => {
     // real book, so trading stays open.
     expect(quiet.degraded).toBe(false);
     expect(quiet.fresh).toBe(false);
-    expect(quiet.reason).toBe("NO UPDATES FOR 74S");
+    expect(quiet.reason).toBe("No updates for 1m 14s");
+  });
+
+  it("reads the silence as a duration rather than a count of seconds", () => {
+    const reason = (ms: number) => feedHealth({ ...live, silentForMs: ms }).reason;
+    expect(reason(9_000)).toBe("No updates for 9s");
+    expect(reason(59_999)).toBe("No updates for 59s");
+    expect(reason(60_000)).toBe("No updates for 1m 0s");
+    // The deployed venue sits here whenever nobody is trading, which is what
+    // made four-figure second counts worth formatting in the first place.
+    expect(reason(1_841_000)).toBe("No updates for 30m 41s");
+    expect(reason(7_320_000)).toBe("No updates for 2h 2m");
   });
 
   it("degrades on a sequence gap, because the book is then a guess", () => {
     const gap = feedHealth({ ...live, bookStale: true });
     expect(gap.degraded).toBe(true);
     expect(gap.fresh).toBe(false);
-    expect(gap.reason).toBe("STALE — SEQUENCE GAP, RESYNCING");
+    expect(gap.reason).toBe("Stale — sequence gap, resyncing");
   });
 
   it("degrades whenever the socket is not live", () => {
     for (const status of ["connecting", "reconnecting", "closed"] as const) {
       const down = feedHealth({ ...live, status });
       expect(down.degraded, status).toBe(true);
-      expect(down.reason, status).toBe(`STALE — SOCKET ${status.toUpperCase()}`);
+      expect(down.reason, status).toBe(`Stale — socket ${status}`);
     }
   });
 
   it("reports the gap ahead of the silence when both are true", () => {
     const both = feedHealth({ bookStale: true, status: "live", silentForMs: 90_000 });
-    expect(both.reason).toBe("STALE — SEQUENCE GAP, RESYNCING");
+    expect(both.reason).toBe("Stale — sequence gap, resyncing");
   });
 
   it("holds off calling a market quiet until the threshold", () => {
