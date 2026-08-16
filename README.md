@@ -9,7 +9,7 @@ The exchange is a **deterministic state machine**: one function, `apply(state, c
 running single-threaded over a durable command log. Everything else — HTTP, WebSocket, Postgres,
 snapshots — is plumbing around that.
 
-![The spot trading screen](docs/screen.png)
+![The spot trading screen](docs/image.png)
 
 ## Four things that are easy to get wrong
 
