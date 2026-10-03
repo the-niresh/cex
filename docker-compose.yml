@@ -25,16 +25,15 @@ services:
       timeout: 3s
       retries: 10
 
-  # Only for local development. Deployments point CEX_DATABASE_URL at managed
-  # Postgres, so this is behind a profile rather than started by default:
-  # `docker compose --profile local-db up -d`. Postgres is off the hot path by
-  # design — persist is asynchronous and api touches it only for auth — so the
-  # extra network hop to a managed instance costs nothing that matters.
+  # Production Postgres runs here. Live data is in the cex_live database; tests
+  # connect on host port 5442. Postgres is off the hot path by design — persist
+  # is asynchronous and api touches it only for auth — so colocating it with
+  # the stack keeps history reads fast without touching the matching path.
   postgres:
     image: postgres:16-alpine
     container_name: cex-postgres
-    profiles: ["local-db"]
     restart: unless-stopped
+    oom_score_adj: -500
     logging:
       driver: json-file
       options:
@@ -100,6 +99,8 @@ services:
         max-file: "3"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     environment:
       CEX_REDIS_URL: redis://redis:6379
@@ -173,6 +174,8 @@ services:
         max-file: "3"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     environment:
       CEX_REDIS_URL: redis://redis:6379
