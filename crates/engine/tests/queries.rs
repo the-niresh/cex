@@ -10,6 +10,7 @@
 
 use cex_engine::config::Config;
 use cex_engine::runner::Runner;
+use cex_persist::TestResources;
 use cex_proto::{
     Command, OrderType, Query, Response, ResponseResult, Side, TimeInForce, FIELD_PAYLOAD,
 };
@@ -20,8 +21,8 @@ const SYM: &str = "BTC_USDT";
 const P50K: i64 = 50_000_000_000;
 const Q1: i64 = 100_000;
 
-fn test_config(dir: &std::path::Path) -> Config {
-    let tag = Uuid::new_v4().simple().to_string();
+fn test_config(dir: &std::path::Path, resources: &TestResources) -> Config {
+    let tag = &resources.tag;
     Config {
         redis_url: std::env::var("CEX_REDIS_URL")
             .unwrap_or_else(|_| "redis://127.0.0.1:6390".into()),
@@ -139,7 +140,8 @@ fn body(r: &Response) -> &cex_proto::ResponseBody {
 #[tokio::test]
 async fn a_balance_query_is_answered_on_the_response_channel() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let alice = Uuid::new_v4();
@@ -179,7 +181,8 @@ async fn a_balance_query_is_answered_on_the_response_channel() {
 async fn a_depth_query_reflects_commands_already_applied() {
     // The consistency guarantee: a read sees everything applied before it.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let alice = Uuid::new_v4();
@@ -214,7 +217,8 @@ async fn a_depth_query_reflects_commands_already_applied() {
 #[tokio::test]
 async fn a_markets_query_lists_the_tradable_pairs() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let mut runner = Runner::boot(cfg.clone()).await.unwrap();
@@ -236,7 +240,8 @@ async fn a_markets_query_lists_the_tradable_pairs() {
 #[tokio::test]
 async fn several_queued_queries_are_all_answered() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let alice = Uuid::new_v4();
@@ -270,7 +275,8 @@ async fn several_queued_queries_are_all_answered() {
 async fn a_query_for_an_unknown_market_is_answered_with_an_error() {
     // The caller must get a reply either way, or it sits until it times out.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let mut runner = Runner::boot(cfg.clone()).await.unwrap();
@@ -298,7 +304,8 @@ async fn a_query_for_an_unknown_market_is_answered_with_an_error() {
 #[tokio::test]
 async fn a_malformed_query_is_dropped_without_stopping_the_loop() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let alice = Uuid::new_v4();
@@ -330,7 +337,8 @@ async fn a_malformed_query_is_dropped_without_stopping_the_loop() {
 #[tokio::test]
 async fn an_empty_query_queue_does_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut runner = Runner::boot(cfg).await.unwrap();
 
     assert_eq!(runner.poll_queries().await.unwrap(), 0);
@@ -342,7 +350,8 @@ async fn an_empty_query_queue_does_nothing() {
 async fn answering_queries_does_not_append_to_the_command_log() {
     // The design rule this whole split exists for.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let alice = Uuid::new_v4();
@@ -377,7 +386,8 @@ async fn answering_queries_does_not_append_to_the_command_log() {
 async fn answering_queries_does_not_advance_the_engine_sequence() {
     // A read is not a state transition.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let alice = Uuid::new_v4();

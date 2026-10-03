@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use cex_engine::config::Config;
 use cex_engine::runner::Runner;
+use cex_persist::TestResources;
 use cex_proto::{Command, Query, Response, ResponseBody, ResponseResult, FIELD_PAYLOAD};
 use futures_util::StreamExt;
 use redis::AsyncCommands;
@@ -20,8 +21,8 @@ fn redis_url() -> String {
 /// A high `block_ms` so a test that still waits on it fails obviously, while
 /// `lock_ttl_ms` stays comfortably above the `block_ms < lock_ttl_ms / 3` floor
 /// `Runner::boot` enforces.
-fn test_config(dir: &std::path::Path) -> Config {
-    let tag = Uuid::new_v4().simple().to_string();
+fn test_config(dir: &std::path::Path, resources: &TestResources) -> Config {
+    let tag = &resources.tag;
     Config {
         redis_url: redis_url(),
         commands_stream: format!("test:{tag}:commands"),
@@ -54,7 +55,8 @@ async fn subscriber(cfg: &Config) -> redis::aio::PubSub {
 #[tokio::test]
 async fn a_query_is_answered_quickly_even_though_the_command_stream_is_idle_and_block_ms_is_huge() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
 
@@ -135,7 +137,8 @@ async fn wait_for(sub: &mut redis::aio::PubSub, want: Uuid, deadline: Duration) 
 #[tokio::test]
 async fn a_query_after_run_starts_reflects_a_command_sent_after_run_starts() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;
     let alice = Uuid::new_v4();
@@ -187,7 +190,8 @@ async fn a_query_after_run_starts_reflects_a_command_sent_after_run_starts() {
 #[tokio::test]
 async fn commands_and_queries_interleaved_under_load_land_on_the_exact_expected_total() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut cmd_conn = conn(&cfg).await;
     let mut query_conn = conn(&cfg).await;
     let mut sub = subscriber(&cfg).await;

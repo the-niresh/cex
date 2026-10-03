@@ -8,7 +8,7 @@
 //! `redelivering_the_same_batch_writes_no_duplicate_rows`, because redelivery is
 //! not a hypothetical: the engine republishes events every time it recovers.
 
-use cex_persist::HistoryStore;
+use cex_persist::{require_safe_database_url, HistoryStore, SchemaGuard};
 use cex_proto::{DepthDelta, Event, EventBatch, Fill, OrderStatus, OrderType, Side};
 use uuid::Uuid;
 
@@ -21,11 +21,14 @@ fn database_url() -> String {
         .unwrap_or_else(|_| "postgres://cex:cex@127.0.0.1:5442/cex".into())
 }
 
-async fn store() -> HistoryStore {
+async fn store() -> (HistoryStore, SchemaGuard) {
+    require_safe_database_url();
     let schema = format!("t{}", Uuid::new_v4().simple());
-    HistoryStore::connect_to_schema(&database_url(), &schema)
+    let guard = SchemaGuard::new(&database_url(), &schema);
+    let s = HistoryStore::connect_to_schema(&database_url(), &schema)
         .await
-        .expect("postgres — is `docker compose up -d` running?")
+        .expect("postgres — is `docker compose up -d` running?");
+    (s, guard)
 }
 
 fn accepted(order_id: u64, user: Uuid, side: Side, price: i64, qty: i64) -> Event {
@@ -78,7 +81,7 @@ fn batch(seq: u64, events: Vec<Event>) -> EventBatch {
 
 #[tokio::test]
 async fn a_batch_is_recorded_by_seq() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     s.write_batches(&[
@@ -93,7 +96,7 @@ async fn a_batch_is_recorded_by_seq() {
 
 #[tokio::test]
 async fn redelivering_the_same_batch_writes_no_duplicate_rows() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
     let bob = Uuid::new_v4();
 
@@ -141,7 +144,7 @@ async fn redelivering_the_same_batch_writes_no_duplicate_rows() {
 
 #[tokio::test]
 async fn a_partially_redelivered_run_writes_only_the_new_batches() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     s.write_batches(&[batch(1, vec![accepted(1, alice, Side::Buy, P50K, Q1)])])
@@ -166,7 +169,7 @@ async fn a_partially_redelivered_run_writes_only_the_new_batches() {
 
 #[tokio::test]
 async fn a_failed_statement_leaves_nothing_from_the_batch_behind() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     // A batch whose first event writes cleanly and whose second violates the
@@ -201,7 +204,7 @@ async fn a_failed_statement_leaves_nothing_from_the_batch_behind() {
 
 #[tokio::test]
 async fn a_later_batch_failing_rolls_back_the_earlier_ones_too() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     let err = s
@@ -223,7 +226,7 @@ async fn a_later_batch_failing_rolls_back_the_earlier_ones_too() {
 
 #[tokio::test]
 async fn an_order_row_follows_its_lifecycle_to_filled() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     s.write_batches(&[batch(1, vec![accepted(7, alice, Side::Buy, P50K, Q1)])])
@@ -264,7 +267,7 @@ async fn an_order_row_follows_its_lifecycle_to_filled() {
 
 #[tokio::test]
 async fn a_cancel_marks_the_order_cancelled() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     s.write_batches(&[
@@ -287,7 +290,7 @@ async fn a_cancel_marks_the_order_cancelled() {
 
 #[tokio::test]
 async fn a_market_order_is_stored_with_no_price() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     s.write_batches(&[batch(
@@ -312,7 +315,7 @@ async fn a_market_order_is_stored_with_no_price() {
 
 #[tokio::test]
 async fn an_older_update_does_not_overwrite_a_newer_one() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     s.write_batches(&[
@@ -341,7 +344,7 @@ async fn an_older_update_does_not_overwrite_a_newer_one() {
 
 #[tokio::test]
 async fn a_fill_records_both_sides_and_both_fees() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let maker = Uuid::new_v4();
     let taker = Uuid::new_v4();
 
@@ -373,7 +376,7 @@ async fn a_fill_records_both_sides_and_both_fees() {
 
 #[tokio::test]
 async fn several_fills_in_one_batch_all_survive() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let maker_a = Uuid::new_v4();
     let maker_b = Uuid::new_v4();
     let taker = Uuid::new_v4();
@@ -401,7 +404,7 @@ async fn several_fills_in_one_batch_all_survive() {
 
 #[tokio::test]
 async fn fills_are_only_returned_for_the_symbol_asked_for() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let maker = Uuid::new_v4();
     let taker = Uuid::new_v4();
 
@@ -433,7 +436,7 @@ async fn fills_are_only_returned_for_the_symbol_asked_for() {
 
 #[tokio::test]
 async fn a_deposit_and_a_withdrawal_are_recorded_with_signed_deltas() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     s.write_batches(&[
@@ -479,7 +482,7 @@ async fn a_deposit_and_a_withdrawal_are_recorded_with_signed_deltas() {
 
 #[tokio::test]
 async fn a_settlement_balance_update_records_available_and_locked() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     s.write_batches(&[batch(
@@ -507,7 +510,7 @@ async fn a_settlement_balance_update_records_available_and_locked() {
 
 #[tokio::test]
 async fn one_users_balance_changes_do_not_include_anothers() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
     let bob = Uuid::new_v4();
 
@@ -540,7 +543,7 @@ async fn one_users_balance_changes_do_not_include_anothers() {
 
 #[tokio::test]
 async fn depth_updates_are_not_history_and_write_nothing() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     // Depth is live market data — `ws` fans it out, it is not something to
     // store. The batch must still be recorded so it is never reprocessed.
@@ -565,7 +568,7 @@ async fn depth_updates_are_not_history_and_write_nothing() {
 
 #[tokio::test]
 async fn a_rejected_order_records_the_batch_but_no_order_row() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
 
     // A rejection carries no order id, so there is nothing to key a row on.
@@ -585,7 +588,7 @@ async fn a_rejected_order_records_the_batch_but_no_order_row() {
 
 #[tokio::test]
 async fn writing_no_batches_at_all_is_not_an_error() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     assert_eq!(s.write_batches(&[]).await.unwrap(), 0);
     assert!(s.written_seqs().await.unwrap().is_empty());
 }
@@ -606,7 +609,7 @@ async fn a_schema_name_that_could_terminate_a_statement_is_refused() {
 
 #[tokio::test]
 async fn a_users_fills_include_the_ones_they_made_and_the_ones_they_took() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
     let bob = Uuid::new_v4();
 
@@ -639,7 +642,7 @@ async fn a_users_fills_include_the_ones_they_made_and_the_ones_they_took() {
 
 #[tokio::test]
 async fn one_users_fills_do_not_include_a_strangers() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
     let bob = Uuid::new_v4();
     let carol = Uuid::new_v4();
@@ -671,7 +674,7 @@ async fn one_users_fills_do_not_include_a_strangers() {
 
 #[tokio::test]
 async fn a_users_fills_come_back_newest_first() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
     let bob = Uuid::new_v4();
 
@@ -694,7 +697,7 @@ async fn a_users_fills_come_back_newest_first() {
 
 #[tokio::test]
 async fn a_users_fills_honour_the_limit() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let alice = Uuid::new_v4();
     let bob = Uuid::new_v4();
 
@@ -721,7 +724,7 @@ async fn a_users_fills_honour_the_limit() {
 
 #[tokio::test]
 async fn a_user_who_has_never_traded_has_no_fills() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     let rows = s.fills_for_user(Uuid::new_v4(), 100).await.unwrap();
     assert!(rows.is_empty());
 }
@@ -773,7 +776,7 @@ async fn traded(store: &HistoryStore, seq: u64, price: i64, qty: i64, at: i64) {
 
 #[tokio::test]
 async fn trades_in_the_same_minute_become_one_candle() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     traded(&s, 1, P50K, Q1, T0 + 1).await;
     traded(&s, 2, P50K, Q1, T0 + 30).await;
@@ -787,7 +790,7 @@ async fn trades_in_the_same_minute_become_one_candle() {
 
 #[tokio::test]
 async fn a_trade_in_the_next_minute_starts_a_new_candle() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     traded(&s, 1, P50K, Q1, T0 + 59).await;
     traded(&s, 2, P50K, Q1, T0 + 60).await;
@@ -805,7 +808,7 @@ async fn a_trade_in_the_next_minute_starts_a_new_candle() {
 
 #[tokio::test]
 async fn a_candle_opens_at_its_first_trade_and_closes_at_its_last() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     // Deliberately not in price order, so a query that sorted by price rather
     // than by sequence would get both ends wrong.
@@ -821,7 +824,7 @@ async fn a_candle_opens_at_its_first_trade_and_closes_at_its_last() {
 
 #[tokio::test]
 async fn a_candle_spans_the_high_and_low_of_its_trades() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     traded(&s, 1, 50_100_000_000, Q1, T0 + 1).await;
     traded(&s, 2, 50_300_000_000, Q1, T0 + 2).await;
@@ -837,7 +840,7 @@ async fn a_candle_spans_the_high_and_low_of_its_trades() {
 
 #[tokio::test]
 async fn a_candles_volume_is_the_base_quantity_traded() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     traded(&s, 1, P50K, Q1, T0 + 1).await;
     traded(&s, 2, P50K, Q1 * 3, T0 + 2).await;
@@ -850,7 +853,7 @@ async fn a_candles_volume_is_the_base_quantity_traded() {
 
 #[tokio::test]
 async fn candles_only_cover_the_symbol_asked_for() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     traded(&s, 1, P50K, Q1, T0 + 1).await;
 
@@ -875,7 +878,7 @@ async fn candles_only_cover_the_symbol_asked_for() {
 
 #[tokio::test]
 async fn candles_come_back_oldest_first() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     for i in 0..4i64 {
         traded(&s, i as u64 + 1, P50K, Q1, T0 + i * MIN).await;
@@ -898,7 +901,7 @@ async fn candles_come_back_oldest_first() {
 
 #[tokio::test]
 async fn a_candle_limit_keeps_the_newest_buckets() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     for i in 0..5i64 {
         traded(&s, i as u64 + 1, P50K, Q1, T0 + i * MIN).await;
@@ -916,7 +919,7 @@ async fn a_candle_limit_keeps_the_newest_buckets() {
 
 #[tokio::test]
 async fn a_wider_bucket_merges_the_candles_inside_it() {
-    let s = store().await;
+    let (s, _schema) = store().await;
 
     for i in 0..5i64 {
         traded(&s, i as u64 + 1, P50K, Q1, T0 + i * MIN).await;
@@ -935,12 +938,12 @@ async fn a_wider_bucket_merges_the_candles_inside_it() {
 
 #[tokio::test]
 async fn a_symbol_that_never_traded_has_no_candles() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     assert!(s.candles(SYM, MIN, 100).await.unwrap().is_empty());
 }
 
 #[tokio::test]
 async fn a_bucket_of_zero_seconds_is_refused_rather_than_dividing_by_it() {
-    let s = store().await;
+    let (s, _schema) = store().await;
     assert!(s.candles(SYM, 0, 100).await.is_err());
 }

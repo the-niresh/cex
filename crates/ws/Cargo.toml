@@ -29,6 +29,7 @@ axum = { version = "0.8.9", features = ["ws"] }
 tower-http = { version = "0.7.0", features = ["trace"] }
 
 [dev-dependencies]
+cex-persist = { path = "../persist" }
 # A real websocket client, so the server tests speak the actual protocol
 # rather than calling handlers directly.
 tokio-tungstenite = "0.24"

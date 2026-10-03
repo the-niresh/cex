@@ -11,7 +11,7 @@
 
 use cex_engine::config::Config as EngineConfig;
 use cex_engine::runner::Runner;
-use cex_persist::{Config, Consumer, HistoryStore};
+use cex_persist::{Config, Consumer, HistoryStore, TestResources};
 use cex_proto::{Command, Event, EventBatch, OrderType, Side, TimeInForce, UserId, FIELD_PAYLOAD};
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
@@ -30,14 +30,15 @@ fn database_url() -> String {
         .unwrap_or_else(|_| "postgres://cex:cex@127.0.0.1:5442/cex".into())
 }
 
-/// A persister pointed at throwaway infrastructure. `tag` ties the Redis stream
-/// and the Postgres schema together so one test can restart its consumer
+/// A persister pointed at throwaway infrastructure. `resources` ties the Redis
+/// stream and the Postgres schema together so one test can restart its consumer
 /// against the same state.
-fn test_config(tag: &str) -> Config {
+fn test_config(resources: &TestResources) -> Config {
+    let tag = &resources.tag;
     Config {
         redis_url: redis_url(),
         database_url: database_url(),
-        schema: format!("t{tag}"),
+        schema: resources.schema.clone(),
         events_stream: format!("test:{tag}:events"),
         group: format!("test:{tag}:group"),
         consumer: "persist-1".into(),
@@ -112,7 +113,8 @@ fn accepted(order_id: u64, user: UserId, qty: i64) -> Event {
 
 #[tokio::test]
 async fn a_published_batch_reaches_postgres() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut c = boot(&cfg).await;
     let alice = Uuid::new_v4();
@@ -126,7 +128,8 @@ async fn a_published_batch_reaches_postgres() {
 
 #[tokio::test]
 async fn batches_already_on_the_stream_before_boot_are_not_skipped() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -146,7 +149,8 @@ async fn batches_already_on_the_stream_before_boot_are_not_skipped() {
 
 #[tokio::test]
 async fn a_republished_batch_does_not_duplicate_rows() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut c = boot(&cfg).await;
     let maker = Uuid::new_v4();
@@ -210,8 +214,8 @@ async fn claim_without_acking(cfg: &Config, r: &mut redis::aio::MultiplexedConne
 
 #[tokio::test]
 async fn a_restarted_consumer_picks_up_what_it_never_acknowledged() {
-    let tag = Uuid::new_v4().simple().to_string();
-    let cfg = test_config(&tag);
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -239,8 +243,8 @@ async fn a_restarted_consumer_picks_up_what_it_never_acknowledged() {
 
 #[tokio::test]
 async fn a_restart_after_a_committed_write_does_not_duplicate_it() {
-    let tag = Uuid::new_v4().simple().to_string();
-    let cfg = test_config(&tag);
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -265,8 +269,8 @@ async fn a_restart_after_a_committed_write_does_not_duplicate_it() {
 
 #[tokio::test]
 async fn a_consumer_resumes_where_it_left_off_rather_than_from_the_start() {
-    let tag = Uuid::new_v4().simple().to_string();
-    let cfg = test_config(&tag);
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -288,7 +292,8 @@ async fn a_consumer_resumes_where_it_left_off_rather_than_from_the_start() {
 
 #[tokio::test]
 async fn an_undecodable_entry_is_acknowledged_and_does_not_wedge_the_stream() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut c = boot(&cfg).await;
     let alice = Uuid::new_v4();
@@ -322,8 +327,9 @@ async fn an_undecodable_entry_is_acknowledged_and_does_not_wedge_the_stream() {
 
 #[tokio::test]
 async fn an_engine_running_ahead_while_the_persister_is_down_loses_nothing() {
-    let tag = Uuid::new_v4().simple().to_string();
-    let cfg = test_config(&tag);
+    let resources = TestResources::new();
+    let tag = resources.tag.clone();
+    let cfg = test_config(&resources);
     let dir = tempfile::tempdir().unwrap();
 
     let engine_cfg = EngineConfig {
