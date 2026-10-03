@@ -5,6 +5,11 @@ services:
     image: redis:7-alpine
     container_name: cex-redis
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     # Non-default port so this never collides with another local Redis.
     ports:
       - "6390:6379"
@@ -27,6 +32,11 @@ services:
     container_name: cex-postgres
     profiles: ["local-db"]
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "5442:5432"
     environment:
@@ -52,6 +62,11 @@ services:
     container_name: cex-engine
     command: ["engine"]
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       redis:
         condition: service_healthy
@@ -75,6 +90,11 @@ services:
     container_name: cex-api
     command: ["api"]
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       redis:
         condition: service_healthy
@@ -110,6 +130,11 @@ services:
     container_name: cex-ws
     command: ["ws"]
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       redis:
         condition: service_healthy
@@ -138,6 +163,11 @@ services:
     container_name: cex-persist
     command: ["persist"]
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       redis:
         condition: service_healthy
