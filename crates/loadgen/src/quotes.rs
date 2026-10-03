@@ -58,6 +58,70 @@ pub fn walk(mid: i64, tick: i64, steps: i64, band: (i64, i64)) -> i64 {
     (mid + steps * tick).clamp(band.0, band.1)
 }
 
+/// Where to centre the ladder after checking the book against a reference price.
+///
+/// The reference is the last trade (or a fallback when there are no trades).
+/// A touch that sits more than 2% away is treated as stray liquidity and
+/// ignored so the bot keeps quoting near the real market.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuoteMid {
+    pub mid: i64,
+    /// The book was present but its touch was too far from the reference.
+    pub ignored_stray_book: bool,
+    /// Touch mid when the book was ignored, for logging.
+    pub stray_touch: Option<i64>,
+}
+
+pub fn quote_mid(
+    reference: i64,
+    best_bid: Option<i64>,
+    best_ask: Option<i64>,
+    tick: i64,
+) -> QuoteMid {
+    let touch = touch_mid(best_bid, best_ask);
+    let trusted = touch.map(|t| within_pct(t, reference, 2)).unwrap_or(false);
+
+    if trusted {
+        QuoteMid {
+            mid: opening_mid(best_bid, best_ask, tick, reference),
+            ignored_stray_book: false,
+            stray_touch: None,
+        }
+    } else {
+        let snapped = reference - reference.rem_euclid(tick);
+        QuoteMid {
+            mid: snapped,
+            ignored_stray_book: touch.is_some(),
+            stray_touch: touch,
+        }
+    }
+}
+
+/// Raw touch before snapping, used only for the 2% sanity check.
+fn touch_mid(best_bid: Option<i64>, best_ask: Option<i64>) -> Option<i64> {
+    match (best_bid, best_ask) {
+        (Some(bid), Some(ask)) => Some((bid + ask) / 2),
+        (Some(bid), None) => Some(bid),
+        (None, Some(ask)) => Some(ask),
+        (None, None) => None,
+    }
+}
+
+/// True when `value` is within `pct` percent of `reference`.
+fn within_pct(value: i64, reference: i64, pct: i64) -> bool {
+    if reference == 0 {
+        return value == 0;
+    }
+    let diff = value.abs_diff(reference) as u128;
+    diff * 100 <= reference.unsigned_abs() as u128 * pct as u128
+}
+
+/// Quote atoms for a resting limit, rounded down like the engine's min check.
+pub fn order_notional(price: i64, qty: i64, base_decimals: u32) -> i64 {
+    let base_unit = 10i64.pow(base_decimals);
+    (price as i128 * qty as i128 / base_unit as i128) as i64
+}
+
 /// Where to centre the ladder, given whatever the book already shows.
 ///
 /// ⚠️ This is not a nicety. Started from a hardcoded 50,000 against a venue
@@ -193,6 +257,40 @@ mod tests {
     }
 
     #[test]
+    fn uses_a_sane_book_near_the_reference() {
+        let bid = 50_118_500_000;
+        let ask = 50_119_500_000;
+        let choice = quote_mid(MID, Some(bid), Some(ask), TICK);
+        assert!(!choice.ignored_stray_book);
+        assert!(choice.mid > bid - TICK && choice.mid < ask + TICK);
+    }
+
+    #[test]
+    fn ignores_a_book_whose_touch_is_far_from_the_reference() {
+        // Live stray orders at 4 and 5 USDT while BTC trades near 50,000.
+        let bid = 400_000_000;
+        let ask = 500_000_000;
+        let choice = quote_mid(MID, Some(bid), Some(ask), TICK);
+        assert!(choice.ignored_stray_book);
+        assert_eq!(choice.stray_touch, Some(450_000_000));
+        assert_eq!(choice.mid, MID);
+    }
+
+    #[test]
+    fn quotes_around_the_reference_when_the_book_is_empty() {
+        let choice = quote_mid(MID, None, None, TICK);
+        assert!(!choice.ignored_stray_book);
+        assert_eq!(choice.mid, MID);
+    }
+
+    #[test]
+    fn quotes_around_the_reference_when_there_are_no_trades_yet() {
+        // Caller passes MID as the reference when the tape is empty.
+        let choice = quote_mid(MID, None, None, TICK);
+        assert_eq!(choice.mid, MID);
+    }
+
+    #[test]
     fn centres_the_ladder_on_the_book_that_is_already_there() {
         // The regression this exists for: a venue trading at 50,119.50 while
         // the tool assumed 50,000. Quoting from the real touch keeps the ladder
@@ -308,5 +406,13 @@ mod tests {
     fn below_zero_does_not_divide_by_zero() {
         let mut rng = Rng::new(3);
         assert_eq!(rng.below(0), 0);
+    }
+
+    #[test]
+    fn order_notional_matches_the_engine_floor() {
+        // 50,000 USDT * 0.001 BTC = 50 USDT, well above the 1 USDT minimum.
+        assert_eq!(order_notional(50_000_000_000, 100_000, 8), 50_000_000);
+        // 4.5 USDT * 0.0012 BTC rounds down below 1 USDT.
+        assert_eq!(order_notional(4_500_000, 120_000, 8), 5_400);
     }
 }

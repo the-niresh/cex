@@ -22,10 +22,10 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use cex_loadgen::quotes::{ladder, opening_mid, walk, Rng};
+use cex_loadgen::quotes::{ladder, order_notional, quote_mid, walk, Rng};
 use cex_loadgen::venue::{
-    cancel, fund, place_limit, place_market, register, touch, with_reauth, Backoff, Funding,
-    StateLogger,
+    cancel, fund, last_trade_price, market_limits, place_limit, place_market, register, touch,
+    with_reauth, Backoff, Funding, StateLogger,
 };
 use cex_proto::deposit::deposit_limit_atoms;
 use cex_proto::Side;
@@ -101,13 +101,19 @@ async fn main() -> Result<()> {
     });
     let mut rng = Rng::new(seed);
 
-    // Where the market actually is, not where this tool assumed it was. Skipping
-    // this against a venue trading 119 ticks away from `MID` put every ask below
-    // the best bid and sold into the book on contact.
+    // Anchor on the last trade, not on stray resting orders far from the market.
+    let reference = last_trade_price(&http, &args.host, &args.symbol)
+        .await
+        .context("read the tape before quoting")?
+        .unwrap_or(MID);
+    let limits = market_limits(&http, &args.host, &args.symbol)
+        .await
+        .context("read market limits")?;
     let (best_bid, best_ask) = touch(&http, &args.host, &args.symbol)
         .await
         .context("read the book before quoting")?;
-    let mut mid = opening_mid(best_bid, best_ask, TICK, MID);
+    let choice = quote_mid(reference, best_bid, best_ask, TICK);
+    let mut mid = choice.mid;
     let band = (mid - args.band_ticks * TICK, mid + args.band_ticks * TICK);
 
     println!(
@@ -115,7 +121,7 @@ async fn main() -> Result<()> {
         args.symbol, args.host, args.levels, args.refresh
     );
     println!(
-        "demo-maker: book shows bid {:?} ask {:?} — quoting around {}",
+        "demo-maker: reference {reference}, book bid {:?} ask {:?}, quoting around {}",
         best_bid, best_ask, mid
     );
 
@@ -126,6 +132,10 @@ async fn main() -> Result<()> {
     let mut cycle: u64 = 0;
     let mut maker_log = StateLogger::new();
     let mut taker_log = StateLogger::new();
+    let mut quote_log = StateLogger::new();
+    if choice.ignored_stray_book {
+        quote_log.ignored_stray_book(reference, choice.stray_touch.unwrap_or(mid));
+    }
     let mut maker_backoff = Backoff::new();
     let mut taker_backoff = Backoff::new();
 
@@ -162,6 +172,10 @@ async fn main() -> Result<()> {
         mid = walk(mid, TICK, rng.drift(), band);
 
         for quote in ladder(mid, TICK, args.levels, args.size) {
+            if order_notional(quote.price, quote.qty, limits.base_decimals) < limits.min_notional {
+                quote_log.below_min_notional();
+                continue;
+            }
             let side = match quote.side {
                 Side::Buy => "BUY",
                 Side::Sell => "SELL",
