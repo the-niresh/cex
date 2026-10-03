@@ -68,20 +68,21 @@ of their dependencies, so building an image each would compile the same crates f
 to produce four images differing only in an argv; every service is that image with a different
 `command`.
 
-Postgres is behind a `local-db` profile rather than started by default, because a deployment
-points `CEX_DATABASE_URL` at managed Postgres. Either way it is off the hot path — `persist` is
-asynchronous and `api` touches it only for auth — so the extra hop costs nothing that matters.
-Redis is not optional and stays next to the engine: a command and its reply are two round trips
-on the matching path.
+Postgres runs in the same compose stack (`cex-postgres`, live data in `cex_live`). It is off the
+hot path — `persist` is asynchronous and `api` touches it only for auth — but colocating it
+keeps history reads at about 1 ms instead of the roughly 196 ms a remote database cost. Redis is
+not optional and stays next to the engine: a command and its reply are two round trips on the
+matching path. A nightly dump runs from root cron (`/usr/local/bin/cex-db-backup`, 03:15, keeps
+7 in `/srv/claude/backups/cex/`).
 
-```bash
-docker compose --profile local-db up -d  # redis on 6390, postgres on 5442
-```
+Production deploys use `scripts/deploy.sh`, which builds from a clean worktree at
+`/srv/claude/deploy/cex` and restarts the stack. Pass `--dry-run` to print the commands without
+running them.
 
 To run the binaries directly instead — the usual loop while working on them:
 
 ```bash
-docker compose --profile local-db up -d redis postgres
+docker compose up -d redis postgres
 cargo build --release
 
 ./target/release/engine &                # consumes cex:commands

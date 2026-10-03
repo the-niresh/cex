@@ -127,10 +127,10 @@ LIMIT $2`. It already matched exactly. The table also turned out to hold **185 r
 **136 kB** — a full `count(*)` over all of it took 207 ms. There was no query to optimise.
 
 **3. "It is the distance to the database."** Half true, and the half that was false mattered
-more. Production Postgres is Neon in `us-east-1`, and a warm round trip from this box is
-**196 ms**, steady. That is real and it is the multiplier. But `SELECT 1` also costs 196 ms, and
-196 ms is not 30 s. Distance alone could not produce the outage, and stopping here would have
-meant paying to move regions and still having the bug.
+more. Production Postgres is the `cex_live` database in the local `cex-postgres` container, and a
+warm round trip is about **1 ms**. That was not the multiplier in this outage. Before the move
+from Neon in `us-east-1`, a warm round trip from this box was **196 ms**, steady, and distance
+alone could not produce 30 s stalls either.
 
 **4. "Pool starvation is ruled out — acquire is only 2 s."** This was the expensive one, and it
 came from misreading a log line:
@@ -623,12 +623,13 @@ Named rather than buried, because each is a real thing to fix:
   read can be answered by the outgoing engine from state the incoming one has already moved past,
   and two consecutive reads can show `seq` going backwards. The fix is to pass the stop signal
   into `run` so its own cleanup always executes, rather than adding another call site to forget.
-* **The history reads still have a hard ceiling of about 40 queries a second.** The cache keeps
-  demand under it no matter how many people are watching, which is what makes the ceiling
-  survivable — but the ceiling itself is set by 8 pooled connections against a database roughly
-  196 ms away, and nothing in the API can raise it. Moving history to a local Postgres would
-  delete the limit outright rather than manage it; that is a cost decision, not a code one.
-  See *The history read path*.
+* **The history reads still have a hard ceiling, but it is much higher now.** The cache keeps
+  demand under it no matter how many people are watching. Production Postgres is local in the
+  compose stack (`cex_live` in `cex-postgres`), so a warm round trip is about 1 ms instead of
+  the roughly 196 ms Neon cost. A nightly dump runs from root cron
+  (`/usr/local/bin/cex-db-backup`, 03:15, keeps 7 in `/srv/claude/backups/cex/`). Deploy with
+  `scripts/deploy.sh` from a clean worktree at `/srv/claude/deploy/cex`. See *The history read
+  path*.
 * **A first boot against an empty database races.** `api` and `persist` each create their own
   tables at startup, and against a genuinely fresh database the two collide with
   `duplicate key value violates unique constraint "pg_type_typname_nsp_index"`. Only ever bites
