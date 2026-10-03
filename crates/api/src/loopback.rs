@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use cex_proto::{Command, Query, RequestId, Response, ResponseBody, ResponseResult, FIELD_PAYLOAD};
 use futures_util::StreamExt;
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use tracing::{debug, error, warn};
 use uuid::Uuid;
@@ -64,7 +64,7 @@ type Pending = Arc<Mutex<HashMap<RequestId, tokio::sync::oneshot::Sender<Respons
 #[derive(Clone)]
 pub struct Loopback {
     cfg: Arc<LoopbackConfig>,
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
     pending: Pending,
 }
 
@@ -73,8 +73,7 @@ impl Loopback {
     pub async fn connect(cfg: LoopbackConfig) -> Result<Self, LoopbackError> {
         let client = redis::Client::open(cfg.redis_url.as_str())
             .map_err(|e| LoopbackError::Transport(e.to_string()))?;
-        let conn = client
-            .get_multiplexed_async_connection()
+        let conn = ConnectionManager::new(client.clone())
             .await
             .map_err(|e| LoopbackError::Transport(e.to_string()))?;
 
@@ -82,59 +81,52 @@ impl Loopback {
 
         // Subscribe before returning, so a request sent immediately after
         // `connect` cannot have its reply published before we are listening.
-        let mut sub = client
-            .get_async_pubsub()
-            .await
-            .map_err(|e| LoopbackError::Transport(e.to_string()))?;
-        sub.subscribe(&cfg.responses_channel)
-            .await
-            .map_err(|e| LoopbackError::Transport(e.to_string()))?;
-
+        let channel = cfg.responses_channel.clone();
+        let redis_url = cfg.redis_url.clone();
         let routes = Arc::clone(&pending);
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+
         tokio::spawn(async move {
-            let mut stream = sub.on_message();
-            while let Some(msg) = stream.next().await {
-                let payload: String = match msg.get_payload() {
-                    Ok(p) => p,
+            let mut ready_tx = Some(ready_tx);
+            loop {
+                let client = match redis::Client::open(redis_url.as_str()) {
+                    Ok(c) => c,
                     Err(e) => {
-                        warn!(error = %e, "unreadable reply");
+                        error!(error = %e, "opening redis for the response listener");
+                        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                         continue;
                     }
                 };
-                let response: Response = match serde_json::from_str(&payload) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        warn!(error = %e, "undecodable reply");
-                        continue;
-                    }
-                };
-
-                // Take the waiter out of the map before waking it, so a late
-                // duplicate cannot wake the same caller twice.
-                let waiter = routes
-                    .lock()
-                    .expect("pending map poisoned")
-                    .remove(&response.request_id);
-
-                match waiter {
-                    Some(tx) => {
-                        // An error here means the caller already gave up. Fine.
-                        let _ = tx.send(response);
-                    }
-                    None => debug!(
-                        request_id = %response.request_id,
-                        "reply for a request nobody is waiting on, dropping"
-                    ),
+                match subscribe_responses(client, &channel, routes.clone(), ready_tx.take()).await {
+                    Ok(()) => error!("response subscription ended, reconnecting"),
+                    Err(e) => error!(error = %e, "response subscription failed, retrying"),
                 }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
             }
-            error!("response subscription ended; the loopback is now deaf");
         });
+
+        ready_rx
+            .await
+            .map_err(|_| LoopbackError::Transport("response listener failed to start".into()))?;
 
         Ok(Loopback {
             cfg: Arc::new(cfg),
             conn,
             pending,
         })
+    }
+
+    /// Whether Redis answers a ping. Used by `/health` to report a real outage.
+    pub async fn ping_redis(&self) -> bool {
+        let mut conn = self.conn.clone();
+        matches!(
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                redis::cmd("PING").query_async::<String>(&mut conn),
+            )
+            .await,
+            Ok(Ok(_))
+        )
     }
 
     /// How many requests are currently in flight. Exposed so tests can prove the
@@ -277,6 +269,52 @@ fn set_command_request_id(cmd: &mut Command, id: RequestId) {
         | Command::PlaceOrder { request_id, .. }
         | Command::CancelOrder { request_id, .. } => *request_id = id,
     }
+}
+
+async fn subscribe_responses(
+    client: redis::Client,
+    channel: &str,
+    routes: Pending,
+    ready: Option<tokio::sync::oneshot::Sender<()>>,
+) -> Result<(), redis::RedisError> {
+    let mut sub = client.get_async_pubsub().await?;
+    sub.subscribe(channel).await?;
+    if let Some(tx) = ready {
+        let _ = tx.send(());
+    }
+    let mut stream = sub.on_message();
+    while let Some(msg) = stream.next().await {
+        let payload: String = match msg.get_payload() {
+            Ok(p) => p,
+            Err(e) => {
+                warn!(error = %e, "unreadable reply");
+                continue;
+            }
+        };
+        let response: Response = match serde_json::from_str(&payload) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!(error = %e, "undecodable reply");
+                continue;
+            }
+        };
+
+        let waiter = routes
+            .lock()
+            .expect("pending map poisoned")
+            .remove(&response.request_id);
+
+        match waiter {
+            Some(tx) => {
+                let _ = tx.send(response);
+            }
+            None => debug!(
+                request_id = %response.request_id,
+                "reply for a request nobody is waiting on, dropping"
+            ),
+        }
+    }
+    Ok(())
 }
 
 fn set_query_request_id(query: &mut Query, id: RequestId) {

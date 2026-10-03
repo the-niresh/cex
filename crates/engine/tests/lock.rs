@@ -12,7 +12,8 @@
 use cex_engine::config::Config;
 use cex_engine::lock::{lock_key, EngineLock, LockError};
 use cex_engine::runner::Runner;
-use redis::aio::MultiplexedConnection;
+use cex_persist::TestResources;
+use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use std::time::Duration;
 use uuid::Uuid;
@@ -21,10 +22,9 @@ fn redis_url() -> String {
     std::env::var("CEX_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6390".into())
 }
 
-async fn conn() -> MultiplexedConnection {
-    redis::Client::open(redis_url())
-        .expect("redis client")
-        .get_multiplexed_async_connection()
+async fn conn() -> ConnectionManager {
+    let client = redis::Client::open(redis_url()).expect("redis client");
+    redis::aio::ConnectionManager::new(client)
         .await
         .expect("redis — is `docker compose up -d` running?")
 }
@@ -196,7 +196,8 @@ async fn every_engine_gets_a_distinct_identity() {
 
 // ───────────────────────── the engine itself ─────────────────────────
 
-fn test_config(dir: &std::path::Path, tag: &str) -> Config {
+fn test_config(dir: &std::path::Path, resources: &TestResources) -> Config {
+    let tag = &resources.tag;
     Config {
         redis_url: redis_url(),
         commands_stream: format!("test:{tag}:commands"),
@@ -214,7 +215,8 @@ fn test_config(dir: &std::path::Path, tag: &str) -> Config {
 #[tokio::test]
 async fn a_second_engine_refuses_to_boot_on_the_same_command_stream() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path(), &Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
 
     let _first = Runner::boot(cfg.clone()).await.expect("the first engine");
 
@@ -234,8 +236,10 @@ async fn a_second_engine_refuses_to_boot_on_the_same_command_stream() {
 #[tokio::test]
 async fn engines_on_separate_streams_both_boot() {
     let dir = tempfile::tempdir().unwrap();
-    let a = test_config(dir.path(), &Uuid::new_v4().simple().to_string());
-    let b = test_config(dir.path(), &Uuid::new_v4().simple().to_string());
+    let resources_a = TestResources::new();
+    let resources_b = TestResources::new();
+    let a = test_config(dir.path(), &resources_a);
+    let b = test_config(dir.path(), &resources_b);
 
     let _a = Runner::boot(a).await.expect("first engine");
     let _b = Runner::boot(b).await.expect("second engine");
@@ -244,7 +248,8 @@ async fn engines_on_separate_streams_both_boot() {
 #[tokio::test]
 async fn an_engine_that_loses_its_lock_stops_instead_of_carrying_on() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path(), &Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut runner = Runner::boot(cfg.clone()).await.expect("engine boot");
 
     // Another engine has taken the stream. Continuing to apply commands now
@@ -273,7 +278,8 @@ async fn a_blocking_read_longer_than_the_lease_is_refused_at_boot() {
     // lease lapses under a perfectly healthy engine and it stops for no reason.
     // That is a misconfiguration, and it is knowable at startup.
     let dir = tempfile::tempdir().unwrap();
-    let mut cfg = test_config(dir.path(), &Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let mut cfg = test_config(dir.path(), &resources);
     cfg.block_ms = 5_000;
     cfg.lock_ttl_ms = 900;
 
@@ -289,7 +295,8 @@ async fn a_gracefully_stopped_engine_hands_the_stream_straight_over() {
     // The deploy path. Waiting out a 30-second lease on every restart would
     // make an ordinary rolling deploy an outage, so a clean stop has to release.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path(), &Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
 
     let mut leaving = Runner::boot(cfg.clone()).await.expect("engine boot");
     assert!(leaving.shutdown().await.unwrap(), "we still held it");
@@ -304,7 +311,8 @@ async fn releasing_after_the_lock_was_already_lost_takes_nothing_from_the_new_ow
     // The engine calls `shutdown` on its way out even when it stopped *because*
     // it lost the lock. That must not unlock the stream under whoever has it.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path(), &Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut runner = Runner::boot(cfg.clone()).await.expect("engine boot");
 
     let key = lock_key(&cfg.commands_stream);
@@ -322,7 +330,8 @@ async fn releasing_after_the_lock_was_already_lost_takes_nothing_from_the_new_ow
 #[tokio::test]
 async fn a_restarted_engine_reclaims_its_own_stream_once_the_lease_lapses() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path(), &Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
 
     let killed = Runner::boot(cfg.clone()).await.expect("engine boot");
     drop(killed); // No graceful release: this is a kill -9.

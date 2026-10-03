@@ -16,6 +16,7 @@ use std::time::Duration;
 use cex_api::loopback::{Loopback, LoopbackConfig, LoopbackError};
 use cex_engine::config::Config as EngineConfig;
 use cex_engine::runner::Runner;
+use cex_persist::TestResources;
 use cex_proto::{Command, OrderType, Query, ResponseBody, Side, TimeInForce};
 use uuid::Uuid;
 
@@ -27,15 +28,22 @@ fn redis_url() -> String {
     std::env::var("CEX_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6390".into())
 }
 
+struct Pair {
+    engine: EngineConfig,
+    loopback: LoopbackConfig,
+    _resources: TestResources,
+}
+
 /// Matching engine + client configs pointing at the same throwaway channels.
-fn pair(dir: &std::path::Path) -> (EngineConfig, LoopbackConfig) {
-    let tag = Uuid::new_v4().simple().to_string();
+fn pair(dir: &std::path::Path) -> Pair {
+    let resources = TestResources::new();
+    let tag = &resources.tag;
     let commands = format!("test:{tag}:commands");
     let queries = format!("test:{tag}:queries");
     let responses = format!("test:{tag}:responses");
 
-    (
-        EngineConfig {
+    Pair {
+        engine: EngineConfig {
             redis_url: redis_url(),
             commands_stream: commands.clone(),
             events_stream: format!("test:{tag}:events"),
@@ -47,14 +55,15 @@ fn pair(dir: &std::path::Path) -> (EngineConfig, LoopbackConfig) {
             block_ms: 150,
             lock_ttl_ms: 30_000,
         },
-        LoopbackConfig {
+        loopback: LoopbackConfig {
             redis_url: redis_url(),
             commands_stream: commands,
             queries_queue: queries,
             responses_channel: responses,
             timeout: Duration::from_secs(5),
         },
-    )
+        _resources: resources,
+    }
 }
 
 /// Let the engine work through everything currently queued.
@@ -105,7 +114,9 @@ fn limit(who: Uuid, side: Side, price: i64, qty: i64) -> Command {
 #[tokio::test]
 async fn a_command_returns_the_engines_answer() {
     let dir = tempfile::tempdir().unwrap();
-    let (ecfg, lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let ecfg = setup.engine;
+    let lcfg = setup.loopback;
     let engine = Runner::boot(ecfg).await.unwrap();
     let handle = spawn_engine(engine);
     let lb = Loopback::connect(lcfg).await.unwrap();
@@ -122,7 +133,9 @@ async fn a_command_returns_the_engines_answer() {
 #[tokio::test]
 async fn a_query_returns_the_engines_answer() {
     let dir = tempfile::tempdir().unwrap();
-    let (ecfg, lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let ecfg = setup.engine;
+    let lcfg = setup.loopback;
     let engine = Runner::boot(ecfg).await.unwrap();
     let handle = spawn_engine(engine);
     let lb = Loopback::connect(lcfg).await.unwrap();
@@ -151,7 +164,9 @@ async fn a_query_returns_the_engines_answer() {
 #[tokio::test]
 async fn placing_an_order_returns_its_id_and_status() {
     let dir = tempfile::tempdir().unwrap();
-    let (ecfg, lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let ecfg = setup.engine;
+    let lcfg = setup.loopback;
     let engine = Runner::boot(ecfg).await.unwrap();
     let handle = spawn_engine(engine);
     let lb = Loopback::connect(lcfg).await.unwrap();
@@ -179,7 +194,9 @@ async fn placing_an_order_returns_its_id_and_status() {
 #[tokio::test]
 async fn an_engine_rejection_surfaces_as_an_error_not_a_success() {
     let dir = tempfile::tempdir().unwrap();
-    let (ecfg, lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let ecfg = setup.engine;
+    let lcfg = setup.loopback;
     let engine = Runner::boot(ecfg).await.unwrap();
     let handle = spawn_engine(engine);
     let lb = Loopback::connect(lcfg).await.unwrap();
@@ -201,7 +218,8 @@ async fn an_engine_rejection_surfaces_as_an_error_not_a_success() {
 async fn a_request_with_nobody_listening_times_out() {
     // No engine is running, so nothing will ever answer.
     let dir = tempfile::tempdir().unwrap();
-    let (_ecfg, mut lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let mut lcfg = setup.loopback;
     lcfg.timeout = Duration::from_millis(300);
     let lb = Loopback::connect(lcfg).await.unwrap();
 
@@ -220,7 +238,8 @@ async fn a_timed_out_request_is_removed_from_the_pending_map() {
     // A pending entry that is never cleaned up is a memory leak that grows with
     // every failed request.
     let dir = tempfile::tempdir().unwrap();
-    let (_ecfg, mut lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let mut lcfg = setup.loopback;
     lcfg.timeout = Duration::from_millis(100);
     let lb = Loopback::connect(lcfg).await.unwrap();
 
@@ -243,7 +262,9 @@ async fn several_concurrent_requests_each_get_their_own_answer() {
     // routing mistake hands one caller another caller's data. Here that would
     // mean showing a user someone else's balance.
     let dir = tempfile::tempdir().unwrap();
-    let (ecfg, lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let ecfg = setup.engine;
+    let lcfg = setup.loopback;
     let engine = Runner::boot(ecfg).await.unwrap();
     let handle = spawn_engine(engine);
     let lb = Loopback::connect(lcfg).await.unwrap();
@@ -295,7 +316,9 @@ async fn a_reply_for_an_unknown_request_is_ignored() {
     // Late replies arrive after a caller has given up. They must be dropped
     // quietly, not panic the subscriber task and take every other waiter with it.
     let dir = tempfile::tempdir().unwrap();
-    let (ecfg, lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let ecfg = setup.engine;
+    let lcfg = setup.loopback;
     let mut engine = Runner::boot(ecfg.clone()).await.unwrap();
     let lb = Loopback::connect(lcfg).await.unwrap();
 
@@ -332,7 +355,9 @@ async fn a_reply_for_an_unknown_request_is_ignored() {
 #[tokio::test]
 async fn a_command_records_its_own_engine_time() {
     let dir = tempfile::tempdir().unwrap();
-    let (engine_cfg, loopback_cfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let engine_cfg = setup.engine;
+    let loopback_cfg = setup.loopback;
     let runner = Runner::boot(engine_cfg).await.expect("engine boot");
     let _engine = spawn_engine(runner);
     let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
@@ -385,7 +410,9 @@ async fn concurrent_scopes_do_not_leak_engine_time_into_each_other() {
     // system noise — it is time `record_engine` attributed to this scope that
     // did not come from timing this scope's own call.
     let dir = tempfile::tempdir().unwrap();
-    let (engine_cfg, loopback_cfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let engine_cfg = setup.engine;
+    let loopback_cfg = setup.loopback;
     let runner = Runner::boot(engine_cfg).await.expect("engine boot");
     let _engine = spawn_engine(runner);
     let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
@@ -505,7 +532,9 @@ async fn the_caller_does_not_have_to_supply_a_unique_request_id() {
     // Two commands built with the same id must not collide: the loopback stamps
     // its own, so a careless caller cannot cross two requests.
     let dir = tempfile::tempdir().unwrap();
-    let (ecfg, lcfg) = pair(dir.path());
+    let setup = pair(dir.path());
+    let ecfg = setup.engine;
+    let lcfg = setup.loopback;
     let engine = Runner::boot(ecfg).await.unwrap();
     let handle = spawn_engine(engine);
     let lb = Loopback::connect(lcfg).await.unwrap();

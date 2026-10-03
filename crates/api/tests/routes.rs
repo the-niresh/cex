@@ -10,6 +10,7 @@ use cex_api::routes::{build_router, AppState};
 use cex_api::{Loopback, LoopbackConfig, Tokens, UserStore};
 use cex_engine::config::Config as EngineConfig;
 use cex_engine::runner::Runner;
+use cex_persist::TestResources;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -36,11 +37,13 @@ struct Harness {
     history: cex_persist::HistoryStore,
     _engine: tokio::task::JoinHandle<()>,
     _dir: tempfile::TempDir,
+    _resources: TestResources,
 }
 
 impl Harness {
     async fn start() -> Harness {
-        let tag = Uuid::new_v4().simple().to_string();
+        let resources = TestResources::new();
+        let tag = resources.tag.clone();
         let dir = tempfile::tempdir().unwrap();
 
         let engine_cfg = EngineConfig {
@@ -72,7 +75,7 @@ impl Harness {
             }
         });
 
-        let users = UserStore::connect_to_schema(&database_url(), &format!("t{tag}"))
+        let users = UserStore::connect_to_schema(&database_url(), &resources.schema)
             .await
             .expect("postgres — is `docker compose up -d` running?");
         let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
@@ -82,7 +85,7 @@ impl Harness {
         );
 
         let history =
-            cex_persist::HistoryStore::connect_to_schema(&database_url(), &format!("t{tag}"))
+            cex_persist::HistoryStore::connect_to_schema(&database_url(), &resources.schema)
                 .await
                 .expect("postgres history schema");
 
@@ -91,6 +94,7 @@ impl Harness {
             history,
             _engine: engine,
             _dir: dir,
+            _resources: resources,
         }
     }
 

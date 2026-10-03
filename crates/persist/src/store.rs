@@ -330,6 +330,78 @@ impl HistoryStore {
         Ok(written)
     }
 
+    /// Delete up to `batch` history rows older than `retention_days`. Returns
+    /// how many rows were removed across all tables.
+    pub async fn delete_history_older_than(
+        &self,
+        retention_days: u32,
+        batch: i64,
+    ) -> Result<u64, StoreError> {
+        let mut total = 0u64;
+
+        let n = sqlx::query(
+            "DELETE FROM balance_changes WHERE (seq, idx) IN (
+                SELECT seq, idx FROM balance_changes
+                WHERE created_at < now() - make_interval(days => $1)
+                LIMIT $2
+            )",
+        )
+        .bind(retention_days as i32)
+        .bind(batch)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?
+        .rows_affected();
+        total += n;
+
+        let n = sqlx::query(
+            "DELETE FROM fills WHERE (seq, idx) IN (
+                SELECT seq, idx FROM fills
+                WHERE created_at < now() - make_interval(days => $1)
+                LIMIT $2
+            )",
+        )
+        .bind(retention_days as i32)
+        .bind(batch)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?
+        .rows_affected();
+        total += n;
+
+        let n = sqlx::query(
+            "DELETE FROM orders WHERE order_id IN (
+                SELECT order_id FROM orders
+                WHERE updated_at < now() - make_interval(days => $1)
+                LIMIT $2
+            )",
+        )
+        .bind(retention_days as i32)
+        .bind(batch)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?
+        .rows_affected();
+        total += n;
+
+        let n = sqlx::query(
+            "DELETE FROM event_batches WHERE seq IN (
+                SELECT seq FROM event_batches
+                WHERE written_at < now() - make_interval(days => $1)
+                LIMIT $2
+            )",
+        )
+        .bind(retention_days as i32)
+        .bind(batch)
+        .execute(&self.pool)
+        .await
+        .map_err(db)?
+        .rows_affected();
+        total += n;
+
+        Ok(total)
+    }
+
     /// Every batch seq written so far, ascending.
     pub async fn written_seqs(&self) -> Result<Vec<Seq>, StoreError> {
         sqlx::query("SELECT seq FROM event_batches ORDER BY seq")

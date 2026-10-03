@@ -7,6 +7,7 @@
 //! persister's: this group starts at the *tail*, because replaying stale depth
 //! deltas into a live feed is worse than not having them.
 
+use cex_persist::TestResources;
 use cex_proto::{Event, EventBatch, OrderType, Side, FIELD_PAYLOAD};
 use cex_ws::wire::Channel;
 use cex_ws::{Config, Feed};
@@ -22,7 +23,8 @@ fn redis_url() -> String {
     std::env::var("CEX_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6390".into())
 }
 
-fn test_config(tag: &str) -> Config {
+fn test_config(resources: &TestResources) -> Config {
+    let tag = &resources.tag;
     Config {
         redis_url: redis_url(),
         events_stream: format!("test:{tag}:events"),
@@ -95,7 +97,8 @@ fn depth(depth_seq: u64) -> Event {
 
 #[tokio::test]
 async fn a_published_batch_reaches_subscribers() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut f = Feed::boot(cfg.clone()).await.expect("feed boot");
     let mut rx = f.subscribe();
@@ -110,7 +113,8 @@ async fn a_published_batch_reaches_subscribers() {
 
 #[tokio::test]
 async fn every_subscriber_gets_its_own_copy() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut f = Feed::boot(cfg.clone()).await.expect("feed boot");
     let mut a = f.subscribe();
@@ -126,7 +130,8 @@ async fn every_subscriber_gets_its_own_copy() {
 
 #[tokio::test]
 async fn one_batch_can_produce_several_addressed_updates() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut f = Feed::boot(cfg.clone()).await.expect("feed boot");
     let mut rx = f.subscribe();
@@ -148,7 +153,8 @@ async fn one_batch_can_produce_several_addressed_updates() {
 
 #[tokio::test]
 async fn entries_published_before_boot_are_not_replayed() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
 
     // Market data has a shelf life. Unlike the persister, this service must not
@@ -170,8 +176,8 @@ async fn entries_published_before_boot_are_not_replayed() {
 
 #[tokio::test]
 async fn stale_pending_entries_are_cleared_without_being_broadcast() {
-    let tag = Uuid::new_v4().simple().to_string();
-    let cfg = test_config(&tag);
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
 
     // Boot once so the group exists, then leave entries delivered and unacked —
@@ -221,7 +227,8 @@ async fn stale_pending_entries_are_cleared_without_being_broadcast() {
 
 #[tokio::test]
 async fn a_republished_batch_is_not_broadcast_twice() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut f = Feed::boot(cfg.clone()).await.expect("feed boot");
     let mut rx = f.subscribe();
@@ -248,7 +255,8 @@ async fn a_republished_batch_is_not_broadcast_twice() {
 
 #[tokio::test]
 async fn a_batch_older_than_one_already_seen_is_not_broadcast() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut f = Feed::boot(cfg.clone()).await.expect("feed boot");
     let mut rx = f.subscribe();
@@ -273,7 +281,8 @@ async fn a_batch_older_than_one_already_seen_is_not_broadcast() {
 
 #[tokio::test]
 async fn an_undecodable_entry_is_acknowledged_and_does_not_wedge_the_stream() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut f = Feed::boot(cfg.clone()).await.expect("feed boot");
     let mut rx = f.subscribe();
@@ -299,7 +308,8 @@ async fn an_undecodable_entry_is_acknowledged_and_does_not_wedge_the_stream() {
 
 #[tokio::test]
 async fn publishing_with_nobody_connected_is_not_an_error() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut f = Feed::boot(cfg.clone()).await.expect("feed boot");
 
@@ -311,7 +321,8 @@ async fn publishing_with_nobody_connected_is_not_an_error() {
 
 #[tokio::test]
 async fn a_batch_with_nothing_to_broadcast_is_still_consumed() {
-    let cfg = test_config(&Uuid::new_v4().simple().to_string());
+    let resources = TestResources::new();
+    let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
     let mut f = Feed::boot(cfg.clone()).await.expect("feed boot");
     let mut rx = f.subscribe();

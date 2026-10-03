@@ -18,8 +18,14 @@
 
 pub mod config;
 pub mod consumer;
+pub mod retention;
 pub mod store;
+pub mod test_support;
+pub mod trim;
 
 pub use config::Config;
 pub use consumer::Consumer;
 pub use store::{BalanceChangeRow, CandleRow, FillRow, HistoryStore, OrderRow, StoreError};
+pub use test_support::{
+    assert_safe_database_url, require_safe_database_url, RedisTagGuard, SchemaGuard, TestResources,
+};

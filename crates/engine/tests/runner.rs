@@ -11,6 +11,7 @@
 
 use cex_engine::config::Config;
 use cex_engine::runner::Runner;
+use cex_persist::TestResources;
 use cex_proto::{
     Command, EventBatch, OrderType, Query, ResponseBody, Side, TimeInForce, FIELD_PAYLOAD,
 };
@@ -26,8 +27,8 @@ fn redis_url() -> String {
 }
 
 /// Config pointing at throwaway streams and a throwaway snapshot directory.
-fn test_config(dir: &std::path::Path) -> Config {
-    let tag = Uuid::new_v4().simple().to_string();
+fn test_config(dir: &std::path::Path, resources: &TestResources) -> Config {
+    let tag = &resources.tag;
     Config {
         redis_url: redis_url(),
         commands_stream: format!("test:{tag}:commands"),
@@ -131,7 +132,8 @@ fn depth(runner: &Runner) -> (Vec<[i64; 2]>, Vec<[i64; 2]>) {
 #[tokio::test]
 async fn commands_on_the_stream_are_applied_in_order() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -150,7 +152,8 @@ async fn commands_on_the_stream_are_applied_in_order() {
 #[tokio::test]
 async fn an_idle_stream_applies_nothing_and_returns_promptly() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut runner = Runner::boot(cfg).await.unwrap();
 
     assert_eq!(runner.step().await.unwrap(), 0);
@@ -160,7 +163,8 @@ async fn an_idle_stream_applies_nothing_and_returns_promptly() {
 async fn a_malformed_command_is_skipped_without_stopping_the_loop() {
     // One bad message must never wedge the exchange.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -183,7 +187,8 @@ async fn a_malformed_command_is_skipped_without_stopping_the_loop() {
 #[tokio::test]
 async fn a_rejected_command_does_not_change_state() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let poor = Uuid::new_v4();
 
@@ -202,7 +207,8 @@ async fn a_rejected_command_does_not_change_state() {
 #[tokio::test]
 async fn a_trade_publishes_an_event_batch_carrying_the_fill() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let alice = Uuid::new_v4();
     let bob = Uuid::new_v4();
@@ -260,7 +266,8 @@ async fn a_trade_publishes_an_event_batch_carrying_the_fill() {
 #[tokio::test]
 async fn a_snapshot_records_the_position_it_was_taken_at() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -284,7 +291,8 @@ async fn a_crash_mid_stream_loses_nothing() {
     // one against the same snapshot directory, and let it finish. It must land
     // in exactly the state a single uninterrupted engine would have reached.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
 
     let alice = Uuid::new_v4();
@@ -365,7 +373,8 @@ async fn a_crash_mid_stream_loses_nothing() {
 #[tokio::test]
 async fn booting_with_no_snapshot_replays_the_whole_log() {
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -383,7 +392,8 @@ async fn booting_with_no_snapshot_replays_the_whole_log() {
 async fn a_replayed_command_is_not_applied_twice() {
     // Booting from a snapshot must resume *after* the recorded id, not at it.
     let dir = tempfile::tempdir().unwrap();
-    let cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let cfg = test_config(dir.path(), &resources);
     let mut c = conn(&cfg).await;
     let alice = Uuid::new_v4();
 
@@ -411,7 +421,8 @@ async fn a_replayed_command_is_not_applied_twice() {
 #[tokio::test]
 async fn snapshots_are_taken_automatically_on_the_configured_interval() {
     let dir = tempfile::tempdir().unwrap();
-    let mut cfg = test_config(dir.path());
+    let resources = TestResources::new();
+    let mut cfg = test_config(dir.path(), &resources);
     cfg.snapshot_every = 3;
     let mut c = conn(&cfg).await;
     let alice = Uuid::new_v4();
@@ -427,4 +438,81 @@ async fn snapshots_are_taken_automatically_on_the_configured_interval() {
         !runner.store().list().unwrap().is_empty(),
         "no snapshot was written despite passing the interval"
     );
+}
+
+#[tokio::test]
+async fn snapshot_trims_applied_commands_from_the_stream() {
+    let dir = tempfile::tempdir().unwrap();
+    let resources = TestResources::new();
+    let mut cfg = test_config(dir.path(), &resources);
+    cfg.snapshot_every = 1;
+    let mut c = conn(&cfg).await;
+    let alice = Uuid::new_v4();
+
+    send(&mut c, &cfg, &deposit(alice, "USDT", 1_000)).await;
+
+    let mut runner = Runner::boot(cfg.clone()).await.unwrap();
+    drain(&mut runner).await;
+    runner.snapshot().await.unwrap();
+
+    let len: usize = redis::cmd("XLEN")
+        .arg(&cfg.commands_stream)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(len, 0, "applied commands should be trimmed after snapshot");
+}
+
+#[tokio::test]
+async fn snapshot_trim_keeps_commands_after_the_oldest_retained_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let resources = TestResources::new();
+    let mut cfg = test_config(dir.path(), &resources);
+    cfg.snapshot_every = 1_000_000;
+    cfg.snapshot_keep = 3;
+    let mut c = conn(&cfg).await;
+    let alice = Uuid::new_v4();
+
+    let mut runner = Runner::boot(cfg.clone()).await.unwrap();
+
+    for amount in [100_i64, 200, 300, 400, 500] {
+        send(&mut c, &cfg, &deposit(alice, "USDT", amount)).await;
+        drain(&mut runner).await;
+        runner.snapshot().await.unwrap();
+    }
+
+    let len: usize = redis::cmd("XLEN")
+        .arg(&cfg.commands_stream)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(
+        len, 2,
+        "only commands after the oldest kept snapshot should remain"
+    );
+}
+
+#[tokio::test]
+async fn snapshot_succeeds_when_command_trim_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let resources = TestResources::new();
+    let mut cfg = test_config(dir.path(), &resources);
+    cfg.snapshot_every = 1;
+    let mut c = conn(&cfg).await;
+    let alice = Uuid::new_v4();
+
+    send(&mut c, &cfg, &deposit(alice, "USDT", 1_000)).await;
+
+    let mut runner = Runner::boot(cfg.clone()).await.unwrap();
+    drain(&mut runner).await;
+    runner.snapshot().await.unwrap();
+
+    let _: () = redis::cmd("DEL")
+        .arg(&cfg.commands_stream)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+
+    runner.snapshot().await.unwrap();
+    assert!(runner.step().await.is_ok(), "engine should keep stepping");
 }

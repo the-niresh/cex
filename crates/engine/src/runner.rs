@@ -32,8 +32,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result};
 use cex_core::state::{Snapshot, State};
 use cex_core::MarketRegistry;
-use cex_proto::{Command, EventBatch, Response, FIELD_PAYLOAD};
-use redis::aio::MultiplexedConnection;
+use cex_proto::{retry::Backoff, Command, EventBatch, Response, FIELD_PAYLOAD};
+use redis::aio::ConnectionManager;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
 use tokio::task::JoinHandle;
@@ -47,7 +47,7 @@ use crate::stream_id::StreamId;
 
 pub struct Runner {
     cfg: Config,
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
     /// Kept only to open a fresh connection for the query task in `run()` —
     /// deliberately not a clone of `conn` or the lock's connection. See the
     /// comment on `lock_conn` in `boot` for why sharing a multiplexed
@@ -74,8 +74,7 @@ impl Runner {
     pub async fn boot(cfg: Config) -> Result<Self> {
         let client = redis::Client::open(cfg.redis_url.as_str())
             .with_context(|| format!("opening redis at {}", cfg.redis_url))?;
-        let conn = client
-            .get_multiplexed_async_connection()
+        let conn = ConnectionManager::new(client.clone())
             .await
             .context("connecting to redis")?;
 
@@ -103,8 +102,7 @@ impl Runner {
         // a blocking `XREAD` sitting on it delays everything queued behind it —
         // which would mean releasing the lock on shutdown waits out `block_ms`,
         // and the replacement engine waits with it.
-        let lock_conn = client
-            .get_multiplexed_async_connection()
+        let lock_conn = ConnectionManager::new(client.clone())
             .await
             .context("connecting to redis for the stream lock")?;
 
@@ -344,11 +342,41 @@ impl Runner {
         let path = self.store.save(&snap)?;
         self.applied_since_snapshot = 0;
         let pruned = self.store.prune()?;
+        let trim_position = match self.store.oldest_kept_position() {
+            Ok(Some(pos)) => pos,
+            Ok(None) => self.position,
+            Err(e) => {
+                warn!(error = %e, "failed to list snapshots for command trim");
+                info!(
+                    path = %path.display(),
+                    position = %self.position,
+                    seq,
+                    pruned,
+                    trimmed = 0,
+                    "snapshot written"
+                );
+                return Ok(());
+            }
+        };
+        let trimmed = match crate::trim::trim_commands_before(
+            &mut self.conn,
+            &self.cfg.commands_stream,
+            trim_position,
+        )
+        .await
+        {
+            Ok(n) => n,
+            Err(e) => {
+                warn!(error = %e, "failed to trim command stream");
+                0
+            }
+        };
         info!(
             path = %path.display(),
             position = %self.position,
             seq,
             pruned,
+            trimmed,
             "snapshot written"
         );
         Ok(())
@@ -395,9 +423,7 @@ impl Runner {
             "engine running"
         );
 
-        let query_conn = self
-            .client
-            .get_multiplexed_async_connection()
+        let query_conn = ConnectionManager::new(self.client.clone())
             .await
             .context("connecting to redis for the query loop")?;
         let query_cfg = QueryLoopConfig {
@@ -420,6 +446,7 @@ impl Runner {
     }
 
     async fn command_loop(&mut self) -> Result<()> {
+        let mut backoff = Backoff::new();
         loop {
             // Before touching anything, confirm we are still the engine. If the
             // lease has been taken, another process is applying these very
@@ -428,11 +455,18 @@ impl Runner {
             self.lock.refresh_if_due().await?;
 
             match self.step().await {
-                Ok(0) => {}
-                Ok(n) => debug!(applied = n, position = %self.position, "batch applied"),
+                Ok(0) => {
+                    backoff.reset();
+                }
+                Ok(n) => {
+                    backoff.reset();
+                    debug!(applied = n, position = %self.position, "batch applied");
+                }
                 Err(e) => {
-                    error!(error = %e, "read failed, retrying");
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    let log_state = backoff.sleep().await;
+                    if log_state {
+                        error!(error = %e, "read failed, backing off");
+                    }
                 }
             }
         }

@@ -13,8 +13,8 @@
 //! the pending list forever would grow it without bound.
 
 use anyhow::{Context, Result};
-use cex_proto::{EventBatch, Seq, FIELD_PAYLOAD};
-use redis::aio::MultiplexedConnection;
+use cex_proto::{retry::Backoff, EventBatch, Seq, FIELD_PAYLOAD};
+use redis::aio::ConnectionManager;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ use crate::route::{route, Update};
 
 pub struct Feed {
     cfg: Config,
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
     tx: broadcast::Sender<Arc<Update>>,
     /// While true, reads target this consumer's stale pending list, which is
     /// acknowledged and discarded rather than broadcast.
@@ -45,8 +45,7 @@ impl Feed {
     pub async fn boot(cfg: Config) -> Result<Self> {
         let client = redis::Client::open(cfg.redis_url.as_str())
             .with_context(|| format!("opening redis at {}", cfg.redis_url))?;
-        let mut conn = client
-            .get_multiplexed_async_connection()
+        let mut conn = ConnectionManager::new(client)
             .await
             .context("connecting to redis")?;
 
@@ -197,15 +196,23 @@ impl Feed {
             consumer = %self.cfg.consumer,
             "feed running"
         );
+        let mut backoff = Backoff::new();
         loop {
             match self.step().await {
-                Ok(0) => {}
-                Ok(n) => debug!(entries = n, "batch fanned out"),
+                Ok(0) => {
+                    backoff.reset();
+                }
+                Ok(n) => {
+                    backoff.reset();
+                    debug!(entries = n, "batch fanned out");
+                }
                 Err(e) => {
                     // Losing the read loop costs live data, not correctness —
                     // the durable record is `persist`'s job, not this one's.
-                    error!(error = %e, "read failed, retrying");
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    let log_state = backoff.sleep().await;
+                    if log_state {
+                        error!(error = %e, "read failed, backing off");
+                    }
                 }
             }
         }

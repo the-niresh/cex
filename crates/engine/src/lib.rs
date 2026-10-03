@@ -12,6 +12,7 @@ pub mod query_loop;
 pub mod runner;
 pub mod snapshot_store;
 pub mod stream_id;
+pub mod trim;
 
 pub use config::Config;
 pub use lock::{EngineLock, LockError};

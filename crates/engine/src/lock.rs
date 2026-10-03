@@ -27,7 +27,7 @@
 //! the bug. Deriving `cex:commands:lock` from `cex:commands` makes the lock and
 //! the thing it protects impossible to configure apart.
 
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use std::time::{Duration, Instant};
 use tracing::debug;
@@ -79,7 +79,7 @@ end
 "#;
 
 pub struct EngineLock {
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
     key: String,
     stream: String,
     /// This engine's identity. Unique per process, so no engine can release or
@@ -97,7 +97,7 @@ impl EngineLock {
     /// with a message naming who has the stream — not to sit in a loop until
     /// the incumbent dies and then quietly double up.
     pub async fn acquire(
-        mut conn: MultiplexedConnection,
+        mut conn: ConnectionManager,
         commands_stream: &str,
         ttl: Duration,
     ) -> Result<Self, LockError> {
