@@ -168,12 +168,21 @@ export async function candles(
 
 // ───────────────────────── auth ─────────────────────────
 
-export function register(username: string, name: string, password: string): Promise<Session> {
-  return request<Session>("/register", { method: "POST", body: { username, name, password } });
+async function sessionFromWire(raw: Session): Promise<Session> {
+  return { ...raw, is_guest: false };
 }
 
-export function login(username: string, password: string): Promise<Session> {
-  return request<Session>("/login", { method: "POST", body: { username, password } });
+export async function register(username: string, name: string, password: string): Promise<Session> {
+  return sessionFromWire(await request<Session>("/register", { method: "POST", body: { username, name, password } }));
+}
+
+export async function guest(): Promise<Session> {
+  const raw = await request<Session>("/guest", { method: "POST" });
+  return { ...raw, is_guest: true };
+}
+
+export async function login(username: string, password: string): Promise<Session> {
+  return sessionFromWire(await request<Session>("/login", { method: "POST", body: { username, password } }));
 }
 
 // ───────────────────────── authenticated ─────────────────────────

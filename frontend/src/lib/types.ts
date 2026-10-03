@@ -175,6 +175,8 @@ export interface Session {
    * the API asked for a name, so every reader has to cope without one.
    */
   name: string | null;
+  /** Set by the client when the session came from POST /guest. */
+  is_guest?: boolean;
 }
 
 // ───────────────────────── the private feed ─────────────────────────

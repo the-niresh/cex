@@ -114,6 +114,7 @@ export interface Exchange {
   clearError(): void;
 
   signIn(mode: AuthMode, credentials: Credentials): Promise<void>;
+  signInAsGuest(): Promise<void>;
   signOut(): void;
   submitOrder(request: api.PlaceOrderRequest): Promise<void>;
   cancel(orderId: bigint): Promise<void>;
@@ -499,6 +500,12 @@ export function useExchange(): Exchange {
     setSession(next);
   }, []);
 
+  const signInAsGuest = useCallback(async () => {
+    const next = await api.guest();
+    saveSession(next);
+    setSession(next);
+  }, []);
+
   const signOut = useCallback(() => {
     clearSession();
     setSession(null);
@@ -589,6 +596,7 @@ export function useExchange(): Exchange {
     error,
     clearError: useCallback(() => setError(null), []),
     signIn,
+    signInAsGuest,
     signOut,
     submitOrder,
     cancel,

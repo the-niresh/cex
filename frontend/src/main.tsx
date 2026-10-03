@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import { BrowserRouter } from "react-router-dom";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "@fontsource/ibm-plex-mono/400.css";
@@ -19,6 +20,8 @@ if (!root) throw new Error("no #root to mount into");
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
   </StrictMode>,
 );
