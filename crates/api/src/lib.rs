@@ -5,8 +5,8 @@
 
 pub mod auth;
 pub mod cache;
-pub mod loopback;
 pub mod guest;
+pub mod loopback;
 pub mod rate_limit;
 pub mod routes;
 pub mod timing;

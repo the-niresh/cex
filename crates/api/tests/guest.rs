@@ -86,7 +86,12 @@ impl Harness {
                 .expect("history");
 
         Harness {
-            router: build_router(AppState::new(loopback, users.clone(), router_tokens, history)),
+            router: build_router(AppState::new(
+                loopback,
+                users.clone(),
+                router_tokens,
+                history,
+            )),
             tokens,
             users,
             _engine: engine,
@@ -102,7 +107,8 @@ impl Harness {
         let json: Value = if body.is_empty() {
             json!({})
         } else {
-            serde_json::from_slice(&body).unwrap_or(json!({ "raw": String::from_utf8_lossy(&body) }))
+            serde_json::from_slice(&body)
+                .unwrap_or(json!({ "raw": String::from_utf8_lossy(&body) }))
         };
         (status, json)
     }
@@ -143,14 +149,10 @@ struct Claims {
 fn decode_exp(token: &str) -> u64 {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.validate_exp = false;
-    decode::<Claims>(
-        token,
-        &DecodingKey::from_secret(TEST_SECRET),
-        &validation,
-    )
-    .unwrap()
-    .claims
-    .exp
+    decode::<Claims>(token, &DecodingKey::from_secret(TEST_SECRET), &validation)
+        .unwrap()
+        .claims
+        .exp
 }
 
 #[test]
@@ -178,11 +180,7 @@ async fn a_guest_cannot_log_in_with_any_password() {
     let ip = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
     let (_, body) = h.guest_from(ip, None).await;
     let name = body["name"].as_str().unwrap();
-    let err = h
-        .users
-        .authenticate(name, "anything")
-        .await
-        .unwrap_err();
+    let err = h.users.authenticate(name, "anything").await.unwrap_err();
     assert!(matches!(err, cex_api::UsersError::BadCredentials));
 }
 
@@ -258,7 +256,11 @@ async fn deposit_limits_for_btc_eth_and_sol() {
         let (status, _) = h.deposit(token, asset, ok).await;
         assert_eq!(status, StatusCode::OK, "{asset} at limit");
         let (status, body) = h.deposit(token, asset, bad).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{asset} over limit: {body}");
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "{asset} over limit: {body}"
+        );
     }
 }
 

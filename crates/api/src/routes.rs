@@ -22,10 +22,10 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::auth::Tokens;
-use crate::guest::{self, MAX_NAME_ATTEMPTS};
-use crate::rate_limit::GuestRateLimit;
 use crate::cache::ReadCache;
+use crate::guest::{self, MAX_NAME_ATTEMPTS};
 use crate::loopback::{Loopback, LoopbackError};
+use crate::rate_limit::GuestRateLimit;
 use crate::users::{NewUser, UserStore, UsersError};
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderName, HeaderValue, Method};
@@ -709,7 +709,6 @@ async fn depth(
     }
 }
 
-
 /// Guest tokens last 30 days. Registered users stay at the API's configured TTL.
 const GUEST_TOKEN_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
 
@@ -798,7 +797,9 @@ async fn create_guest(
                     .inner
                     .tokens
                     .issue_expiring_at(user.id, exp_secs)
-                    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error"))?;
+                    .map_err(|_| {
+                        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+                    })?;
                 return Ok((
                     StatusCode::CREATED,
                     Json(Session {
@@ -815,9 +816,10 @@ async fn create_guest(
             Err(e) => return Err(ApiError::from(e)),
         }
     }
-    Err(ApiError::from(last_err.unwrap_or(UsersError::UsernameTaken)))
+    Err(ApiError::from(
+        last_err.unwrap_or(UsersError::UsernameTaken),
+    ))
 }
-
 
 // ───────────────────────── protected handlers ─────────────────────────
 

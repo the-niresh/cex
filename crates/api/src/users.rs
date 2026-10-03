@@ -216,7 +216,6 @@ impl UserStore {
         Ok(user)
     }
 
-
     /// Create a one-click guest with a generated name and unusable password.
     pub async fn create_guest(
         &self,
