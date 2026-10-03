@@ -84,6 +84,10 @@ impl AppState {
         }
     }
 
+    pub fn loopback(&self) -> &Loopback {
+        &self.inner.loopback
+    }
+
     /// Whether the exchange lists this market.
     ///
     /// Only worth asking when a history query came back empty, to tell a market
@@ -321,8 +325,16 @@ fn caller(req: &Request) -> ApiResult<Uuid> {
 
 // ───────────────────────── open handlers ─────────────────────────
 
-async fn health() -> Json<serde_json::Value> {
-    Json(json!({ "status": "ok" }))
+async fn health(State(state): State<AppState>) -> Response {
+    if state.loopback().ping_redis().await {
+        (StatusCode::OK, Json(json!({ "status": "ok" }))).into_response()
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "status": "redis unavailable" })),
+        )
+            .into_response()
+    }
 }
 
 #[derive(Deserialize)]
