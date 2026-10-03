@@ -217,6 +217,17 @@ export function OrderBook({
     <Panel className="max-stack:min-h-[430px]" data-testid="book-panel">
       <PanelHead>
         <PanelTabs tab={tab} onTab={onTab} />
+        {stale && (
+          <span
+            className={[
+              "truncate font-sans text-micro text-ink-4",
+              "group-data-[degraded=true]/screen:text-warn",
+            ].join(" ")}
+            data-testid="staleband"
+          >
+            {staleReason ?? "Stale, resyncing"}
+          </span>
+        )}
         <Meta>
           depth_seq{" "}
           <b className="tnum font-medium text-ink-2">
@@ -224,31 +235,6 @@ export function OrderBook({
           </b>
         </Meta>
       </PanelHead>
-
-      {/* Two conditions, two treatments — the same split `feedHealth` already
-          makes, which the band used to flatten.
-
-          `degraded` means the book cannot be trusted: hatched amber, and the
-          ladder below goes flat and grey. Anything else here is a *quiet*
-          market — the prices are correct, nobody has traded — and that gets a
-          plain grey note and no dimming at all. Dimming correct data is how you
-          teach someone to distrust a screen that is telling the truth, and on a
-          venue with little traffic the quiet case is the normal one. */}
-      {stale && (
-        <div
-          className={[
-            "flex h-5 flex-none items-center gap-2 px-2.5",
-            "font-sans text-micro",
-            "text-ink-4 border-b border-rule",
-            "group-data-[degraded=true]/screen:text-warn",
-            "group-data-[degraded=true]/screen:border-warn/35",
-            "group-data-[degraded=true]/screen:bg-[repeating-linear-gradient(-45deg,color-mix(in_oklab,var(--color-warn)_11%,transparent)_0_6px,transparent_6px_12px)]",
-          ].join(" ")}
-          data-testid="staleband"
-        >
-          <span>{staleReason ?? "Stale — resyncing"}</span>
-        </div>
-      )}
 
       <ColumnHeads className={COLS} data-testid="ladder-heads">
         <span>Mine</span>
