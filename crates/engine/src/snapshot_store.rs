@@ -139,6 +139,12 @@ impl SnapshotStore {
         })
     }
 
+    /// The oldest snapshot still on disk after [`prune`], if any.
+    pub fn oldest_kept_position(&self) -> Result<Option<StreamId>> {
+        let all = self.list()?;
+        Ok(all.last().map(|(id, _)| *id))
+    }
+
     /// Delete all but the newest `keep` snapshots. Returns how many were removed.
     pub fn prune(&self) -> Result<usize> {
         let all = self.list()?;

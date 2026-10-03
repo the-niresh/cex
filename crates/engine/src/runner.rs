@@ -32,7 +32,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result};
 use cex_core::state::{Snapshot, State};
 use cex_core::MarketRegistry;
-use cex_proto::{Command, EventBatch, Response, FIELD_PAYLOAD};
+use cex_proto::{retry::Backoff, Command, EventBatch, Response, FIELD_PAYLOAD};
 use redis::aio::ConnectionManager;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
@@ -342,12 +342,23 @@ impl Runner {
         let path = self.store.save(&snap)?;
         self.applied_since_snapshot = 0;
         let pruned = self.store.prune()?;
-        let trimmed = crate::trim::trim_commands_before(
+        let trim_position = self
+            .store
+            .oldest_kept_position()?
+            .unwrap_or(self.position);
+        let trimmed = match crate::trim::trim_commands_before(
             &mut self.conn,
             &self.cfg.commands_stream,
-            self.position,
+            trim_position,
         )
-        .await?;
+        .await
+        {
+            Ok(n) => n,
+            Err(e) => {
+                warn!(error = %e, "failed to trim command stream");
+                0
+            }
+        };
         info!(
             path = %path.display(),
             position = %self.position,
@@ -423,6 +434,7 @@ impl Runner {
     }
 
     async fn command_loop(&mut self) -> Result<()> {
+        let mut backoff = Backoff::new();
         loop {
             // Before touching anything, confirm we are still the engine. If the
             // lease has been taken, another process is applying these very
@@ -431,11 +443,18 @@ impl Runner {
             self.lock.refresh_if_due().await?;
 
             match self.step().await {
-                Ok(0) => {}
-                Ok(n) => debug!(applied = n, position = %self.position, "batch applied"),
+                Ok(0) => {
+                    backoff.reset();
+                }
+                Ok(n) => {
+                    backoff.reset();
+                    debug!(applied = n, position = %self.position, "batch applied");
+                }
                 Err(e) => {
-                    error!(error = %e, "read failed, retrying");
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    let log_state = backoff.sleep().await;
+                    if log_state {
+                        error!(error = %e, "read failed, backing off");
+                    }
                 }
             }
         }

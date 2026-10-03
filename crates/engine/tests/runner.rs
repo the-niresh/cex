@@ -462,3 +462,33 @@ async fn snapshot_trims_applied_commands_from_the_stream() {
         .unwrap();
     assert_eq!(len, 0, "applied commands should be trimmed after snapshot");
 }
+
+#[tokio::test]
+async fn snapshot_trim_keeps_commands_after_the_oldest_retained_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let resources = TestResources::new();
+    let mut cfg = test_config(dir.path(), &resources);
+    cfg.snapshot_every = 1_000_000;
+    cfg.snapshot_keep = 3;
+    let mut c = conn(&cfg).await;
+    let alice = Uuid::new_v4();
+
+    let mut runner = Runner::boot(cfg.clone()).await.unwrap();
+
+    for amount in [100_i64, 200, 300, 400, 500] {
+        send(&mut c, &cfg, &deposit(alice, "USDT", amount)).await;
+        drain(&mut runner).await;
+        runner.snapshot().await.unwrap();
+    }
+
+    let len: usize = redis::cmd("XLEN")
+        .arg(&cfg.commands_stream)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+    assert_eq!(
+        len,
+        2,
+        "only commands after the oldest kept snapshot should remain"
+    );
+}

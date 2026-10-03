@@ -6,7 +6,7 @@ use tracing::debug;
 
 use crate::stream_id::StreamId;
 
-/// Trim command log entries older than `position`, which the newest snapshot
+/// Trim command log entries older than `position`, which the oldest retained snapshot
 /// has already captured.
 pub async fn trim_commands_before(
     conn: &mut ConnectionManager,
@@ -17,7 +17,6 @@ pub async fn trim_commands_before(
     let removed: i64 = redis::cmd("XTRIM")
         .arg(stream)
         .arg("MINID")
-        .arg("~")
         .arg(&keep_from)
         .query_async(conn)
         .await
