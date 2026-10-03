@@ -79,7 +79,7 @@ fi
 COMPOSE=(docker compose -p cex --project-directory "$DEPLOY_DIR" -f "$DEPLOY_DIR/docker-compose.yml" --env-file "$ENV_FILE")
 
 run "${COMPOSE[@]}" build api
-run "${COMPOSE[@]}" up -d --no-build postgres redis engine api ws persist
+run "${COMPOSE[@]}" up -d --no-build postgres redis engine api ws persist demo-maker
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "dry run: would wait for http://<cex-api container ip>:8080/health"
