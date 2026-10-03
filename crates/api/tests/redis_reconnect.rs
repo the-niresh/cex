@@ -154,7 +154,7 @@ impl Harness {
             commands_stream: engine_cfg.commands_stream.clone(),
             queries_queue: engine_cfg.queries_queue.clone(),
             responses_channel: engine_cfg.responses_channel.clone(),
-            timeout: Duration::from_secs(10),
+            timeout: Duration::from_secs(2),
         };
 
         let mut runner = Runner::boot(engine_cfg).await.expect("engine boot");
@@ -201,14 +201,37 @@ impl Harness {
     }
 }
 
-async fn wait_for_markets(h: &Harness) {
-    for _ in 0..50 {
-        if h.get("/markets").await.0 == StatusCode::OK {
-            return;
+struct MarketsRecovery {
+    elapsed: Duration,
+    failed_requests: usize,
+}
+
+/// Retry `/markets` until it returns 200 or the 60 s test limit is hit.
+async fn wait_for_markets(h: &Harness) -> MarketsRecovery {
+    let started = std::time::Instant::now();
+    let mut failed_requests = 0usize;
+    while started.elapsed() < TEST_TIMEOUT {
+        let (status, _) = h.get("/markets").await;
+        if status == StatusCode::OK {
+            let recovery = MarketsRecovery {
+                elapsed: started.elapsed(),
+                failed_requests,
+            };
+            eprintln!(
+                "markets recovered in {:.2}s after {} failed request(s)",
+                recovery.elapsed.as_secs_f64(),
+                recovery.failed_requests
+            );
+            return recovery;
         }
+        failed_requests += 1;
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    panic!("markets never became ready");
+    panic!(
+        "markets never became ready within {}s ({} failed requests)",
+        TEST_TIMEOUT.as_secs(),
+        failed_requests
+    );
 }
 
 #[tokio::test]
@@ -229,16 +252,13 @@ async fn markets_survive_a_redis_restart_without_restarting_the_api() {
 
             wait_for_redis().await;
 
-            let mut last = String::new();
-            for _ in 0..50 {
-                let (status, body) = h.get("/markets").await;
-                if status == StatusCode::OK {
-                    return;
-                }
-                last = body;
-                tokio::time::sleep(Duration::from_millis(200)).await;
-            }
-            panic!("markets did not recover after redis restart, last body: {last}");
+            let recovery = wait_for_markets(&h).await;
+            assert!(
+                recovery.elapsed <= Duration::from_secs(10),
+                "markets took {:.2}s to recover after redis restart (limit 10s, {} failed requests)",
+                recovery.elapsed.as_secs_f64(),
+                recovery.failed_requests
+            );
         },
     )
     .await;
