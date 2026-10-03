@@ -14,7 +14,7 @@
 
 use anyhow::{Context, Result};
 use cex_proto::{EventBatch, Seq, FIELD_PAYLOAD};
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ use crate::route::{route, Update};
 
 pub struct Feed {
     cfg: Config,
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
     tx: broadcast::Sender<Arc<Update>>,
     /// While true, reads target this consumer's stale pending list, which is
     /// acknowledged and discarded rather than broadcast.
@@ -45,8 +45,7 @@ impl Feed {
     pub async fn boot(cfg: Config) -> Result<Self> {
         let client = redis::Client::open(cfg.redis_url.as_str())
             .with_context(|| format!("opening redis at {}", cfg.redis_url))?;
-        let mut conn = client
-            .get_multiplexed_async_connection()
+        let mut conn = ConnectionManager::new(client)
             .await
             .context("connecting to redis")?;
 

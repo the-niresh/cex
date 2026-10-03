@@ -20,17 +20,18 @@
 
 use anyhow::{Context, Result};
 use cex_proto::{EventBatch, FIELD_PAYLOAD};
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
 use tracing::{debug, error, info};
 
 use crate::config::Config;
+use crate::retry::Backoff;
 use crate::store::HistoryStore;
 
 pub struct Consumer {
     cfg: Config,
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
     store: HistoryStore,
     /// While true, reads target this consumer's own unacknowledged backlog
     /// rather than new entries. Flips once that backlog comes back empty.
@@ -42,8 +43,7 @@ impl Consumer {
     pub async fn boot(cfg: Config, store: HistoryStore) -> Result<Self> {
         let client = redis::Client::open(cfg.redis_url.as_str())
             .with_context(|| format!("opening redis at {}", cfg.redis_url))?;
-        let mut conn = client
-            .get_multiplexed_async_connection()
+        let mut conn = ConnectionManager::new(client)
             .await
             .context("connecting to redis")?;
 
@@ -171,18 +171,30 @@ impl Consumer {
             consumer = %self.cfg.consumer,
             "persister running"
         );
+        let mut backoff = Backoff::new();
         loop {
             match self.step().await {
-                Ok(0) => {}
-                Ok(n) => debug!(entries = n, "batch persisted"),
+                Ok(0) => {
+                    backoff.reset();
+                }
+                Ok(n) => {
+                    backoff.reset();
+                    debug!(entries = n, "batch persisted");
+                }
                 Err(e) => {
+                    // After any failure, read our own pending list first. A Redis
+                    // outage that lands while we are on `>` would otherwise skip
+                    // entries Redis is still holding against this consumer name.
+                    self.draining_backlog = true;
                     // Nothing was acknowledged, so nothing is lost — Redis will
                     // hand the same entries back. A batch that keeps failing
                     // stalls history loudly, which is the right failure: better
                     // a persister that pages you than one that quietly drops
                     // trades it could not write.
-                    error!(error = %e, "write failed, retrying");
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    let log_state = backoff.sleep().await;
+                    if log_state {
+                        error!(error = format!("{:#}", e), "write failed, backing off");
+                    }
                 }
             }
         }

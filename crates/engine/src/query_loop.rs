@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use cex_core::state::State;
 use cex_proto::{Query, Response};
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use tracing::{error, warn};
 
@@ -52,7 +52,7 @@ pub fn answer(state: &SharedState, payload: &str) -> Option<Response> {
 /// Blocks indefinitely on an empty queue (timeout `0.0`) — there is nothing else for this task to
 /// do, and it is stopped from outside (see `Runner::run` and `Drop for Runner`) rather than
 /// exiting on its own.
-pub async fn run(mut conn: MultiplexedConnection, cfg: QueryLoopConfig, state: SharedState) {
+pub async fn run(mut conn: ConnectionManager, cfg: QueryLoopConfig, state: SharedState) {
     loop {
         let popped: Option<(String, String)> = match conn.brpop(&cfg.queries_queue, 0.0).await {
             Ok(v) => v,

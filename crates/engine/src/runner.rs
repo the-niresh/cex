@@ -33,7 +33,7 @@ use anyhow::{Context, Result};
 use cex_core::state::{Snapshot, State};
 use cex_core::MarketRegistry;
 use cex_proto::{Command, EventBatch, Response, FIELD_PAYLOAD};
-use redis::aio::MultiplexedConnection;
+use redis::aio::ConnectionManager;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
 use tokio::task::JoinHandle;
@@ -47,7 +47,7 @@ use crate::stream_id::StreamId;
 
 pub struct Runner {
     cfg: Config,
-    conn: MultiplexedConnection,
+    conn: ConnectionManager,
     /// Kept only to open a fresh connection for the query task in `run()` —
     /// deliberately not a clone of `conn` or the lock's connection. See the
     /// comment on `lock_conn` in `boot` for why sharing a multiplexed
@@ -74,8 +74,7 @@ impl Runner {
     pub async fn boot(cfg: Config) -> Result<Self> {
         let client = redis::Client::open(cfg.redis_url.as_str())
             .with_context(|| format!("opening redis at {}", cfg.redis_url))?;
-        let conn = client
-            .get_multiplexed_async_connection()
+        let conn = ConnectionManager::new(client.clone())
             .await
             .context("connecting to redis")?;
 
@@ -103,8 +102,7 @@ impl Runner {
         // a blocking `XREAD` sitting on it delays everything queued behind it —
         // which would mean releasing the lock on shutdown waits out `block_ms`,
         // and the replacement engine waits with it.
-        let lock_conn = client
-            .get_multiplexed_async_connection()
+        let lock_conn = ConnectionManager::new(client.clone())
             .await
             .context("connecting to redis for the stream lock")?;
 
@@ -344,11 +342,18 @@ impl Runner {
         let path = self.store.save(&snap)?;
         self.applied_since_snapshot = 0;
         let pruned = self.store.prune()?;
+        let trimmed = crate::trim::trim_commands_before(
+            &mut self.conn,
+            &self.cfg.commands_stream,
+            self.position,
+        )
+        .await?;
         info!(
             path = %path.display(),
             position = %self.position,
             seq,
             pruned,
+            trimmed,
             "snapshot written"
         );
         Ok(())
@@ -395,9 +400,7 @@ impl Runner {
             "engine running"
         );
 
-        let query_conn = self
-            .client
-            .get_multiplexed_async_connection()
+        let query_conn = ConnectionManager::new(self.client.clone())
             .await
             .context("connecting to redis for the query loop")?;
         let query_cfg = QueryLoopConfig {
