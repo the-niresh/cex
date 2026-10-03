@@ -24,3 +24,15 @@ export function assetColor(asset: string): string {
 export function assetInitial(asset: string): string {
   return asset.charAt(0);
 }
+
+const FULL_NAMES: Record<string, string> = {
+  USDT: "USDT",
+  BTC: "Bitcoin",
+  ETH: "Ethereum",
+  SOL: "Solana",
+};
+
+/** Full display name for an asset in the balances table. */
+export function assetFullName(asset: string): string {
+  return FULL_NAMES[asset] ?? asset;
+}
