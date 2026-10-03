@@ -1,10 +1,9 @@
 //! Redis outage and recovery without restarting the API.
 //!
 //! Needs the throwaway Redis from the CEX-8 test run:
-//! `docker run -d --rm --name cex-test-redis -p 6391:6379 redis:7-alpine`
+//! `docker run -d --name cex-test-redis -p 6391:6379 redis:7-alpine`
 
 use std::process::Command;
-use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use axum::body::Body;
@@ -18,11 +17,34 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 const REDIS_URL: &str = "redis://127.0.0.1:6391";
 const DATABASE_URL: &str = "postgres://cex:cex@127.0.0.1:5442/cex";
+const TEST_TIMEOUT: Duration = Duration::from_secs(60);
+const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
+const DOCKER_REDIS_LOCK: &str = "/tmp/cex-test-redis.docker.lock";
 
-fn docker_redis_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+struct DockerRedisLock {
+    _file: std::fs::File,
+}
+
+impl Drop for DockerRedisLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(DOCKER_REDIS_LOCK);
+    }
+}
+
+async fn docker_redis_lock() -> DockerRedisLock {
+    loop {
+        match std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(DOCKER_REDIS_LOCK)
+        {
+            Ok(file) => return DockerRedisLock { _file: file },
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(e) => panic!("docker redis lock: {e}"),
+        }
+    }
 }
 
 fn ensure_throwaway_redis() {
@@ -64,17 +86,38 @@ fn ensure_throwaway_redis() {
     assert!(status.success(), "could not start cex-test-redis");
 }
 
+async fn redis_ping() -> bool {
+    let client = match redis::Client::open(REDIS_URL) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    matches!(
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let mut conn = client.get_multiplexed_async_connection().await?;
+            redis::cmd("PING").query_async::<String>(&mut conn).await
+        })
+        .await,
+        Ok(Ok(_))
+    )
+}
+
 async fn wait_for_redis() {
     for _ in 0..30 {
-        if redis::Client::open(REDIS_URL)
-            .and_then(|c| c.get_connection())
-            .is_ok()
-        {
+        if redis_ping().await {
             return;
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     panic!("throwaway redis did not come back");
+}
+
+async fn with_test_timeout<F, T>(label: &str, f: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    tokio::time::timeout(TEST_TIMEOUT, f)
+        .await
+        .unwrap_or_else(|_| panic!("{label} hung for {}s", TEST_TIMEOUT.as_secs()))
 }
 
 struct Harness {
@@ -143,12 +186,15 @@ impl Harness {
     }
 
     async fn get(&self, path: &str) -> (StatusCode, String) {
-        let response = self
-            .router
-            .clone()
-            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        let response = tokio::time::timeout(HTTP_TIMEOUT, async {
+            self.router
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+        })
+        .await
+        .unwrap_or_else(|_| panic!("HTTP GET {path} hung for {}s", HTTP_TIMEOUT.as_secs()))
+        .unwrap();
         let status = response.status();
         let body = response.into_body().collect().await.unwrap().to_bytes();
         (status, String::from_utf8_lossy(&body).into_owned())
@@ -167,71 +213,135 @@ async fn wait_for_markets(h: &Harness) {
 
 #[tokio::test]
 async fn markets_survive_a_redis_restart_without_restarting_the_api() {
-    {
-        let _lock = docker_redis_lock();
-        ensure_throwaway_redis();
-    }
-    let h = Harness::start().await;
-    wait_for_markets(&h).await;
+    let _lock = docker_redis_lock().await;
+    with_test_timeout(
+        "markets_survive_a_redis_restart_without_restarting_the_api",
+        async {
+            ensure_throwaway_redis();
+            let h = Harness::start().await;
+            wait_for_markets(&h).await;
 
-    let status = {
-        let _lock = docker_redis_lock();
-        Command::new("docker")
-            .args(["restart", "cex-test-redis"])
-            .status()
-            .expect("docker restart")
-    };
-    assert!(status.success(), "docker restart cex-test-redis failed");
+            let status = Command::new("docker")
+                .args(["restart", "cex-test-redis"])
+                .status()
+                .expect("docker restart");
+            assert!(status.success(), "docker restart cex-test-redis failed");
 
-    wait_for_redis().await;
+            wait_for_redis().await;
 
-    let mut last = String::new();
-    for _ in 0..50 {
-        let (status, body) = h.get("/markets").await;
-        if status == StatusCode::OK {
-            return;
-        }
-        last = body;
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
-    panic!("markets did not recover after redis restart, last body: {last}");
+            let mut last = String::new();
+            for _ in 0..50 {
+                let (status, body) = h.get("/markets").await;
+                if status == StatusCode::OK {
+                    return;
+                }
+                last = body;
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+            panic!("markets did not recover after redis restart, last body: {last}");
+        },
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn health_returns_503_while_redis_is_down_and_200_when_it_is_back() {
-    {
-        let _lock = docker_redis_lock();
-        ensure_throwaway_redis();
-    }
-    let h = Harness::start().await;
-    wait_for_markets(&h).await;
+    let _lock = docker_redis_lock().await;
+    with_test_timeout(
+        "health_returns_503_while_redis_is_down_and_200_when_it_is_back",
+        async {
+            ensure_throwaway_redis();
+            let h = Harness::start().await;
+            wait_for_markets(&h).await;
 
-    let stop = {
-        let _lock = docker_redis_lock();
+            let stop = Command::new("docker")
+                .args(["stop", "cex-test-redis"])
+                .status()
+                .expect("docker stop");
+            assert!(stop.success());
+
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let (status, body) = h.get("/health").await;
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "body: {body}");
+            assert!(body.contains("redis unavailable"));
+
+            let start = Command::new("docker")
+                .args(["start", "cex-test-redis"])
+                .status()
+                .expect("docker start");
+            assert!(start.success());
+
+            wait_for_redis().await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+
+            let (status, body) = h.get("/health").await;
+            assert_eq!(status, StatusCode::OK, "body: {body}");
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn health_responds_quickly_when_redis_is_unreachable() {
+    let _lock = docker_redis_lock().await;
+    with_test_timeout("health_responds_quickly_when_redis_is_unreachable", async {
+        ensure_throwaway_redis();
+        let h = Harness::start().await;
+        wait_for_markets(&h).await;
+
         Command::new("docker")
             .args(["stop", "cex-test-redis"])
             .status()
-            .expect("docker stop")
-    };
-    assert!(stop.success());
+            .expect("docker stop");
+        tokio::time::sleep(Duration::from_millis(500)).await;
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    let (status, body) = h.get("/health").await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "body: {body}");
-    assert!(body.contains("redis unavailable"));
+        let started = std::time::Instant::now();
+        let (status, body) = tokio::time::timeout(Duration::from_secs(3), h.get("/health"))
+            .await
+            .expect("/health hung while redis was down");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "/health took {:?} while redis was down",
+            started.elapsed()
+        );
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "body: {body}");
 
-    let start = {
-        let _lock = docker_redis_lock();
         Command::new("docker")
             .args(["start", "cex-test-redis"])
             .status()
-            .expect("docker start")
-    };
-    assert!(start.success());
+            .expect("docker start");
+        wait_for_redis().await;
+    })
+    .await;
+}
 
-    wait_for_redis().await;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+#[tokio::test]
+async fn reconnect_tests_finish_within_timeout_when_redis_is_removed() {
+    let _lock = docker_redis_lock().await;
+    with_test_timeout(
+        "reconnect_tests_finish_within_timeout_when_redis_is_removed",
+        async {
+            ensure_throwaway_redis();
+            let h = Harness::start().await;
+            wait_for_markets(&h).await;
 
-    let (status, body) = h.get("/health").await;
-    assert_eq!(status, StatusCode::OK, "body: {body}");
+            Command::new("docker")
+                .args(["rm", "-f", "cex-test-redis"])
+                .status()
+                .expect("docker rm");
+
+            let (status, body) = tokio::time::timeout(Duration::from_secs(5), h.get("/health"))
+                .await
+                .expect("/health hung after cex-test-redis was removed");
+            assert_eq!(
+                status,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "body after redis removal: {body}"
+            );
+
+            ensure_throwaway_redis();
+            wait_for_redis().await;
+        },
+    )
+    .await;
 }

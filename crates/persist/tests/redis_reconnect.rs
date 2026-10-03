@@ -1,7 +1,6 @@
 //! Persist must drain its pending list after Redis comes back.
 
 use std::process::Command;
-use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use cex_persist::{Consumer, TestResources};
@@ -12,15 +11,37 @@ use uuid::Uuid;
 
 const SYM: &str = "BTC_USDT";
 const Q1: i64 = 100_000;
+const TEST_TIMEOUT: Duration = Duration::from_secs(60);
+const DOCKER_REDIS_LOCK: &str = "/tmp/cex-test-redis.docker.lock";
+
+struct DockerRedisLock {
+    _file: std::fs::File,
+}
+
+impl Drop for DockerRedisLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(DOCKER_REDIS_LOCK);
+    }
+}
+
+async fn docker_redis_lock() -> DockerRedisLock {
+    loop {
+        match std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(DOCKER_REDIS_LOCK)
+        {
+            Ok(file) => return DockerRedisLock { _file: file },
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Err(e) => panic!("docker redis lock: {e}"),
+        }
+    }
+}
 
 fn redis_url() -> String {
     std::env::var("CEX_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6391".into())
-}
-
-fn docker_redis_lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn ensure_throwaway_redis() {
@@ -62,17 +83,38 @@ fn ensure_throwaway_redis() {
     assert!(status.success(), "could not start cex-test-redis");
 }
 
+async fn redis_ping() -> bool {
+    let client = match redis::Client::open(redis_url()) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    matches!(
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let mut conn = client.get_multiplexed_async_connection().await?;
+            redis::cmd("PING").query_async::<String>(&mut conn).await
+        })
+        .await,
+        Ok(Ok(_))
+    )
+}
+
 async fn wait_for_redis() {
     for _ in 0..30 {
-        if redis::Client::open(redis_url())
-            .and_then(|c| c.get_connection())
-            .is_ok()
-        {
+        if redis_ping().await {
             return;
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     panic!("redis did not come back");
+}
+
+async fn with_test_timeout<F, T>(label: &str, f: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    tokio::time::timeout(TEST_TIMEOUT, f)
+        .await
+        .unwrap_or_else(|_| panic!("{label} hung for {}s", TEST_TIMEOUT.as_secs()))
 }
 
 fn test_config(resources: &TestResources) -> cex_persist::Config {
@@ -116,64 +158,62 @@ fn batch(seq: u64, user: UserId) -> EventBatch {
 
 #[tokio::test]
 async fn pending_entries_survive_a_redis_restart() {
-    {
-        let _lock = docker_redis_lock();
+    let _lock = docker_redis_lock().await;
+    with_test_timeout("pending_entries_survive_a_redis_restart", async {
         ensure_throwaway_redis();
-    }
-    let resources = TestResources::new();
-    let cfg = test_config(&resources);
-    let mut r = conn(&cfg).await;
-    let alice = Uuid::new_v4();
+        let resources = TestResources::new();
+        let cfg = test_config(&resources);
+        let mut r = conn(&cfg).await;
+        let alice = Uuid::new_v4();
 
-    let store = cex_persist::HistoryStore::connect_to_schema(&cfg.database_url, &cfg.schema)
-        .await
-        .unwrap();
-    let _ = Consumer::boot(cfg.clone(), store).await.unwrap();
-
-    for seq in 1..=3 {
-        let json = serde_json::to_string(&batch(seq, alice)).unwrap();
-        let _: String = r
-            .xadd(&cfg.events_stream, "*", &[(FIELD_PAYLOAD, json.as_str())])
+        let store = cex_persist::HistoryStore::connect_to_schema(&cfg.database_url, &cfg.schema)
             .await
             .unwrap();
-    }
+        let _ = Consumer::boot(cfg.clone(), store).await.unwrap();
 
-    let opts = StreamReadOptions::default()
-        .group(&cfg.group, &cfg.consumer)
-        .count(256);
-    let reply: Option<StreamReadReply> = r
-        .xread_options(&[&cfg.events_stream], &[">"], &opts)
-        .await
-        .unwrap();
-    assert_eq!(
-        reply.unwrap().keys[0].ids.len(),
-        3,
-        "entries should be pending before restart"
-    );
+        for seq in 1..=3 {
+            let json = serde_json::to_string(&batch(seq, alice)).unwrap();
+            let _: String = r
+                .xadd(&cfg.events_stream, "*", &[(FIELD_PAYLOAD, json.as_str())])
+                .await
+                .unwrap();
+        }
 
-    {
-        let _lock = docker_redis_lock();
+        let opts = StreamReadOptions::default()
+            .group(&cfg.group, &cfg.consumer)
+            .count(256);
+        let reply: Option<StreamReadReply> = r
+            .xread_options(&[&cfg.events_stream], &[">"], &opts)
+            .await
+            .unwrap();
+        assert_eq!(
+            reply.unwrap().keys[0].ids.len(),
+            3,
+            "entries should be pending before restart"
+        );
+
         Command::new("docker")
             .args(["restart", "cex-test-redis"])
             .status()
             .expect("docker restart");
-    }
-    wait_for_redis().await;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+        wait_for_redis().await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let store = cex_persist::HistoryStore::connect_to_schema(&cfg.database_url, &cfg.schema)
-        .await
-        .unwrap();
-    let mut consumer = Consumer::boot(cfg, store).await.unwrap();
-    loop {
-        let n = consumer.step().await.expect("step after reconnect");
-        if n == 0 {
-            break;
+        let store = cex_persist::HistoryStore::connect_to_schema(&cfg.database_url, &cfg.schema)
+            .await
+            .unwrap();
+        let mut consumer = Consumer::boot(cfg, store).await.unwrap();
+        loop {
+            let n = consumer.step().await.expect("step after reconnect");
+            if n == 0 {
+                break;
+            }
         }
-    }
 
-    assert_eq!(
-        consumer.store().written_seqs().await.unwrap(),
-        vec![1, 2, 3]
-    );
+        assert_eq!(
+            consumer.store().written_seqs().await.unwrap(),
+            vec![1, 2, 3]
+        );
+    })
+    .await;
 }
