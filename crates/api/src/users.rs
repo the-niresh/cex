@@ -57,6 +57,8 @@ pub struct User {
     /// before the column existed — a name is a label, not a requirement.
     pub display_name: Option<String>,
     pub password_hash: String,
+    /// True for accounts created by `POST /guest`.
+    pub is_guest: bool,
 }
 
 /// One registration's worth of input.
@@ -78,11 +80,13 @@ fn row_to_user(row: PgRow) -> User {
         username: row.get("username"),
         display_name: row.get("display_name"),
         password_hash: row.get("password_hash"),
+        is_guest: row.get("is_guest"),
     }
 }
 
 const SCHEMA_SQL: &str = include_str!("../migrations/0001_users.sql");
 const DISPLAY_NAME_SQL: &str = include_str!("../migrations/0002_user_display_name.sql");
+const GUEST_SQL: &str = include_str!("../migrations/0003_guest_users.sql");
 
 /// How long a caller waits for a pooled connection before being told no. Same
 /// reasoning as the history pool — see `ACQUIRE_TIMEOUT` in `cex-persist`.
@@ -138,7 +142,7 @@ impl UserStore {
         // Static SQL, unqualified names — the search path puts them in place.
         // `IF NOT EXISTS` throughout, so every boot can safely run it. Later
         // migrations run in order after it, and are equally re-runnable.
-        for statements in [SCHEMA_SQL, DISPLAY_NAME_SQL] {
+        for statements in [SCHEMA_SQL, DISPLAY_NAME_SQL, GUEST_SQL] {
             sqlx::raw_sql(statements)
                 .execute(&pool)
                 .await
@@ -177,6 +181,7 @@ impl UserStore {
                 username: username.to_string(),
                 display_name,
                 password_hash: hash,
+                is_guest: false,
             }),
             Err(e) => {
                 // 23505 is unique_violation — the case-insensitive index fired.
@@ -190,7 +195,7 @@ impl UserStore {
 
     pub async fn find_by_username(&self, username: &str) -> Result<Option<User>, UsersError> {
         sqlx::query(
-            "SELECT id, username, display_name, password_hash FROM users \
+            "SELECT id, username, display_name, password_hash, is_guest FROM users \
              WHERE lower(username) = lower($1)",
         )
         .bind(username.trim())
@@ -209,6 +214,42 @@ impl UserStore {
             return Err(UsersError::BadCredentials);
         }
         Ok(user)
+    }
+
+
+    /// Create a one-click guest with a generated name and unusable password.
+    pub async fn create_guest(
+        &self,
+        username: &str,
+        display_name: &str,
+        password_hash: &str,
+    ) -> Result<User, UsersError> {
+        let id = Uuid::new_v4();
+        let result = sqlx::query(
+            "INSERT INTO users (id, username, display_name, password_hash, is_guest)              VALUES ($1, $2, $3, $4, true)",
+        )
+        .bind(id)
+        .bind(username)
+        .bind(display_name)
+        .bind(password_hash)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(User {
+                id,
+                username: username.to_string(),
+                display_name: Some(display_name.to_string()),
+                password_hash: password_hash.to_string(),
+                is_guest: true,
+            }),
+            Err(e) => {
+                if e.as_database_error().and_then(|db| db.code()).as_deref() == Some("23505") {
+                    return Err(UsersError::UsernameTaken);
+                }
+                Err(UsersError::Db(e.to_string()))
+            }
+        }
     }
 
     pub fn pool(&self) -> &PgPool {

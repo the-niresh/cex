@@ -7,10 +7,11 @@
 //! Because it holds no exchange state, any number of copies can run behind a
 //! load balancer.
 
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
-use axum::extract::{Path, Query as UrlQuery, Request, State};
-use axum::http::StatusCode;
+use axum::extract::{ConnectInfo, Path, Query as UrlQuery, Request, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -21,6 +22,8 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::auth::Tokens;
+use crate::guest::{self, MAX_NAME_ATTEMPTS};
+use crate::rate_limit::GuestRateLimit;
 use crate::cache::ReadCache;
 use crate::loopback::{Loopback, LoopbackError};
 use crate::users::{NewUser, UserStore, UsersError};
@@ -46,6 +49,7 @@ struct Inner {
     trades_cache: ReadCache<(String, i64), Vec<FillRow>>,
     /// The public chart, per `(symbol, bucket seconds, limit)`.
     candles_cache: ReadCache<(String, i64, i64), Vec<CandleRow>>,
+    guest_rate_limit: GuestRateLimit,
 }
 
 /// How long a history answer is reused before asking the database again.
@@ -80,6 +84,7 @@ impl AppState {
                 history,
                 trades_cache: ReadCache::new(HISTORY_TTL, HISTORY_MAX_STALE, HISTORY_CACHE_KEYS),
                 candles_cache: ReadCache::new(HISTORY_TTL, HISTORY_MAX_STALE, HISTORY_CACHE_KEYS),
+                guest_rate_limit: GuestRateLimit::new(),
             }),
         }
     }
@@ -280,6 +285,7 @@ pub fn build_router_with_cors(state: AppState, cors: CorsSettings) -> Router {
         .route("/health", get(health))
         .route("/register", post(register))
         .route("/login", post(login))
+        .route("/guest", post(create_guest))
         .route("/markets", get(markets))
         .route("/depth/{symbol}", get(depth))
         .route("/trades/{symbol}", get(trades))
@@ -703,6 +709,116 @@ async fn depth(
     }
 }
 
+
+/// Guest tokens last 30 days. Registered users stay at the API's configured TTL.
+const GUEST_TOKEN_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
+
+/// Per-deposit limits in whole units of each asset, checked in atoms below.
+const DEPOSIT_LIMIT_USDT: i64 = 1_000_000;
+const DEPOSIT_LIMIT_BTC: i64 = 10;
+const DEPOSIT_LIMIT_ETH: i64 = 100;
+const DEPOSIT_LIMIT_SOL: i64 = 10_000;
+
+/// The client IP for rate limiting.
+///
+/// Behind our reverse proxy the last `X-Forwarded-For` entry is the address the
+/// proxy saw on the incoming connection; earlier entries are whatever the client
+/// claimed. Fall back to the socket when the header is absent.
+fn client_ip(headers: &HeaderMap, socket: SocketAddr) -> IpAddr {
+    if let Some(xff) = headers.get("x-forwarded-for") {
+        if let Ok(raw) = xff.to_str() {
+            if let Some(last) = raw.split(',').map(str::trim).last() {
+                if let Ok(ip) = last.parse() {
+                    return ip;
+                }
+            }
+        }
+    }
+    socket.ip()
+}
+
+/// Whole-unit deposit ceiling for a known asset, or `None` when unchecked.
+fn deposit_limit_whole(asset: &str) -> Option<(i64, u32)> {
+    match asset {
+        "USDT" => Some((DEPOSIT_LIMIT_USDT, 6)),
+        "BTC" => Some((DEPOSIT_LIMIT_BTC, 8)),
+        "ETH" => Some((DEPOSIT_LIMIT_ETH, 8)),
+        "SOL" => Some((DEPOSIT_LIMIT_SOL, 8)),
+        _ => None,
+    }
+}
+
+fn pow10_u32(n: u32) -> i64 {
+    10i64.pow(n)
+}
+
+/// Refuse a deposit above the per-asset ceiling. Unknown assets pass through.
+fn check_deposit_limit(asset: &str, amount: i64) -> Result<(), ApiError> {
+    let Some((whole, decimals)) = deposit_limit_whole(asset) else {
+        return Ok(());
+    };
+    let limit_atoms = whole * pow10_u32(decimals);
+    if amount > limit_atoms {
+        return Err(ApiError::bad_request(format!(
+            "deposit limit for {asset} is {whole} whole units"
+        )));
+    }
+    Ok(())
+}
+
+async fn create_guest(
+    State(state): State<AppState>,
+    ConnectInfo(socket): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> ApiResult<(StatusCode, Json<Session>)> {
+    let ip = client_ip(&headers, socket);
+    if !state.inner.guest_rate_limit.allow(ip) {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many guest accounts from this address; try again later",
+        ));
+    }
+
+    let mut last_err = None;
+    for _ in 0..MAX_NAME_ATTEMPTS {
+        let creds = guest::new_guest_credentials()
+            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error"))?;
+        match state
+            .inner
+            .users
+            .create_guest(&creds.username, &creds.display_name, &creds.password_hash)
+            .await
+        {
+            Ok(user) => {
+                let exp_secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() + GUEST_TOKEN_TTL.as_secs())
+                    .unwrap_or(0);
+                let token = state
+                    .inner
+                    .tokens
+                    .issue_expiring_at(user.id, exp_secs)
+                    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal error"))?;
+                return Ok((
+                    StatusCode::CREATED,
+                    Json(Session {
+                        user_id: user.id,
+                        token,
+                        name: user.display_name,
+                    }),
+                ));
+            }
+            Err(UsersError::UsernameTaken) => {
+                last_err = Some(UsersError::UsernameTaken);
+                continue;
+            }
+            Err(e) => return Err(ApiError::from(e)),
+        }
+    }
+    Err(ApiError::from(last_err.unwrap_or(UsersError::UsernameTaken)))
+}
+
+
 // ───────────────────────── protected handlers ─────────────────────────
 
 #[derive(Deserialize)]
@@ -718,6 +834,7 @@ async fn deposit(
     let user_id = caller(&req)?;
     let request_id = request_id_for(user_id, &req)?;
     let body: DepositBody = read_json(req).await?;
+    check_deposit_limit(&body.asset, body.amount)?;
 
     state
         .inner
