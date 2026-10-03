@@ -18,9 +18,15 @@ import { ColumnHeads, Scroll } from "./ui/panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 const COLS = [
-  "grid-cols-[minmax(148px,1fr)_minmax(96px,110px)_minmax(96px,110px)_minmax(96px,110px)_minmax(96px,110px)_minmax(80px,96px)_40px]",
+  "grid-cols-[minmax(140px,1fr)_minmax(88px,100px)_minmax(88px,100px)_minmax(88px,100px)_minmax(72px,88px)_minmax(72px,88px)_minmax(52px,56px)]",
+  "max-stack:grid-cols-[minmax(96px,1fr)_minmax(72px,1fr)_minmax(64px,80px)_minmax(56px,64px)_48px]",
   "gap-x-2 [&>span:not(:first-child)]:text-right",
 ].join(" ");
+
+function compactPlaces(asset: string, markets: Market[]): number {
+  if (asset === "USDT") return 2;
+  return Math.min(6, Number(decimalsForAsset(asset, markets)));
+}
 
 async function loadLastPrices(markets: Market[]): Promise<Map<string, bigint>> {
   const prices = new Map<string, bigint>([["USDT", 1_000_000n]]);
@@ -68,17 +74,24 @@ function AmountCell({
   decimals,
   valueAtoms,
   quiet,
+  compact,
 }: {
   atoms: bigint;
   decimals: bigint;
   valueAtoms: bigint | null;
   quiet?: boolean;
+  compact?: number;
 }) {
   const muted = quiet || atoms === 0n;
   return (
     <div className="flex flex-col items-end leading-tight">
       <span className={muted ? "text-ink-4" : undefined}>
-        <Num atoms={atoms} decimals={decimals} />
+        <span className="max-stack:hidden">
+          <Num atoms={atoms} decimals={decimals} />
+        </span>
+        <span className="hidden max-stack:inline">
+          <Num atoms={atoms} decimals={decimals} places={compact} />
+        </span>
       </span>
       <span className="font-sans text-micro">
         <DollarValue atoms={valueAtoms ?? (atoms === 0n ? 0n : null)} muted={muted} />
@@ -187,7 +200,7 @@ export function PortfolioPage() {
           onDeposit={() => openDeposit()}
         />
 
-        <div className="mx-auto flex w-full max-w-[1200px] min-h-0 flex-1 flex-col gap-2">
+        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-2">
           <section
             className="grid gap-4 rounded-panel border border-rule bg-panel p-4 lg:grid-cols-[minmax(0,1fr)_minmax(200px,280px)]"
             data-testid="portfolio-overview"
@@ -256,7 +269,7 @@ export function PortfolioPage() {
           <Tabs
             value={tab}
             onValueChange={(next) => setTab(String(next))}
-            className="flex min-h-0 flex-1 flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel"
+            className="flex flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel"
             data-testid="portfolio-tabs"
           >
             <div className="flex h-10 flex-none items-center gap-1 border-b border-rule bg-panel px-2">
@@ -287,7 +300,7 @@ export function PortfolioPage() {
               </TabsList>
             </div>
 
-            <TabsContent value="balances" className="flex min-h-0 flex-1 flex-col">
+            <TabsContent value="balances" className="flex flex-col">
               <div className="flex flex-wrap items-center gap-3 border-b border-rule px-3 py-2">
                 <label className="flex cursor-pointer items-center gap-2 font-sans text-micro text-ink-3">
                   <input
@@ -312,13 +325,13 @@ export function PortfolioPage() {
               <ColumnHeads className={COLS}>
                 <span>Asset</span>
                 <span>Total balance</span>
-                <span>Available</span>
-                <span>In open orders</span>
+                <span className="max-stack:hidden">Available</span>
+                <span className="max-stack:hidden">In open orders</span>
                 <span>Value</span>
                 <span>Share</span>
-                <span />
+                <span aria-hidden="true" />
               </ColumnHeads>
-              <Scroll className="min-h-14">
+              <Scroll className="min-h-14 flex-none">
                 {!x.session && (
                   <div className="flex items-center justify-between gap-3 border-b border-rule px-3 py-2">
                     <p className="font-sans text-micro text-ink-4">Sign in to deposit and trade.</p>
@@ -351,7 +364,7 @@ export function PortfolioPage() {
                     return (
                       <div
                         key={row.asset}
-                        className={`group tnum relative grid min-h-9 items-center border-b border-rule px-2.5 hover:bg-row-hover ${COLS}`}
+                        className={`group tnum grid min-h-9 items-center border-b border-rule px-2.5 hover:bg-row-hover ${COLS}`}
                         data-testid="portfolio-row"
                         data-asset={row.asset}
                       >
@@ -369,19 +382,26 @@ export function PortfolioPage() {
                           decimals={dp}
                           valueAtoms={row.value}
                           quiet={quiet}
+                          compact={compactPlaces(row.asset, x.markets)}
                         />
-                        <AmountCell
-                          atoms={row.available}
-                          decimals={dp}
-                          valueAtoms={row.availableValue}
-                          quiet={quiet}
-                        />
-                        <AmountCell
-                          atoms={row.locked}
-                          decimals={dp}
-                          valueAtoms={row.lockedValue}
-                          quiet={quiet}
-                        />
+                        <div className="max-stack:hidden">
+                          <AmountCell
+                            atoms={row.available}
+                            decimals={dp}
+                            valueAtoms={row.availableValue}
+                            quiet={quiet}
+                            compact={compactPlaces(row.asset, x.markets)}
+                          />
+                        </div>
+                        <div className="max-stack:hidden">
+                          <AmountCell
+                            atoms={row.locked}
+                            decimals={dp}
+                            valueAtoms={row.lockedValue}
+                            quiet={quiet}
+                            compact={compactPlaces(row.asset, x.markets)}
+                          />
+                        </div>
                         <div className="flex flex-col items-end leading-tight">
                           <span className={quiet ? "text-ink-4" : undefined}>
                             {row.total === 0n ? (
@@ -399,8 +419,8 @@ export function PortfolioPage() {
                             />
                           </span>
                         </div>
-                        <span className="flex items-center justify-end gap-1.5">
-                          <span className="relative h-[3px] w-10 bg-rule">
+                        <span className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden">
+                          <span className="relative h-[3px] w-10 shrink-0 bg-rule">
                             <i
                               className="absolute inset-y-0 left-0 rounded-full"
                               style={{
@@ -409,14 +429,16 @@ export function PortfolioPage() {
                               }}
                             />
                           </span>
-                          <span className={`min-w-[36px] ${quiet ? "text-ink-4" : "text-ink-3"}`}>
-                            {row.sharePct === null ? "-" : `${row.sharePct.toFixed(1)}%`}
+                          <span className={`shrink-0 tabular-nums ${quiet ? "text-ink-4" : "text-ink-3"}`}>
+                            {quiet || row.sharePct !== null
+                              ? `${(row.sharePct ?? 0).toFixed(quiet ? 0 : 1)}%`
+                              : "-"}
                           </span>
                         </span>
-                        <span className="flex justify-end">
+                        <span className="flex shrink-0 justify-end">
                           <button
                             type="button"
-                            className="cursor-pointer rounded-control px-1.5 py-0.5 font-sans text-micro text-control opacity-0 transition-opacity hover:bg-field group-hover:opacity-100 focus:opacity-100"
+                            className="cursor-pointer whitespace-nowrap rounded-control px-1 py-0.5 font-sans text-micro text-control opacity-0 transition-opacity hover:bg-field group-hover:opacity-100 focus:opacity-100"
                             onClick={() => openDeposit(row.asset)}
                             data-testid={`portfolio-row-deposit-${row.asset}`}
                           >
