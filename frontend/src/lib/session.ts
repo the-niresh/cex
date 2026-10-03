@@ -1,12 +1,11 @@
 import type { Session } from "./types";
 
 /**
- * Registered users use `sessionStorage`; guests use `localStorage`.
+ * Every session is a guest session, kept in `localStorage`.
  *
- * A registered account can sign in again with a password, so a token that dies
- * when the tab closes is the right trade-off. A guest has no password - losing
- * the token loses the account - and all money here is demo money, so guests
- * keep their token across tab closes for 30 days.
+ * There is no password to sign in with again - losing the token loses the
+ * account - and all money here is demo money, so the token stays across tab
+ * closes for 30 days.
  */
 const KEY = "cex.session";
 
@@ -27,21 +26,13 @@ function read(raw: string | null): Session | null {
 }
 
 export function loadSession(): Session | null {
-  return read(localStorage.getItem(KEY)) ?? read(sessionStorage.getItem(KEY));
+  return read(localStorage.getItem(KEY));
 }
 
 export function saveSession(session: Session): void {
-  const payload = JSON.stringify(session);
-  if (session.is_guest) {
-    localStorage.setItem(KEY, payload);
-    sessionStorage.removeItem(KEY);
-  } else {
-    sessionStorage.setItem(KEY, payload);
-    localStorage.removeItem(KEY);
-  }
+  localStorage.setItem(KEY, JSON.stringify(session));
 }
 
 export function clearSession(): void {
-  sessionStorage.removeItem(KEY);
   localStorage.removeItem(KEY);
 }

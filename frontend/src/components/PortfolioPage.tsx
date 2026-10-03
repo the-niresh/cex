@@ -56,7 +56,7 @@ export function PortfolioPage() {
   if (!x.session) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-bg p-6 text-center">
-        <p className="font-sans text-label text-ink-2">Sign in or try as guest to view your portfolio.</p>
+        <p className="font-sans text-label text-ink-2">Try as guest to view your portfolio.</p>
         <div className="flex flex-wrap justify-center gap-2">
           <button
             type="button"
@@ -66,12 +66,6 @@ export function PortfolioPage() {
           >
             Try as guest
           </button>
-          <Link
-            to="/"
-            className="rounded-control bg-field px-3 py-1.5 font-sans text-micro text-ink hover:bg-hover"
-          >
-            Log in on trade screen
-          </Link>
         </div>
       </div>
     );
@@ -177,7 +171,7 @@ export function PortfolioPage() {
         <DepositDialog
           markets={x.markets}
           signedIn={x.session !== null}
-          onRequireSignIn={() => {}}
+          onGuest={() => void x.signInAsGuest()}
           onDeposit={x.credit}
           onClose={() => setDepositOpen(false)}
         />

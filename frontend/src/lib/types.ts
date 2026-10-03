@@ -158,15 +158,6 @@ export interface DayStats {
   changePct: number | null;
 }
 
-export type AuthMode = "login" | "register";
-
-/** What the sign-in panel collects. `name` only matters when registering. */
-export interface Credentials {
-  username: string;
-  name: string;
-  password: string;
-}
-
 export interface Session {
   user_id: string;
   token: string;

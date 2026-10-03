@@ -14,7 +14,7 @@ import { PanelHead, PanelTitle } from "./ui/panel";
 interface Props {
   markets: Market[];
   signedIn: boolean;
-  onRequireSignIn(): void;
+  onGuest(): void;
   onDeposit(asset: string, amount: bigint): Promise<void>;
   onClose(): void;
 }
@@ -22,7 +22,7 @@ interface Props {
 export function DepositDialog({
   markets,
   signedIn,
-  onRequireSignIn,
+  onGuest,
   onDeposit,
   onClose,
 }: Props) {
@@ -38,7 +38,7 @@ export function DepositDialog({
 
   async function credit() {
     if (!signedIn) {
-      onRequireSignIn();
+      onGuest();
       return;
     }
     if (!ready || parsed === null) return;
@@ -100,7 +100,7 @@ export function DepositDialog({
               onChange={(e) => setAmount(e.target.value)}
             />
             <GhostButton disabled={signedIn && !ready} onClick={() => void credit()}>
-              {!signedIn ? "Log in" : sending ? "..." : "Confirm"}
+              {!signedIn ? "Try as guest" : sending ? "..." : "Confirm"}
             </GhostButton>
           </div>
           {parsed !== null && (

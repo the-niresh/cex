@@ -14,11 +14,11 @@ interface Props {
   markets: Market[];
   signedIn: boolean;
   /** Same reasoning as the ticket's: crediting an account needs an account. */
-  onRequireSignIn(): void;
+  onGuest(): void;
   onDeposit(asset: string, amount: bigint): Promise<void>;
 }
 
-export function Balances({ balances, markets, signedIn, onRequireSignIn, onDeposit }: Props) {
+export function Balances({ balances, markets, signedIn, onGuest, onDeposit }: Props) {
   const assets = depositAssets(markets);
   const [asset, setAsset] = useState("USDT");
   const [amount, setAmount] = useState("10000");
@@ -30,7 +30,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
 
   async function credit() {
     if (!signedIn) {
-      onRequireSignIn();
+      onGuest();
       return;
     }
     if (!ready || parsed === null) return;
@@ -56,7 +56,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
       {/* Yields height to the panels around it, but never down to a sliver. */}
       <Scroll className="min-h-14">
         {balances.length === 0 ? (
-          <Empty>{signedIn ? "no balances — deposit below" : "sign in to hold a balance"}</Empty>
+          <Empty>{signedIn ? "no balances — deposit below" : "try as guest to hold a balance"}</Empty>
         ) : (
           balances.map((balance) => {
             const dp = decimalsForAsset(balance.asset, markets);
@@ -108,7 +108,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
             onChange={(e) => setAmount(e.target.value)}
           />
           <GhostButton disabled={signedIn && !ready} onClick={() => void credit()}>
-            {!signedIn ? "Log in" : sending ? "…" : "Credit"}
+            {!signedIn ? "Try as guest" : sending ? "…" : "Credit"}
           </GhostButton>
         </div>
         {parsed !== null && (

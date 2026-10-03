@@ -102,33 +102,20 @@ async function seedBook(page: Page): Promise<void> {
   }
 }
 
-/** Register through the UI and fund the account through the UI's own deposit. */
+/** Sign in as guest through the UI and fund through the deposit panel. */
 async function signUpAndFund(page: Page, asset: string, amount: string) {
-  const username = freshUser("e2e");
   await page.goto("/");
-
-  // Nothing asks for an account on arrival, so the panel has to be opened —
-  // and it opens on Log in, so registering means switching tabs.
-  await page.getByTestId("account-action").click();
-  await page.getByRole("button", { name: "Register" }).click();
-  // Exact, or this also matches the "username" field.
-  await page.getByLabel("name", { exact: true }).fill(`Trader ${username}`);
-  await page.getByLabel("username").fill(username);
-  await page.getByLabel("password").fill("a-good-password");
-  await page.getByRole("button", { name: "Create account" }).click();
-
-  // The overlay goes once a session exists.
-  await expect(page.getByTestId("auth-panel")).toBeHidden();
+  await page.getByTestId("try-guest").click();
+  await expect(page.getByTestId("account-name")).toBeVisible();
 
   await page.getByTestId("deposit-assets").getByText(asset, { exact: true }).click();
   await page.getByLabel("deposit amount").fill(amount);
   await page.getByRole("button", { name: "Credit" }).click();
 
   await expect(page.getByTestId("balance-row").filter({ hasText: asset })).toBeVisible();
-  return username;
 }
 
-test("registers, deposits, places an order, sees it in the book, cancels it", async ({ page }) => {
+test("guest signs in, deposits, places an order, sees it in the book, cancels it", async ({ page }) => {
   await signUpAndFund(page, "USDT", "500000");
 
   // Below the best bid, so it rests rather than trading — and close enough to
@@ -366,8 +353,7 @@ test("a quiet market says so but still lets you trade", async ({ page }) => {
 test("the whole screen is usable before signing in, with nothing in the way", async ({ page }) => {
   await page.goto("/");
 
-  // Nothing blocks the screen: no panel, and the exchange is already running.
-  await expect(page.getByTestId("auth-panel")).toHaveCount(0);
+  // Nothing blocks the screen and the exchange is already running.
   await expect(page.getByTestId("ladder-heads")).toBeVisible();
 
   // And it says what it is, without being asked. The order flow on the demo
@@ -450,65 +436,20 @@ test("MID and BBO fill the price from the book", async ({ page }) => {
   await expect(page.getByTestId("ticket-problem")).toHaveCount(0);
 });
 
-test("pressing BUY while signed out asks for an account instead of doing nothing", async ({
-  page,
-}) => {
+test("pressing BUY while signed out signs in as guest", async ({ page }) => {
   await page.goto("/");
 
-  // The button is live, not dead — a disabled control would teach a visitor
-  // nothing about why nothing happened.
   const submit = page.getByTestId("ticket-submit");
-  await expect(submit).toHaveText("Log in to buy");
+  await expect(submit).toHaveText("Try as guest");
   await expect(submit).toBeEnabled();
 
   await submit.click();
-  await expect(page.getByTestId("auth-panel")).toBeVisible();
+  await expect(page.getByTestId("account-name")).toBeVisible();
 
-  // It opens on Log in, not Register — most arrivals already have an account.
-  await expect(page.locator('[data-testid="auth-mode"] button[aria-selected="true"]')).toHaveText("Log in");
-
-  // And it is dismissible: the book is public, so nobody is trapped here.
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("auth-panel")).toHaveCount(0);
-
-  // SELL says so too.
   await page.locator('[data-testid="side-select"] button[data-side="sell"]').click();
-  await expect(page.getByTestId("ticket-submit")).toHaveText("Log in to sell");
+  await expect(page.getByTestId("ticket-submit")).not.toHaveText(/Log in/);
 });
 
-test("registering asks for a name, and the name comes back on the next sign in", async ({
-  page,
-}) => {
-  const username = freshUser("e2e");
-  const displayName = `Ada ${username}`;
-
-  await page.goto("/");
-  await page.getByTestId("account-action").click();
-  await page.getByRole("button", { name: "Register" }).click();
-
-  // A name is required to register — the button stays dead without one.
-  await page.getByLabel("username").fill(username);
-  await page.getByLabel("password").fill("a-good-password");
-  await expect(page.getByTestId("auth-submit")).toBeDisabled();
-
-  await page.getByLabel("name", { exact: true }).fill(displayName);
-  await expect(page.getByTestId("auth-submit")).toBeEnabled();
-  await page.getByTestId("auth-submit").click();
-
-  await expect(page.getByTestId("auth-panel")).toBeHidden();
-  await expect(page.getByTestId("account-name")).toHaveText(displayName);
-
-  // Sign out and back in: the name is the account's, not this session's.
-  await page.getByTestId("account-action").click();
-  await expect(page.getByTestId("account-name")).toHaveCount(0);
-
-  await page.getByTestId("account-action").click();
-  await page.getByLabel("username").fill(username);
-  await page.getByLabel("password").fill("a-good-password");
-  await page.getByTestId("auth-submit").click();
-
-  await expect(page.getByTestId("account-name")).toHaveText(displayName);
-});
 
 test("a market order states no price, and fills against the book", async ({ page }) => {
   // A resting ask to trade against — seeded through the API, because this test

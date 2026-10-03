@@ -23,7 +23,6 @@ interface Props {
   feedDegraded: boolean;
   day: DayStats | null;
   session: Session | null;
-  onSignIn(): void;
   onSignOut(): void;
   onGuest(): void;
   onDeposit(): void;
@@ -68,7 +67,6 @@ export function TopBar({
   feedDegraded,
   day,
   session,
-  onSignIn,
   onSignOut,
   onGuest,
   onDeposit,
@@ -293,24 +291,14 @@ export function TopBar({
         {session ? (
           <UserMenu session={session} onDeposit={onDeposit} onSignOut={onSignOut} />
         ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => void onGuest()}
-              data-testid="try-guest"
-              className="flex min-h-6 cursor-pointer items-center px-1 font-sans text-micro font-medium text-ink-3 transition-colors hover:text-ink"
-            >
-              Try as guest
-            </button>
-            <button
-              type="button"
-              onClick={onSignIn}
-              data-testid="account-action"
-              className="flex min-h-6 cursor-pointer items-center px-1 font-sans text-micro font-medium text-ink-4 transition-colors hover:text-ink-2"
-            >
-              Log in
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => void onGuest()}
+            data-testid="try-guest"
+            className="flex min-h-6 cursor-pointer items-center px-1 font-sans text-micro font-medium text-ink-3 transition-colors hover:text-ink"
+          >
+            Try as guest
+          </button>
         )}
       </div>
     </header>

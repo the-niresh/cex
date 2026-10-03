@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useExchangeContext } from "./ExchangeContext";
 import { DepositDialog } from "./components/DepositDialog";
-import { Auth } from "./components/Auth";
 import { Balances } from "./components/Balances";
 import { ActivityPanel } from "./components/ActivityPanel";
 import { Chart } from "./components/Chart";
@@ -15,7 +14,6 @@ import { Panel, ScrollShade } from "./components/ui/panel";
 import { latencySeries as readLatencySeries, latencyStats, onLatency } from "./lib/api";
 import { feedHealth } from "./lib/health";
 import { decimalsForStep, formatAtoms } from "./lib/num";
-import type { AuthMode, Credentials } from "./lib/types";
 
 
 export function TradeScreen() {
@@ -40,18 +38,7 @@ export function TradeScreen() {
 
   // The screen is public. Nothing asks for an account until something is
   // about to move money, and then this opens — never on arrival.
-  const [authOpen, setAuthOpen] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
-  const openAuth = useCallback(() => setAuthOpen(true), []);
-  const closeAuth = useCallback(() => setAuthOpen(false), []);
-
-  // Not memoised: the panel only calls this from its submit handler, never
-  // from a dependency array, so a stable identity would buy nothing.
-  async function signIn(mode: AuthMode, credentials: Credentials) {
-    // Only reached on success — a failure throws and the panel shows why.
-    await x.signIn(mode, credentials);
-    setAuthOpen(false);
-  }
 
   // A book nobody has updated for a while is not necessarily broken, but the
   // user must be able to tell. Ticking drives that readout.
@@ -129,7 +116,6 @@ export function TradeScreen() {
           feedDegraded={health.degraded}
           day={x.day}
           session={x.session}
-          onSignIn={openAuth}
           onSignOut={x.signOut}
           onGuest={() => void x.signInAsGuest()}
           onDeposit={() => setDepositOpen(true)}
@@ -189,14 +175,14 @@ export function TradeScreen() {
             bestBid={bestBid}
             bestAsk={bestAsk}
             signedIn={x.session !== null}
-            onRequireSignIn={openAuth}
+            onGuest={() => void x.signInAsGuest()}
             onSubmit={x.submitOrder}
           />
           <Balances
             balances={x.balances}
             markets={x.markets}
             signedIn={x.session !== null}
-            onRequireSignIn={openAuth}
+            onGuest={() => void x.signInAsGuest()}
             onDeposit={x.credit}
           />
           </ScrollShade>
@@ -220,13 +206,11 @@ export function TradeScreen() {
         />
       </div>
 
-      {authOpen && x.session === null && <Auth onSubmit={signIn} onClose={closeAuth} />}
-
       {depositOpen && (
         <DepositDialog
           markets={x.markets}
           signedIn={x.session !== null}
-          onRequireSignIn={openAuth}
+          onGuest={() => void x.signInAsGuest()}
           onDeposit={x.credit}
           onClose={() => setDepositOpen(false)}
         />

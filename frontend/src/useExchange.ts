@@ -6,10 +6,8 @@ import { liveFillFrom, mergeFills } from "./lib/fills";
 import { nextResyncBackoffMs, resyncWaitMs } from "./lib/resync";
 import { clearSession, loadSession, saveSession } from "./lib/session";
 import type {
-  AuthMode,
   Balance,
   Candle,
-  Credentials,
   DayStats,
   Interval,
   Market,
@@ -113,7 +111,6 @@ export interface Exchange {
   error: string | null;
   clearError(): void;
 
-  signIn(mode: AuthMode, credentials: Credentials): Promise<void>;
   signInAsGuest(): Promise<void>;
   signOut(): void;
   submitOrder(request: api.PlaceOrderRequest): Promise<void>;
@@ -490,15 +487,6 @@ export function useExchange(): Exchange {
 
   // ── actions ───────────────────────────────────────────────────────────
 
-  const signIn = useCallback(async (mode: AuthMode, credentials: Credentials) => {
-    const { username, name, password } = credentials;
-    const next =
-      mode === "register"
-        ? await api.register(username, name, password)
-        : await api.login(username, password);
-    saveSession(next);
-    setSession(next);
-  }, []);
 
   const signInAsGuest = useCallback(async () => {
     const next = await api.guest();
@@ -595,7 +583,6 @@ export function useExchange(): Exchange {
     lastUpdateMs,
     error,
     clearError: useCallback(() => setError(null), []),
-    signIn,
     signInAsGuest,
     signOut,
     submitOrder,
