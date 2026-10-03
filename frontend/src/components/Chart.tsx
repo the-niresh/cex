@@ -6,11 +6,13 @@ import {
   createChart,
   isBusinessDay,
   isUTCTimestamp,
+  type AutoscaleInfo,
   type IChartApi,
   type ISeriesApi,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { autoscaleInfoForVisibleBars } from "@/lib/chart-autoscale";
 import { cn } from "@/lib/utils";
 import { chartViewKey, planChartSeriesUpdate } from "../lib/chart-range";
 import { withAlpha } from "../lib/color";
@@ -72,6 +74,9 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const viewKeyRef = useRef<string | null>(null);
   const candleTimesRef = useRef<number[]>([]);
+  const pricePointsRef = useRef<
+    Array<{ time: UTCTimestamp; open: number; high: number; low: number; close: number }>
+  >([]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -123,6 +128,17 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
       borderDownColor: token("--color-sell"),
       wickUpColor: token("--color-buy"),
       wickDownColor: token("--color-sell"),
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
+        const visible = chart.timeScale().getVisibleLogicalRange();
+        const points = pricePointsRef.current;
+        if (!visible || points.length === 0) return original();
+
+        const from = Math.max(0, Math.ceil(visible.from));
+        const to = Math.min(points.length - 1, Math.floor(visible.to));
+        if (from > to) return original();
+
+        return autoscaleInfoForVisibleBars(points.slice(from, to + 1), original);
+      },
     });
 
     const volume = chart.addSeries(HistogramSeries, {
@@ -173,6 +189,7 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
       low: toPrice(c.low),
       close: toPrice(c.close),
     }));
+    pricePointsRef.current = pricePoints;
 
     const volumePoints = candles.map((c) => ({
       time: (Number(c.time_ms) / 1000) as UTCTimestamp,
