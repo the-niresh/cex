@@ -83,6 +83,31 @@ pub async fn age_all_batches(
     Ok(())
 }
 
+/// Age orders, fills and balance changes for retention tests.
+pub async fn age_history_for_retention(
+    database_url: &str,
+    schema: &str,
+    days: i32,
+) -> Result<(), sqlx::Error> {
+    let opts = PgConnectOptions::from_str(database_url)?
+        .options([("search_path", format!("{schema},public"))]);
+    let pool = PgPool::connect_with(opts).await?;
+    sqlx::query("UPDATE orders SET updated_at = now() - make_interval(days => $1)")
+        .bind(days)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE fills SET created_at = now() - make_interval(days => $1)")
+        .bind(days)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE balance_changes SET created_at = now() - make_interval(days => $1)")
+        .bind(days)
+        .execute(&pool)
+        .await?;
+    pool.close().await;
+    Ok(())
+}
+
 async fn drop_schema(database_url: &str, schema: &str) -> Result<(), sqlx::Error> {
     if schema.is_empty()
         || !schema

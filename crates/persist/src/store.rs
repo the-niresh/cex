@@ -351,8 +351,10 @@ impl HistoryStore {
         Ok(written)
     }
 
-    /// Delete up to `batch` history rows older than `retention_days`. Returns
-    /// how many rows were removed across all tables.
+    /// Delete up to `batch` old rows from `orders` and `balance_changes` only.
+    /// `fills` and `event_batches` are never touched: fills feed every chart
+    /// candle and the trade tape, and `event_batches` is how persist dedupes.
+    /// Returns how many rows were removed.
     pub async fn delete_history_older_than(
         &self,
         retention_days: u32,
@@ -376,39 +378,9 @@ impl HistoryStore {
         total += n;
 
         let n = sqlx::query(
-            "DELETE FROM fills WHERE (seq, idx) IN (
-                SELECT seq, idx FROM fills
-                WHERE created_at < now() - make_interval(days => $1)
-                LIMIT $2
-            )",
-        )
-        .bind(retention_days as i32)
-        .bind(batch)
-        .execute(&self.pool)
-        .await
-        .map_err(db)?
-        .rows_affected();
-        total += n;
-
-        let n = sqlx::query(
             "DELETE FROM orders WHERE order_id IN (
                 SELECT order_id FROM orders
                 WHERE updated_at < now() - make_interval(days => $1)
-                LIMIT $2
-            )",
-        )
-        .bind(retention_days as i32)
-        .bind(batch)
-        .execute(&self.pool)
-        .await
-        .map_err(db)?
-        .rows_affected();
-        total += n;
-
-        let n = sqlx::query(
-            "DELETE FROM event_batches WHERE seq IN (
-                SELECT seq FROM event_batches
-                WHERE written_at < now() - make_interval(days => $1)
                 LIMIT $2
             )",
         )
