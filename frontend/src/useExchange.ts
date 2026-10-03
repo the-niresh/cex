@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import * as api from "./lib/api";
+import { marketFromParam } from "./lib/market-url";
 import { DepthBook, type Level } from "./lib/book";
 import { Feed, type FeedStatus } from "./lib/feed";
 import { liveFillFrom, mergeFills } from "./lib/fills";
@@ -79,11 +81,17 @@ interface BookView {
 
 const EMPTY_BOOK: BookView = { bids: [], asks: [], spread: null, depthSeq: null, stale: false };
 
+export interface MarketPrice {
+  price: bigint;
+  side: Side;
+}
+
 export interface Exchange {
   session: Session | null;
   markets: Market[];
   market: Market | null;
   symbol: string;
+  marketPrices: Map<string, MarketPrice>;
   selectMarket(symbol: string): void;
 
   bids: Level[];
@@ -119,9 +127,11 @@ export interface Exchange {
 }
 
 export function useExchange(): Exchange {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [session, setSession] = useState<Session | null>(() => loadSession());
   const [markets, setMarkets] = useState<Market[]>([]);
   const [symbol, setSymbol] = useState("BTC_USDT");
+  const [marketPrices, setMarketPrices] = useState<Map<string, MarketPrice>>(new Map());
   const [interval, setIntervalState] = useState<Interval>("1m");
 
   const bookRef = useRef(new DepthBook());
@@ -231,6 +241,13 @@ export function useExchange(): Exchange {
           fresh: false,
         })),
       );
+      if (recent[0]) {
+        setMarketPrices((current) => {
+          const next = new Map(current);
+          next.set(sym, { price: recent[0].price, side: recent[0].taker_side });
+          return next;
+        });
+      }
       setLastUpdateMs(Date.now());
 
       if (token) {
@@ -323,6 +340,11 @@ export function useExchange(): Exchange {
         }
       },
       onTrade(update) {
+        setMarketPrices((current) => {
+          const next = new Map(current);
+          next.set(update.symbol, { price: update.price, side: update.taker_side });
+          return next;
+        });
         if (update.symbol !== symbolRef.current) return;
         setTape((current) => {
           const print: TapePrint = {
@@ -384,6 +406,44 @@ export function useExchange(): Exchange {
   useEffect(() => {
     api.markets().then(setMarkets).catch(failed);
   }, [failed]);
+
+  useEffect(() => {
+    if (markets.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      markets.map(async (m) => {
+        try {
+          const trades = await api.trades(m.symbol, 1);
+          if (!cancelled && trades[0]) {
+            setMarketPrices((current) => {
+              if (current.has(m.symbol)) return current;
+              const next = new Map(current);
+              next.set(m.symbol, { price: trades[0].price, side: trades[0].taker_side });
+              return next;
+            });
+          }
+        } catch {
+          // Leave the tab without a price until a trade lands.
+        }
+      }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [markets]);
+
+  const applyMarket = useCallback((next: string) => {
+    if (next === symbolRef.current) return;
+    setSymbol(next);
+    bookRef.current = new DepthBook();
+    setBook(EMPTY_BOOK);
+    setTape([]);
+  }, []);
+
+  useEffect(() => {
+    if (markets.length === 0) return;
+    applyMarket(marketFromParam(searchParams.get("market"), markets));
+  }, [markets, searchParams, applyMarket]);
 
   useEffect(() => {
     void resync();
@@ -549,20 +609,26 @@ export function useExchange(): Exchange {
     [failed, refreshAccount],
   );
 
-  const selectMarket = useCallback((next: string) => {
-    setSymbol(next);
-    // A fresh book, not a reset one: the old market's depth_seq has nothing to
-    // do with the new market's, and carrying it would fake continuity.
-    bookRef.current = new DepthBook();
-    setBook(EMPTY_BOOK);
-    setTape([]);
-  }, []);
+  const selectMarket = useCallback(
+    (next: string) => {
+      setSearchParams(
+        (current) => {
+          const params = new URLSearchParams(current);
+          params.set("market", next);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   return {
     session,
     markets,
     market,
     symbol,
+    marketPrices,
     selectMarket,
     bids: book.bids,
     asks: book.asks,

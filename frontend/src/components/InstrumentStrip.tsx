@@ -113,6 +113,13 @@ export function InstrumentStrip({
         )}
         {/* Which exchange this screen is actually talking to. Worth keeping
             visible: localhost and the deployed host look identical otherwise. */}
+        <span
+          className="hidden min-[1280px]:inline text-ink-4"
+          title="Demo venue. Deposits are free and the order flow is a market-making bot. The latency figures are real measurements of real matching."
+          data-testid="demo-venue-note"
+        >
+          Demo venue
+        </span>
         <Fact label="Api" value={new URL(API_URL).host} />
         <Fact label="Depth seq" value={depthSeq === null ? "—" : String(depthSeq)} testid="status-depth-seq" />
         <Fact label="Resyncs" value={String(resyncs)} testid="status-resyncs" />

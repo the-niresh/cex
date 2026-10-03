@@ -3,15 +3,21 @@ import { cn } from "@/lib/utils";
 import { ActionButton } from "./ui/form";
 import { UserMenu } from "./UserMenu";
 import type { FeedStatus } from "../lib/feed";
+import { tradeHref } from "../lib/market-url";
 import { decimalsForStep } from "../lib/num";
-import type { DayStats, Market, Session } from "../lib/types";
+import type { DayStats, Market, Session, Side } from "../lib/types";
 import { Num } from "./format";
+
+export interface MarketPrice {
+  price: bigint;
+  side: Side;
+}
 
 interface Props {
   markets: Market[];
   market: Market | null;
   symbol: string;
-  onSelect(symbol: string): void;
+  marketPrices: Map<string, MarketPrice>;
   lastPrice: bigint | null;
   lastSide: "BUY" | "SELL" | null;
   status: FeedStatus;
@@ -89,7 +95,7 @@ export function TopBar({
   markets,
   market,
   symbol,
-  onSelect,
+  marketPrices,
   lastPrice,
   lastSide,
   status,
@@ -149,13 +155,6 @@ export function TopBar({
             figures are staged too. They are not — they are the exchange timing
             its own work — so the cheap thing to protect is the real number, by
             being first to say which part is not real. */}
-        <span
-          className="rounded-pill bg-field px-1.5 py-0.5 font-sans text-micro text-ink-3"
-          title="Demo venue. Deposits are free and the order flow is a market-making bot. The latency figures are real measurements of real matching."
-          data-testid="demo-badge"
-        >
-          Demo
-        </span>
       </div>
 
       {/* The tabs take their own scrollbar rather than pushing what follows off
@@ -172,15 +171,16 @@ export function TopBar({
       >
         {markets.map((m) => {
           const selected = m.symbol === symbol;
+          const quote = marketPrices.get(m.symbol);
+          const tabDown = quote?.side === "SELL";
           return (
-            <button
+            <Link
               key={m.symbol}
-              type="button"
+              to={tradeHref(m.symbol)}
               aria-selected={selected}
-              onClick={() => onSelect(m.symbol)}
               className={cn(
                 "flex min-w-[104px] cursor-pointer flex-col justify-center gap-px rounded-control px-2.5 py-1",
-                "transition-colors",
+                "transition-colors no-underline",
                 selected ? "bg-field" : "hover:bg-hover",
               )}
             >
@@ -188,10 +188,10 @@ export function TopBar({
                 {m.symbol}
               </span>
               <span className={cn("tnum text-micro", selected ? "text-ink-3" : "text-ink-4")}>
-                {selected && lastPrice !== null ? (
-                  <span className={down ? "text-sell" : "text-buy"}>
+                {quote ? (
+                  <span className={tabDown ? "text-sell" : "text-buy"}>
                     <Num
-                      atoms={lastPrice}
+                      atoms={quote.price}
                       decimals={m.quote_decimals}
                       places={decimalsForStep(m.tick_size, m.quote_decimals)}
                     />
@@ -200,7 +200,7 @@ export function TopBar({
                   "—"
                 )}
               </span>
-            </button>
+            </Link>
           );
         })}
       </nav>

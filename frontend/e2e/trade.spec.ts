@@ -359,9 +359,9 @@ test("the whole screen is usable before signing in, with nothing in the way", as
   // And it says what it is, without being asked. The order flow on the demo
   // venue is a bot trading with itself; the latency figures next to it are
   // real. A visitor who works the first part out unaided will disbelieve the
-  // second, so the badge is load-bearing rather than decoration.
-  await expect(page.getByTestId("demo-badge")).toBeVisible();
-  await expect(page.getByTestId("demo-badge")).toHaveText("Demo");
+  // second, so the footer note is load-bearing rather than decoration.
+  await expect(page.getByTestId("demo-venue-note")).toBeVisible();
+  await expect(page.getByTestId("demo-venue-note")).toHaveText("Demo venue");
   // API_URL is same-origin by default (Vite proxies /register, /depth, etc. to
   // 8080) so this reads the page's own origin, not the API's actual port —
   // see the comment on API_URL in src/lib/api.ts.

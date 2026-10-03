@@ -6,12 +6,15 @@ import {
   createChart,
   isBusinessDay,
   isUTCTimestamp,
+  type AutoscaleInfo,
   type IChartApi,
   type ISeriesApi,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { autoscaleInfoForVisibleBars } from "@/lib/chart-autoscale";
 import { cn } from "@/lib/utils";
+import { chartViewKey, planChartSeriesUpdate } from "../lib/chart-range";
 import { withAlpha } from "../lib/color";
 import { decimalsForStep } from "../lib/num";
 import type { Candle, Interval, Market } from "../lib/types";
@@ -69,6 +72,11 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
   const chartRef = useRef<IChartApi | null>(null);
   const priceRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const viewKeyRef = useRef<string | null>(null);
+  const candleTimesRef = useRef<number[]>([]);
+  const pricePointsRef = useRef<
+    Array<{ time: UTCTimestamp; open: number; high: number; low: number; close: number }>
+  >([]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -120,6 +128,17 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
       borderDownColor: token("--color-sell"),
       wickUpColor: token("--color-buy"),
       wickDownColor: token("--color-sell"),
+      autoscaleInfoProvider: (original: () => AutoscaleInfo | null) => {
+        const visible = chart.timeScale().getVisibleLogicalRange();
+        const points = pricePointsRef.current;
+        if (!visible || points.length === 0) return original();
+
+        const from = Math.max(0, Math.ceil(visible.from));
+        const to = Math.min(points.length - 1, Math.floor(visible.to));
+        if (from > to) return original();
+
+        return autoscaleInfoForVisibleBars(points.slice(from, to + 1), original);
+      },
     });
 
     const volume = chart.addSeries(HistogramSeries, {
@@ -149,9 +168,10 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
   }, []);
 
   useEffect(() => {
+    const chart = chartRef.current;
     const price = priceRef.current;
     const volume = volumeRef.current;
-    if (!price || !volume || !market) return;
+    if (!chart || !price || !volume || !market) return;
 
     // Volume is context, not the subject, so it is drawn at a third strength.
     // ⚠️ `rgba`, not `color-mix` — see the note on `withAlpha`.
@@ -162,23 +182,48 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     const baseUnit = Number(10n ** market.base_decimals);
     const toPrice = (atoms: bigint) => Number(atoms) / quoteUnit;
 
-    price.setData(
-      candles.map((c) => ({
-        time: (Number(c.time_ms) / 1000) as UTCTimestamp,
-        open: toPrice(c.open),
-        high: toPrice(c.high),
-        low: toPrice(c.low),
-        close: toPrice(c.close),
-      })),
+    const pricePoints = candles.map((c) => ({
+      time: (Number(c.time_ms) / 1000) as UTCTimestamp,
+      open: toPrice(c.open),
+      high: toPrice(c.high),
+      low: toPrice(c.low),
+      close: toPrice(c.close),
+    }));
+    pricePointsRef.current = pricePoints;
+
+    const volumePoints = candles.map((c) => ({
+      time: (Number(c.time_ms) / 1000) as UTCTimestamp,
+      value: Number(c.volume) / baseUnit,
+      color: c.close >= c.open ? ghost("--color-buy") : ghost("--color-sell"),
+    }));
+
+    const viewKey = chartViewKey(market.symbol, interval);
+    const nextTimes = pricePoints.map((p) => p.time);
+    const plan = planChartSeriesUpdate(
+      viewKey,
+      viewKeyRef.current,
+      candleTimesRef.current,
+      nextTimes,
     );
 
-    volume.setData(
-      candles.map((c) => ({
-        time: (Number(c.time_ms) / 1000) as UTCTimestamp,
-        value: Number(c.volume) / baseUnit,
-        color: c.close >= c.open ? ghost("--color-buy") : ghost("--color-sell"),
-      })),
-    );
+    if (plan.kind === "full") {
+      price.setData(pricePoints);
+      volume.setData(volumePoints);
+      if (plan.range) chart.timeScale().setVisibleLogicalRange(plan.range);
+      viewKeyRef.current = viewKey;
+    } else if (plan.kind === "incremental") {
+      for (let i = plan.fromIndex; i < pricePoints.length; i++) {
+        price.update(pricePoints[i]);
+        volume.update(volumePoints[i]);
+      }
+    } else {
+      const range = chart.timeScale().getVisibleLogicalRange();
+      price.setData(pricePoints);
+      volume.setData(volumePoints);
+      if (range) chart.timeScale().setVisibleLogicalRange(range);
+    }
+
+    candleTimesRef.current = nextTimes;
 
     price.applyOptions({
       priceFormat: {
@@ -187,14 +232,7 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
         minMove: Number(market.tick_size) / quoteUnit,
       },
     });
-
-    // Spread whatever bars exist across the panel. Without this the chart keeps
-    // its default bar spacing and pins the series to the right edge, so a young
-    // market — which is every market here that is not BTC_USDT — draws a dozen
-    // candles in the last tenth of the width and leaves the rest blank, looking
-    // broken rather than new.
-    chartRef.current?.timeScale().fitContent();
-  }, [candles, market]);
+  }, [candles, market, interval]);
 
   return (
     // ⚠️ A fixed height in the stacked layout, not a floor. The rows there are

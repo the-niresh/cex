@@ -18,9 +18,9 @@ import { ColumnHeads, Scroll } from "./ui/panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 const COLS = [
-  "grid-cols-[minmax(128px,1fr)_minmax(88px,96px)_minmax(88px,96px)_minmax(88px,96px)_minmax(72px,80px)_minmax(72px,80px)_72px]",
-  "max-stack:grid-cols-[minmax(80px,1fr)_minmax(72px,1fr)_minmax(64px,80px)_minmax(52px,60px)]",
-  "gap-x-3 max-stack:gap-x-2.5 [&>span:not(:first-child)]:px-1 [&>span:not(:first-child)]:text-right [&>div:not(:first-child)]:px-1 [&>div:not(:first-child)]:text-right",
+  "grid-cols-[148px_repeat(5,minmax(0,1fr))_72px]",
+  "max-stack:grid-cols-[minmax(100px,128px)_repeat(3,minmax(0,1fr))]",
+  "gap-x-4 max-stack:gap-x-3 [&>span:not(:first-child)]:text-right [&>div:not(:first-child)]:text-right",
 ].join(" ");
 
 function compactPlaces(asset: string, markets: Market[]): number {
@@ -183,7 +183,7 @@ export function PortfolioPage() {
           markets={x.markets}
           market={x.market}
           symbol={x.symbol}
-          onSelect={x.selectMarket}
+          marketPrices={x.marketPrices}
           lastPrice={lastPrint?.price ?? null}
           lastSide={lastPrint?.taker_side ?? null}
           status={x.status}
