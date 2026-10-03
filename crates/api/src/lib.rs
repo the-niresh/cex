@@ -9,6 +9,7 @@ pub mod guest;
 pub mod loopback;
 pub mod rate_limit;
 pub mod routes;
+pub mod server;
 pub mod timing;
 pub mod users;
 

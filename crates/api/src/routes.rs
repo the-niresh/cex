@@ -7,7 +7,7 @@
 //! Because it holds no exchange state, any number of copies can run behind a
 //! load balancer.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Path, Query as UrlQuery, Request, State};
@@ -718,12 +718,17 @@ const DEPOSIT_LIMIT_BTC: i64 = 10;
 const DEPOSIT_LIMIT_ETH: i64 = 100;
 const DEPOSIT_LIMIT_SOL: i64 = 10_000;
 
+/// When we cannot see the socket or a proxy header, every such caller shares
+/// one rate-limit bucket so a missing extension never becomes a 500.
+const UNKNOWN_CLIENT_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+
 /// The client IP for rate limiting.
 ///
 /// Behind our reverse proxy the last `X-Forwarded-For` entry is the address the
 /// proxy saw on the incoming connection; earlier entries are whatever the client
-/// claimed. Fall back to the socket when the header is absent.
-fn client_ip(headers: &HeaderMap, socket: SocketAddr) -> IpAddr {
+/// claimed. Fall back to the socket when the header is absent, then to a shared
+/// unknown bucket when neither is available.
+fn client_ip(headers: &HeaderMap, socket: Option<SocketAddr>) -> IpAddr {
     if let Some(xff) = headers.get("x-forwarded-for") {
         if let Ok(raw) = xff.to_str() {
             if let Some(last) = raw.split(',').map(str::trim).next_back() {
@@ -733,7 +738,7 @@ fn client_ip(headers: &HeaderMap, socket: SocketAddr) -> IpAddr {
             }
         }
     }
-    socket.ip()
+    socket.map(|s| s.ip()).unwrap_or(UNKNOWN_CLIENT_IP)
 }
 
 /// Whole-unit deposit ceiling for a known asset, or `None` when unchecked.
@@ -767,10 +772,13 @@ fn check_deposit_limit(asset: &str, amount: i64) -> Result<(), ApiError> {
 
 async fn create_guest(
     State(state): State<AppState>,
-    ConnectInfo(socket): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
+    req: Request,
 ) -> ApiResult<(StatusCode, Json<Session>)> {
-    let ip = client_ip(&headers, socket);
+    let socket = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0);
+    let ip = client_ip(req.headers(), socket);
     if !state.inner.guest_rate_limit.allow(ip) {
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,

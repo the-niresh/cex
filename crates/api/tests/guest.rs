@@ -5,6 +5,7 @@ use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use cex_api::guest::{generate_guest_name, is_guest_name_format};
 use cex_api::routes::{build_router, AppState};
+use cex_api::server::serve;
 use cex_api::{Loopback, LoopbackConfig, Tokens, UserStore};
 use cex_engine::config::Config as EngineConfig;
 use cex_engine::runner::Runner;
@@ -13,8 +14,12 @@ use http_body_util::BodyExt;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::{timeout, Duration as TokioDuration};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -159,6 +164,66 @@ fn generated_guest_names_match_the_expected_shape() {
         let name = generate_guest_name();
         assert!(is_guest_name_format(&name), "bad name: {name}");
     }
+}
+
+#[tokio::test]
+async fn a_guest_is_created_without_connect_info_extension() {
+    let h = Harness::start().await;
+    let (status, body) = h
+        .call(
+            Request::builder()
+                .method("POST")
+                .uri("/guest")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert!(body["token"].as_str().unwrap().len() > 10);
+}
+
+#[tokio::test]
+async fn post_guest_over_tcp_returns_a_session() {
+    const LIMIT: TokioDuration = TokioDuration::from_secs(10);
+    let h = Harness::start().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let router = h.router.clone();
+    let server = tokio::spawn(async move {
+        serve(listener, router).await.expect("serve");
+    });
+
+    let response = timeout(LIMIT, async {
+        let mut stream = TcpStream::connect(addr).await.expect("connect");
+        stream
+            .write_all(
+                b"POST /guest HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+            )
+            .await
+            .expect("write");
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).await.expect("read");
+        String::from_utf8(buf).expect("utf8")
+    })
+    .await
+    .expect("post /guest over tcp timed out after 10s");
+
+    server.abort();
+
+    let status_line = response.lines().next().expect("status line");
+    assert!(
+        status_line.contains("201"),
+        "expected 201, got: {status_line}"
+    );
+    let body_start = response
+        .find("\r\n\r\n")
+        .map(|i| i + 4)
+        .expect("response body");
+    let body: Value = serde_json::from_str(&response[body_start..]).expect("json body");
+    assert!(body["token"].as_str().unwrap().len() > 10);
+    assert!(is_guest_name_format(body["name"].as_str().unwrap()));
 }
 
 #[tokio::test]
