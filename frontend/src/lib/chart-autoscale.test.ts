@@ -35,6 +35,22 @@ describe("robustCorePriceRange", () => {
     expect(priceRangesEqual(naive!, core!)).toBe(true);
   });
 
+  it("ignores a BTC_USDT spike wick while keeping tight normal bars readable", () => {
+    const normal = Array.from({ length: 100 }, () => bar(50_118.2, 50_118.5, 50_118.35));
+    const spike = bar(49_999, 50_123, 50_061);
+    const bars = [...normal, spike];
+
+    const naive = naivePriceRange(bars)!;
+    const core = robustCorePriceRange(bars)!;
+
+    expect(naive.minValue).toBe(49_999);
+    expect(naive.maxValue).toBe(50_123);
+    expect(core.minValue).toBeGreaterThanOrEqual(50_118.2);
+    expect(core.maxValue).toBeLessThanOrEqual(50_118.5);
+    expect(core.minValue).toBeLessThan(50_118.3);
+    expect(core.maxValue).toBeGreaterThan(50_118.4);
+  });
+
   it("ignores 2% low-price outliers so normal candles stay readable", () => {
     const normal = Array.from({ length: 98 }, normalBtcBar);
     const outliers = [bar(4, 6, 5), bar(5, 6, 5.5)];

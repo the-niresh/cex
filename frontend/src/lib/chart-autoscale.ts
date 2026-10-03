@@ -14,7 +14,7 @@ export type ChartPriceRange = {
 
 const MIN_INLIER_BARS = 10;
 const MAD_MULTIPLIER = 20;
-const MEDIAN_BAND_FRACTION = 0.005;
+const MEDIAN_BAND_FRACTION = 0.0001;
 const DEFAULT_PADDING_FRACTION = 0.03;
 
 function median(values: readonly number[]): number {
@@ -40,7 +40,7 @@ export function naivePriceRange(bars: readonly ChartOhlc[]): ChartPriceRange | n
 
 /**
  * Robust core range: median of closes, MAD of lows and highs from it, keep bars
- * within max(20 x MAD, 0.5% of median). Fall back to the plain visible range
+ * within max(20 x MAD, 0.01% of median). Fall back to the plain visible range
  * when fewer than ten bars pass.
  */
 export function robustCorePriceRange(bars: readonly ChartOhlc[]): ChartPriceRange | null {
