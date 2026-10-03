@@ -61,5 +61,7 @@ async fn main() -> Result<()> {
         .with_context(|| format!("binding {bind}"))?;
     tracing::info!(%bind, "api listening");
 
-    cex_api::server::serve(listener, app).await.context("serving")
+    cex_api::server::serve(listener, app)
+        .await
+        .context("serving")
 }
