@@ -11,6 +11,7 @@ interface Props {
   fills: MyFill[];
   markets: Market[];
   onCancel(orderId: bigint): void;
+  className?: string;
 }
 
 /**
@@ -22,7 +23,7 @@ interface Props {
  * information the space it actually needs, and the counts ride on the tabs so
  * you can see there is nothing to look at without opening either.
  */
-export function ActivityPanel({ orders, fills, markets, onCancel }: Props) {
+export function ActivityPanel({ orders, fills, markets, onCancel, className }: Props) {
   // Controlled rather than defaulted, because the head reports on whichever
   // table is showing and cannot do that without knowing which one it is.
   const [tab, setTab] = useState("orders");
@@ -33,7 +34,11 @@ export function ActivityPanel({ orders, fills, markets, onCancel }: Props) {
     <Tabs
       value={tab}
       onValueChange={(next) => setTab(String(next))}
-      className="col-span-full row-start-3 flex min-h-0 flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel max-stack:row-auto max-stack:min-h-[190px]"
+      className={[
+        "flex min-h-0 flex-col gap-0 overflow-hidden rounded-panel border border-rule bg-panel",
+        "col-span-full row-start-3 max-stack:row-auto max-stack:min-h-[190px]",
+        className,
+      ].join(" ")}
       data-testid="activity"
     >
       <div className="flex h-10 flex-none items-center gap-1 border-b border-rule bg-panel px-2">
