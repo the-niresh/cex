@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { decimalsForAsset, depositAssets } from "../lib/deposit";
 import { formatAtoms, parseAtoms } from "../lib/num";
 import type { Balance, Market } from "../lib/types";
 import { Num } from "./format";
@@ -13,32 +14,23 @@ interface Props {
   markets: Market[];
   signedIn: boolean;
   /** Same reasoning as the ticket's: crediting an account needs an account. */
-  onRequireSignIn(): void;
+  onGuest(): void;
   onDeposit(asset: string, amount: bigint): Promise<void>;
 }
 
-/** Decimals for an asset, taken from whichever market names it. */
-function decimalsFor(asset: string, markets: Market[]): bigint {
-  for (const market of markets) {
-    if (market.base === asset) return market.base_decimals;
-    if (market.quote === asset) return market.quote_decimals;
-  }
-  return 8n;
-}
-
-export function Balances({ balances, markets, signedIn, onRequireSignIn, onDeposit }: Props) {
-  const assets = [...new Set(markets.flatMap((m) => [m.quote, m.base]))];
+export function Balances({ balances, markets, signedIn, onGuest, onDeposit }: Props) {
+  const assets = depositAssets(markets);
   const [asset, setAsset] = useState("USDT");
   const [amount, setAmount] = useState("10000");
   const [sending, setSending] = useState(false);
 
-  const decimals = decimalsFor(asset, markets);
+  const decimals = decimalsForAsset(asset, markets);
   const parsed = parseAtoms(amount, decimals);
   const ready = !sending && parsed !== null && parsed > 0n;
 
   async function credit() {
     if (!signedIn) {
-      onRequireSignIn();
+      onGuest();
       return;
     }
     if (!ready || parsed === null) return;
@@ -64,10 +56,10 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
       {/* Yields height to the panels around it, but never down to a sliver. */}
       <Scroll className="min-h-14">
         {balances.length === 0 ? (
-          <Empty>{signedIn ? "no balances — deposit below" : "sign in to hold a balance"}</Empty>
+          <Empty>{signedIn ? "no balances, deposit below" : "try as guest to hold a balance"}</Empty>
         ) : (
           balances.map((balance) => {
-            const dp = decimalsFor(balance.asset, markets);
+            const dp = decimalsForAsset(balance.asset, markets);
             return (
               <div
                 key={balance.asset}
@@ -116,7 +108,7 @@ export function Balances({ balances, markets, signedIn, onRequireSignIn, onDepos
             onChange={(e) => setAmount(e.target.value)}
           />
           <GhostButton disabled={signedIn && !ready} onClick={() => void credit()}>
-            {!signedIn ? "Log in" : sending ? "…" : "Credit"}
+            {!signedIn ? "Try as guest" : sending ? "…" : "Credit"}
           </GhostButton>
         </div>
         {parsed !== null && (

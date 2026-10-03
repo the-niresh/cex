@@ -16,6 +16,7 @@ export const apiPaths = [
   "/health",
   "/register",
   "/login",
+  "/guest",
   "/deposit",
   "/balances",
   "/orders",

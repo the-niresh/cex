@@ -44,8 +44,8 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| anyhow::anyhow!("connecting to postgres: {e}"))?;
 
-    // Read-only: `persist` owns these tables, the API only serves them.
-    let history = cex_persist::HistoryStore::connect(&database_url)
+    // Read-only: `persist` owns these tables and runs their migrations.
+    let history = cex_persist::HistoryStore::connect_read_only(&database_url)
         .await
         .map_err(|e| anyhow::anyhow!("connecting to the history tables: {e}"))?;
 
@@ -61,5 +61,7 @@ async fn main() -> Result<()> {
         .with_context(|| format!("binding {bind}"))?;
     tracing::info!(%bind, "api listening");
 
-    axum::serve(listener, app).await.context("serving")
+    cex_api::server::serve(listener, app)
+        .await
+        .context("serving")
 }

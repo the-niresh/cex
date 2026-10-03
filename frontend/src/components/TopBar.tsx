@@ -1,4 +1,6 @@
+import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { UserMenu } from "./UserMenu";
 import type { FeedStatus } from "../lib/feed";
 import { decimalsForStep } from "../lib/num";
 import type { DayStats, Market, Session } from "../lib/types";
@@ -21,8 +23,9 @@ interface Props {
   feedDegraded: boolean;
   day: DayStats | null;
   session: Session | null;
-  onSignIn(): void;
   onSignOut(): void;
+  onGuest(): void;
+  onDeposit(): void;
 }
 
 const STATUS_TEXT: Record<FeedStatus, string> = {
@@ -64,8 +67,9 @@ export function TopBar({
   feedDegraded,
   day,
   session,
-  onSignIn,
   onSignOut,
+  onGuest,
+  onDeposit,
 }: Props) {
   const priceDp = market ? decimalsForStep(market.tick_size, market.quote_decimals) : 2;
   const qtyDp = market ? decimalsForStep(market.lot_size, market.base_decimals) : 5;
@@ -93,6 +97,13 @@ export function TopBar({
         />
         <span className="font-sans text-[11px] font-bold tracking-tight text-ink">CEX</span>
         <span className="font-sans text-micro tracking-[0.06em] text-ink-4">spot</span>
+        <Link
+          to="/portfolio"
+          className="ml-1 rounded-control px-2 py-0.5 font-sans text-micro text-ink-3 hover:bg-hover hover:text-ink"
+          data-testid="nav-portfolio"
+        >
+          Portfolio
+        </Link>
         {/* Says what this venue is, where someone actually looks.
             The order flow here is a market-making bot trading with itself, and
             a reader who works that out for themselves will assume the latency
@@ -273,32 +284,22 @@ export function TopBar({
 
       <div
         className={[
-          "flex flex-none items-center gap-2.5 border-l border-rule px-3",
+          "flex flex-none items-center gap-2 border-l border-rule px-3",
           "max-stack:order-2",
         ].join(" ")}
       >
-        {session?.name && (
-          <span
-            className="max-w-[14ch] truncate font-sans text-micro text-ink"
-            data-testid="account-name"
+        {session ? (
+          <UserMenu session={session} onDeposit={onDeposit} onSignOut={onSignOut} />
+        ) : (
+          <button
+            type="button"
+            onClick={() => void onGuest()}
+            data-testid="try-guest"
+            className="flex min-h-6 cursor-pointer items-center px-1 font-sans text-micro font-medium text-ink-3 transition-colors hover:text-ink"
           >
-            {session.name}
-          </span>
+            Try as guest
+          </button>
         )}
-        <span className="tnum text-micro text-ink-4" data-testid="account-id">
-          {session ? `${session.user_id.slice(0, 8)}…` : "signed out"}
-        </span>
-        {/* 24px is the floor for a pointer target (WCAG 2.2). This one was 11px
-            tall — the single hardest thing on the screen to click, and it is
-            the control that signs you out. */}
-        <button
-          type="button"
-          onClick={session ? onSignOut : onSignIn}
-          data-testid="account-action"
-          className="flex min-h-6 cursor-pointer items-center px-1 font-sans text-micro font-medium text-ink-4 transition-colors hover:text-ink-2"
-        >
-          {session ? "Log out" : "Log in"}
-        </button>
       </div>
     </header>
   );

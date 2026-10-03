@@ -38,6 +38,7 @@ axum = "0.8.9"
 tower-http = { version = "0.7.0", features = ["cors", "trace"] }
 
 [dev-dependencies]
+jsonwebtoken = "11.0.0"
 base64 = "0.23.1"
 # The tests drive a real engine so the loopback is exercised end to end
 # rather than against a mock that cannot disagree with reality.

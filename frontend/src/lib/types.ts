@@ -158,15 +158,6 @@ export interface DayStats {
   changePct: number | null;
 }
 
-export type AuthMode = "login" | "register";
-
-/** What the sign-in panel collects. `name` only matters when registering. */
-export interface Credentials {
-  username: string;
-  name: string;
-  password: string;
-}
-
 export interface Session {
   user_id: string;
   token: string;
@@ -175,6 +166,8 @@ export interface Session {
    * the API asked for a name, so every reader has to cope without one.
    */
   name: string | null;
+  /** Set by the client when the session came from POST /guest. */
+  is_guest?: boolean;
 }
 
 // ───────────────────────── the private feed ─────────────────────────

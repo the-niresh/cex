@@ -23,12 +23,8 @@ interface Props {
   bestBid: bigint | null;
   bestAsk: bigint | null;
   signedIn: boolean;
-  /**
-   * Called instead of submitting when nobody is signed in. Trading is the
-   * first thing that actually needs an account — looking never does — so this
-   * is where the sign-in panel gets opened, not on the way into the app.
-   */
-  onRequireSignIn(): void;
+  /** Called instead of submitting when nobody is signed in. Signs in as guest. */
+  onGuest(): void;
   onSubmit(request: PlaceOrderRequest): Promise<void>;
 }
 
@@ -42,7 +38,7 @@ export function Ticket({
   bestBid,
   bestAsk,
   signedIn,
-  onRequireSignIn,
+  onGuest,
   onSubmit,
 }: Props) {
   const [side, setSide] = useState<Side>("BUY");
@@ -127,7 +123,7 @@ export function Ticket({
     // out visitor has to be able to *press* BUY to find out an account is
     // needed. A dead button teaches them nothing.
     if (!signedIn) {
-      onRequireSignIn();
+      onGuest();
       return;
     }
     if (!market || !ready || qtyAtoms === null) return;
@@ -340,7 +336,7 @@ export function Ticket({
           onClick={() => void submit()}
         >
           {!signedIn
-            ? `Log in to ${side.toLowerCase()}`
+            ? "Try as guest"
             : sending
               ? "Sending…"
               : qty

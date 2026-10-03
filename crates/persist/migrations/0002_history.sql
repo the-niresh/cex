@@ -1,3 +1,5 @@
+SET lock_timeout = '5s';
+
 -- History. Everything here is written behind the engine by the persister and is
 -- never on a request path — the engine must never wait on a database.
 --
