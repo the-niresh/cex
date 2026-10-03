@@ -1,3 +1,5 @@
+SET lock_timeout = '5s';
+
 -- The name a user gives at registration, shown back to them in the UI.
 --
 -- Nullable on purpose, and permanently so: rows written before this column

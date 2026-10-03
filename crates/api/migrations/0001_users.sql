@@ -1,3 +1,5 @@
+SET lock_timeout = '5s';
+
 -- The only table on a request path. Everything else Postgres holds is history,
 -- written behind the engine by the persister.
 CREATE TABLE IF NOT EXISTS users (

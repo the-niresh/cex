@@ -240,9 +240,33 @@ impl HistoryStore {
         Self::connect_to_schema(database_url, "public").await
     }
 
+    /// Connect for read-only use. Does not run migrations — `persist` owns the
+    /// history tables and applies them at its own boot.
+    pub async fn connect_read_only(database_url: &str) -> Result<Self, StoreError> {
+        Self::connect_read_only_to_schema(database_url, "public").await
+    }
+
     /// Connect against a named schema. Tests use a fresh schema per run so they
     /// neither collide nor need tearing down.
     pub async fn connect_to_schema(database_url: &str, schema: &str) -> Result<Self, StoreError> {
+        let pool = Self::open_pool(database_url, schema).await?;
+        Self::ensure_schema(&pool, schema).await?;
+        sqlx::raw_sql(SCHEMA_SQL).execute(&pool).await.map_err(db)?;
+        Ok(HistoryStore { pool })
+    }
+
+    /// Read-only pool against a named schema. No migrations — tables must
+    /// already exist, written by `persist`.
+    pub async fn connect_read_only_to_schema(
+        database_url: &str,
+        schema: &str,
+    ) -> Result<Self, StoreError> {
+        let pool = Self::open_pool(database_url, schema).await?;
+        Self::ensure_schema(&pool, schema).await?;
+        Ok(HistoryStore { pool })
+    }
+
+    async fn open_pool(database_url: &str, schema: &str) -> Result<PgPool, StoreError> {
         // Audited: the identifier cannot contain a quote, a semicolon, or
         // whitespace, so it cannot terminate the statement it is spliced into.
         if schema.is_empty()
@@ -259,25 +283,22 @@ impl HistoryStore {
             .map_err(db)?
             .options([("search_path", format!("{schema},public"))]);
 
-        let pool = PgPoolOptions::new()
+        PgPoolOptions::new()
             .max_connections(8)
             .acquire_timeout(ACQUIRE_TIMEOUT)
             .connect_with(opts)
             .await
-            .map_err(db)?;
+            .map_err(db)
+    }
 
+    async fn ensure_schema(pool: &PgPool, schema: &str) -> Result<(), StoreError> {
         sqlx::raw_sql(AssertSqlSafe(format!(
             "CREATE SCHEMA IF NOT EXISTS {schema}"
         )))
-        .execute(&pool)
+        .execute(pool)
         .await
         .map_err(db)?;
-
-        // Static SQL, unqualified names — the search path puts them in place.
-        // `IF NOT EXISTS` throughout, so every boot can safely run it.
-        sqlx::raw_sql(SCHEMA_SQL).execute(&pool).await.map_err(db)?;
-
-        Ok(HistoryStore { pool })
+        Ok(())
     }
 
     /// Write every batch, all in one transaction.

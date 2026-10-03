@@ -1,3 +1,5 @@
+SET lock_timeout = '5s';
+
 -- Guests are created by POST /guest with a random name and no password the
 -- caller ever sees. The flag lets the API tell them apart from registered
 -- accounts and supports cleanup later.
