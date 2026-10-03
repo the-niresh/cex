@@ -30,10 +30,12 @@ async fn api_history_connect_skips_migration_while_orders_is_locked() {
         .await
         .expect("locker pool");
     let mut tx = locker.begin().await.expect("begin");
-    sqlx::raw_sql(AssertSqlSafe(format!("SET search_path TO {schema}, public")))
-        .execute(&mut *tx)
-        .await
-        .expect("search_path");
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "SET search_path TO {schema}, public"
+    )))
+    .execute(&mut *tx)
+    .await
+    .expect("search_path");
     sqlx::query("LOCK TABLE orders IN ACCESS EXCLUSIVE MODE")
         .execute(&mut *tx)
         .await
@@ -64,15 +66,19 @@ async fn user_migration_fails_fast_when_users_is_locked() {
         .connect(&url)
         .await
         .expect("locker pool");
-    sqlx::raw_sql(AssertSqlSafe(format!("CREATE SCHEMA IF NOT EXISTS {schema}")))
-        .execute(&locker)
-        .await
-        .expect("schema");
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "CREATE SCHEMA IF NOT EXISTS {schema}"
+    )))
+    .execute(&locker)
+    .await
+    .expect("schema");
     let mut tx = locker.begin().await.expect("begin");
-    sqlx::raw_sql(AssertSqlSafe(format!("SET search_path TO {schema}, public")))
-        .execute(&mut *tx)
-        .await
-        .expect("search_path");
+    sqlx::raw_sql(AssertSqlSafe(format!(
+        "SET search_path TO {schema}, public"
+    )))
+    .execute(&mut *tx)
+    .await
+    .expect("search_path");
     sqlx::query("CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY)")
         .execute(&mut *tx)
         .await
