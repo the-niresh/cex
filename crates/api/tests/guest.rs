@@ -32,7 +32,6 @@ fn database_url() -> String {
 
 struct Harness {
     router: axum::Router,
-    tokens: Tokens,
     users: UserStore,
     _engine: tokio::task::JoinHandle<()>,
     _dir: tempfile::TempDir,
@@ -78,7 +77,6 @@ impl Harness {
             .await
             .expect("postgres");
         let loopback = Loopback::connect(loopback_cfg).await.expect("loopback");
-        let tokens = Tokens::new(TEST_SECRET, Duration::from_secs(3600));
         let router_tokens = Tokens::new(TEST_SECRET, Duration::from_secs(3600));
         let history =
             cex_persist::HistoryStore::connect_to_schema(&database_url(), &resources.schema)
@@ -92,7 +90,6 @@ impl Harness {
                 router_tokens,
                 history,
             )),
-            tokens,
             users,
             _engine: engine,
             _dir: dir,
@@ -141,6 +138,7 @@ impl Harness {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct Claims {
     sub: Uuid,
     exp: u64,

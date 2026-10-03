@@ -726,7 +726,7 @@ const DEPOSIT_LIMIT_SOL: i64 = 10_000;
 fn client_ip(headers: &HeaderMap, socket: SocketAddr) -> IpAddr {
     if let Some(xff) = headers.get("x-forwarded-for") {
         if let Ok(raw) = xff.to_str() {
-            if let Some(last) = raw.split(',').map(str::trim).last() {
+            if let Some(last) = raw.split(',').map(str::trim).next_back() {
                 if let Ok(ip) = last.parse() {
                     return ip;
                 }
