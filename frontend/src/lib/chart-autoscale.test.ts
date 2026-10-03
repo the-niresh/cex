@@ -14,6 +14,8 @@ const bar = (low: number, high: number, close = (low + high) / 2): ChartOhlc => 
   close,
 });
 
+const normalBtcBar = () => bar(50_117, 50_120, 50_118.5);
+
 describe("naivePriceRange", () => {
   it("uses the lowest low and highest high", () => {
     expect(naivePriceRange([bar(10, 12), bar(9, 11)])).toEqual({
@@ -23,9 +25,9 @@ describe("naivePriceRange", () => {
   });
 });
 
-describe("robustVisiblePriceRange", () => {
-  it("matches naive autoscale when every bar is in a tight band", () => {
-    const bars = Array.from({ length: 50 }, () => bar(50_117, 50_120, 50_118.5));
+describe("robustCorePriceRange", () => {
+  it("matches naive autoscale for normal bars in a tight band", () => {
+    const bars = Array.from({ length: 50 }, normalBtcBar);
     const naive = naivePriceRange(bars);
     const core = robustCorePriceRange(bars);
     expect(naive).not.toBeNull();
@@ -33,20 +35,46 @@ describe("robustVisiblePriceRange", () => {
     expect(priceRangesEqual(naive!, core!)).toBe(true);
   });
 
-  it("ignores one outlier bar so normal candles stay readable", () => {
-    const normal = Array.from({ length: 99 }, () => bar(50_117, 50_120, 50_118.5));
-    const outlier = bar(49_950, 50_123, 50_119);
-    const bars = [...normal, outlier];
+  it("ignores a BTC_USDT spike wick while keeping tight normal bars readable", () => {
+    const normal = Array.from({ length: 100 }, () => bar(50_118.2, 50_118.5, 50_118.35));
+    const spike = bar(49_999, 50_123, 50_061);
+    const bars = [...normal, spike];
 
     const naive = naivePriceRange(bars)!;
     const core = robustCorePriceRange(bars)!;
 
-    expect(naive.minValue).toBe(49_950);
+    expect(naive.minValue).toBe(49_999);
     expect(naive.maxValue).toBe(50_123);
+    expect(core.minValue).toBeGreaterThanOrEqual(50_118.2);
+    expect(core.maxValue).toBeLessThanOrEqual(50_118.5);
+    expect(core.minValue).toBeLessThan(50_118.3);
+    expect(core.maxValue).toBeGreaterThan(50_118.4);
+  });
+
+  it("ignores 2% low-price outliers so normal candles stay readable", () => {
+    const normal = Array.from({ length: 98 }, normalBtcBar);
+    const outliers = [bar(4, 6, 5), bar(5, 6, 5.5)];
+    const bars = [...normal, ...outliers];
+
+    const naive = naivePriceRange(bars)!;
+    const core = robustCorePriceRange(bars)!;
+
+    expect(naive.minValue).toBe(4);
+    expect(naive.maxValue).toBe(50_120);
     expect(core.minValue).toBeGreaterThan(50_100);
     expect(core.maxValue).toBeLessThan(50_125);
     expect(core.minValue).toBeLessThan(50_118);
     expect(core.maxValue).toBeGreaterThan(50_119);
+  });
+
+  it("ignores 10% low-price outliers at 5 USDT", () => {
+    const normal = Array.from({ length: 90 }, normalBtcBar);
+    const outliers = Array.from({ length: 10 }, () => bar(4, 6, 5));
+    const bars = [...normal, ...outliers];
+
+    const core = robustCorePriceRange(bars)!;
+    expect(core.minValue).toBeGreaterThan(50_100);
+    expect(core.maxValue).toBeLessThan(50_125);
   });
 
   it("handles all-equal bars", () => {
@@ -56,6 +84,20 @@ describe("robustVisiblePriceRange", () => {
     const padded = robustVisiblePriceRange(bars)!;
     expect(padded.minValue).toBeLessThan(100);
     expect(padded.maxValue).toBeGreaterThan(100);
+  });
+
+  it("falls back to the plain visible range when fewer than ten bars remain", () => {
+    const bars = [
+      bar(10, 12),
+      bar(100, 102),
+      bar(11, 13),
+      bar(10.5, 12.5),
+      bar(11.5, 13.5),
+      bar(10.2, 12.2),
+      bar(11.2, 13.2),
+      bar(10.8, 12.8),
+    ];
+    expect(robustCorePriceRange(bars)).toEqual(naivePriceRange(bars));
   });
 
   it("handles a single bar", () => {
