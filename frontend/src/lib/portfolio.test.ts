@@ -80,6 +80,16 @@ describe("summarizePortfolio", () => {
     expect(rows[2].asset).toBe("ETH");
   });
 
+
+  it("gives zero-balance rows 0% share even without a price", () => {
+    const balances: Balance[] = [{ asset: "USDT", available: 1_000_000n, locked: 0n }];
+    const prices = new Map<string, bigint>([["USDT", 1_000_000n]]);
+    const { rows } = summarizePortfolio(balances, prices, markets);
+    const eth = rows.find((r) => r.asset === "ETH");
+    expect(eth?.total).toBe(0n);
+    expect(eth?.sharePct).toBe(0);
+  });
+
   it("excludes an asset with no price from the total", () => {
     const balances: Balance[] = [
       { asset: "USDT", available: 1_000_000n, locked: 0n },

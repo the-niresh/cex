@@ -133,8 +133,11 @@ export function summarizePortfolio(
   }
 
   for (const row of rows) {
-    if (row.value === null || total === 0n) continue;
-    row.sharePct = Number((row.value * 10_000n) / total) / 100;
+    if (row.total === 0n) {
+      row.sharePct = 0;
+    } else if (row.value !== null && total > 0n) {
+      row.sharePct = Number((row.value * 10_000n) / total) / 100;
+    }
   }
 
   return { rows, total, availableTotal, lockedTotal, assetsHeld, withoutPrice };
