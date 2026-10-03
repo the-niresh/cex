@@ -68,9 +68,10 @@ of their dependencies, so building an image each would compile the same crates f
 to produce four images differing only in an argv; every service is that image with a different
 `command`.
 
-Postgres runs in the same compose stack (`cex-postgres`, live data in `cex_live`). It is off the
-hot path — `persist` is asynchronous and `api` touches it only for auth — but colocating it
-keeps history reads at about 1 ms instead of the roughly 196 ms a remote database cost. Redis is
+Postgres runs in the same compose stack (`cex-postgres`, live data in `cex_live`). The matching
+engine never touches it; `persist` writes history asynchronously behind the engine; `api` reads
+users and history (candles, trade tape, order and fill history). Colocating it keeps history reads
+at about 1 ms instead of the roughly 196 ms a remote database cost. Redis is
 not optional and stays next to the engine: a command and its reply are two round trips on the
 matching path. A nightly dump runs from root cron (`/usr/local/bin/cex-db-backup`, 03:15, keeps
 7 in `/srv/claude/backups/cex/`).

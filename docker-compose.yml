@@ -26,8 +26,8 @@ services:
       retries: 10
 
   # Production Postgres runs here. Live data is in the cex_live database; tests
-  # connect on host port 5442. Postgres is off the hot path by design — persist
-  # is asynchronous and api touches it only for auth — so colocating it with
+  # connect on host port 5442. The matching engine never touches Postgres; persist
+  # writes history asynchronously; api reads users and history. Colocating it with
   # the stack keeps history reads fast without touching the matching path.
   postgres:
     image: postgres:16-alpine
