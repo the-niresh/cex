@@ -26,8 +26,8 @@ use redis::AsyncCommands;
 use tracing::{debug, error, info};
 
 use crate::config::Config;
-use cex_proto::retry::Backoff;
 use crate::store::HistoryStore;
+use cex_proto::retry::Backoff;
 
 pub struct Consumer {
     cfg: Config,

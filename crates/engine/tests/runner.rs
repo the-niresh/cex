@@ -487,8 +487,7 @@ async fn snapshot_trim_keeps_commands_after_the_oldest_retained_snapshot() {
         .await
         .unwrap();
     assert_eq!(
-        len,
-        2,
+        len, 2,
         "only commands after the oldest kept snapshot should remain"
     );
 }

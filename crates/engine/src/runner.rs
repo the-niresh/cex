@@ -342,10 +342,7 @@ impl Runner {
         let path = self.store.save(&snap)?;
         self.applied_since_snapshot = 0;
         let pruned = self.store.prune()?;
-        let trim_position = self
-            .store
-            .oldest_kept_position()?
-            .unwrap_or(self.position);
+        let trim_position = self.store.oldest_kept_position()?.unwrap_or(self.position);
         let trimmed = match crate::trim::trim_commands_before(
             &mut self.conn,
             &self.cfg.commands_stream,
