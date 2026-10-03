@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { ActionButton } from "./ui/form";
 import { UserMenu } from "./UserMenu";
 import type { FeedStatus } from "../lib/feed";
 import { decimalsForStep } from "../lib/num";
@@ -26,6 +27,8 @@ interface Props {
   onSignOut(): void;
   onGuest(): void;
   onDeposit(): void;
+  /** Which primary screen is showing, for Trade / Portfolio nav highlighting. */
+  page?: "trade" | "portfolio";
 }
 
 const STATUS_TEXT: Record<FeedStatus, string> = {
@@ -34,6 +37,32 @@ const STATUS_TEXT: Record<FeedStatus, string> = {
   reconnecting: "Reconnecting",
   closed: "Offline",
 };
+
+function NavLink({
+  to,
+  active,
+  testId,
+  children,
+}: {
+  to: string;
+  active: boolean;
+  testId: string;
+  children: string;
+}) {
+  return (
+    <Link
+      to={to}
+      aria-current={active ? "page" : undefined}
+      data-testid={testId}
+      className={cn(
+        "rounded-control px-2 py-0.5 font-sans text-micro transition-colors",
+        active ? "bg-field font-medium text-ink" : "text-ink-3 hover:bg-hover hover:text-ink",
+      )}
+    >
+      {children}
+    </Link>
+  );
+}
 
 /** The caption over a readout in the ticker. */
 function Key({ children }: { children: string }) {
@@ -70,6 +99,7 @@ export function TopBar({
   onSignOut,
   onGuest,
   onDeposit,
+  page = "trade",
 }: Props) {
   const priceDp = market ? decimalsForStep(market.tick_size, market.quote_decimals) : 2;
   const qtyDp = market ? decimalsForStep(market.lot_size, market.base_decimals) : 5;
@@ -97,13 +127,12 @@ export function TopBar({
         />
         <span className="font-sans text-[11px] font-bold tracking-tight text-ink">CEX</span>
         <span className="font-sans text-micro tracking-[0.06em] text-ink-4">spot</span>
-        <Link
-          to="/portfolio"
-          className="ml-1 rounded-control px-2 py-0.5 font-sans text-micro text-ink-3 hover:bg-hover hover:text-ink"
-          data-testid="nav-portfolio"
-        >
-          Portfolio
-        </Link>
+        <nav className="ml-1 flex items-center gap-0.5" aria-label="Primary">
+          <NavLink to="/" active={page === "trade"} testId="nav-trade">Trade</NavLink>
+          <NavLink to="/portfolio" active={page === "portfolio"} testId="nav-portfolio">
+            Portfolio
+          </NavLink>
+        </nav>
         {/* Says what this venue is, where someone actually looks.
             The order flow here is a market-making bot trading with itself, and
             a reader who works that out for themselves will assume the latency
@@ -291,14 +320,14 @@ export function TopBar({
         {session ? (
           <UserMenu session={session} onDeposit={onDeposit} onSignOut={onSignOut} />
         ) : (
-          <button
+          <ActionButton
             type="button"
             onClick={() => void onGuest()}
             data-testid="try-guest"
-            className="flex min-h-6 cursor-pointer items-center px-1 font-sans text-micro font-medium text-ink-3 transition-colors hover:text-ink"
+            className="h-8 min-h-6 rounded-control px-3 text-micro"
           >
             Try as guest
-          </button>
+          </ActionButton>
         )}
       </div>
     </header>
