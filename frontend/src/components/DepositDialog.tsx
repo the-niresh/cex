@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   DEPOSIT_LIMITS,
   USDT_PRESETS,
@@ -8,7 +8,7 @@ import {
 } from "../lib/deposit";
 import { formatAtoms, parseAtoms } from "../lib/num";
 import type { Market } from "../lib/types";
-import { AvailableLine, GhostButton, Segment, Segmented, FieldInput } from "./ui/form";
+import { ActionButton, AvailableLine, Segment, Segmented, FieldInput } from "./ui/form";
 import { PanelHead, PanelTitle } from "./ui/panel";
 
 interface Props {
@@ -30,11 +30,22 @@ export function DepositDialog({
   const [asset, setAsset] = useState("USDT");
   const [amount, setAmount] = useState("10000");
   const [sending, setSending] = useState(false);
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const decimals = decimalsForAsset(asset, markets);
   const parsed = parseAtoms(amount, decimals);
   const limit = DEPOSIT_LIMITS[asset];
   const ready = !sending && parsed !== null && parsed > 0n;
+
+  useEffect(() => {
+    panelRef.current?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   async function credit() {
     if (!signedIn) {
@@ -57,9 +68,16 @@ export function DepositDialog({
       data-testid="deposit-dialog"
     >
       <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
-      <div className="relative flex w-80 flex-col rounded-panel border border-rule bg-panel">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="relative flex w-80 flex-col rounded-panel border border-rule bg-panel outline-none"
+      >
         <PanelHead>
-          <PanelTitle>Deposit {depositAssetLabel(asset)}</PanelTitle>
+          <PanelTitle id={titleId}>Deposit {depositAssetLabel(asset)}</PanelTitle>
           <button
             type="button"
             className="ml-auto flex min-h-6 min-w-6 cursor-pointer items-center justify-center text-[11px] leading-none text-ink-4 hover:text-ink"
@@ -79,16 +97,20 @@ export function DepositDialog({
           </Segmented>
           {asset === "USDT" && (
             <Segmented variant="control" className="grid-cols-3" data-testid="deposit-presets">
-              {USDT_PRESETS.map((preset) => (
-                <Segment
-                  key={preset}
-                  quiet
-                  selected={amount === String(preset)}
-                  onClick={() => setAmount(String(preset))}
-                >
-                  {preset.toLocaleString()}
-                </Segment>
-              ))}
+              {USDT_PRESETS.map((preset) => {
+                const selected = amount === String(preset);
+                return (
+                  <Segment
+                    key={preset}
+                    quiet
+                    tone={selected ? "buy" : "control"}
+                    selected={selected}
+                    onClick={() => setAmount(String(preset))}
+                  >
+                    {preset.toLocaleString()}
+                  </Segment>
+                );
+              })}
             </Segmented>
           )}
           <div className="grid grid-cols-[minmax(0,1fr)_118px] gap-[7px]">
@@ -99,9 +121,13 @@ export function DepositDialog({
               aria-label="deposit amount"
               onChange={(e) => setAmount(e.target.value)}
             />
-            <GhostButton disabled={signedIn && !ready} onClick={() => void credit()}>
-              {!signedIn ? "Try as guest" : sending ? "..." : "Confirm"}
-            </GhostButton>
+            <ActionButton
+              disabled={signedIn && !ready}
+              className="h-10 px-3 text-micro"
+              onClick={() => void credit()}
+            >
+              {!signedIn ? "Try as guest" : sending ? "..." : "Confirm deposit"}
+            </ActionButton>
           </div>
           {parsed !== null && (
             <AvailableLine label="credits">
