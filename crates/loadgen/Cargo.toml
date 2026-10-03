@@ -3,9 +3,8 @@ name = "cex-loadgen"
 version.workspace = true
 edition.workspace = true
 
-# A development tool. It is a workspace member so it compiles and is tested in
-# CI, and it is deliberately absent from Dockerfile — the deployed image builds
-# four binaries and this is not one of them.
+# A development tool and the demo-maker service binary. The deployed image
+# builds five binaries; only `demo-maker` from this crate ships.
 
 # Split into lib + bin, matching cex-api/engine/persist/ws: report.rs's items
 # are only exercised by unit tests and (starting Task 7) the driver, not by
@@ -20,9 +19,7 @@ name = "loadgen"
 path = "src/main.rs"
 
 # Same crate because it needs the same three things the driver already has —
-# register, fund, place — and a second crate would only duplicate them. Also
-# absent from Dockerfile: it drives a deployed exchange from outside, it is not
-# part of one.
+# register, fund, place, and a second crate would only duplicate them.
 [[bin]]
 name = "demo-maker"
 path = "src/bin/demo-maker.rs"
@@ -40,3 +37,13 @@ reqwest = { version = "0.13.4", default-features = false, features = ["json", "r
 tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3.34"
 clap = { version = "4.6.6", features = ["derive"] }
+
+[dev-dependencies]
+cex-api = { path = "../api" }
+cex-engine = { path = "../engine" }
+cex-persist = { path = "../persist" }
+tempfile.workspace = true
+tower = "0.5.3"
+axum = "0.8.9"
+http-body-util = "0.1.4"
+serde_json.workspace = true

@@ -1,4 +1,4 @@
-# One image, four binaries. `engine`, `api`, `persist` and `ws` share a
+# One image, five binaries. `demo-maker` keeps the chart alive. `engine`, `api`, `persist` and `ws` share a
 # workspace and nearly all of their dependencies, so building an image per
 # binary would compile the same crates four times over to produce four images
 # that differ only in an argv. Each compose service picks its binary with
@@ -21,12 +21,13 @@ COPY crates ./crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release --locked \
-      -p cex-engine -p cex-api -p cex-persist -p cex-ws \
+      -p cex-engine -p cex-api -p cex-persist -p cex-ws -p cex-loadgen \
     && mkdir -p /out \
     && cp target/release/engine \
           target/release/api \
           target/release/persist \
-          target/release/ws /out/
+          target/release/ws \
+          target/release/demo-maker /out/
 
 FROM debian:bookworm-slim AS runtime
 
@@ -34,10 +35,10 @@ FROM debian:bookworm-slim AS runtime
 # verifies against the system roots, so without these the connection dies at
 # the handshake rather than anywhere informative.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-# None of the four need root.
+# None of the binaries need root.
 RUN useradd --system --uid 10001 --user-group cex
 
 # Created here rather than left to the volume mount: a named volume inherits

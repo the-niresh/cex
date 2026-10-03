@@ -111,6 +111,12 @@ services:
       # refused, and nothing else about the stack looks wrong.
       CEX_JWT_SECRET: ${CEX_JWT_SECRET:?set CEX_JWT_SECRET in .env}
       CEX_CORS_ORIGINS: ${CEX_CORS_ORIGINS:?set CEX_CORS_ORIGINS in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
     networks:
       - default
       - proxy
@@ -184,6 +190,30 @@ services:
       # that received them, so a name that changed on every boot would orphan
       # its own backlog.
       CEX_PERSIST_CONSUMER: cex-persist-1
+
+  demo-maker:
+    image: cex:latest
+    build: .
+    container_name: cex-demo-maker
+    command:
+      [
+        "demo-maker",
+        "--host",
+        "http://api:8080",
+        "--refresh",
+        "5",
+        "--trade-every",
+        "6",
+      ]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      api:
+        condition: service_healthy
 
 networks:
   # Traefik owns :80 and :443 and discovers containers through the Docker

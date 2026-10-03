@@ -407,16 +407,23 @@ name = "cex-loadgen"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
+ "cex-api",
+ "cex-engine",
+ "cex-persist",
  "cex-proto",
  "cex-ws",
  "clap",
  "futures-util",
  "hdrhistogram",
+ "http-body-util",
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-tungstenite 0.30.0",
+ "tower",
  "uuid",
 ]
 
