@@ -56,7 +56,7 @@ export function Balances({ balances, markets, signedIn, onGuest, onDeposit }: Pr
       {/* Yields height to the panels around it, but never down to a sliver. */}
       <Scroll className="min-h-14">
         {balances.length === 0 ? (
-          <Empty>{signedIn ? "no balances — deposit below" : "try as guest to hold a balance"}</Empty>
+          <Empty>{signedIn ? "no balances, deposit below" : "try as guest to hold a balance"}</Empty>
         ) : (
           balances.map((balance) => {
             const dp = decimalsForAsset(balance.asset, markets);

@@ -240,7 +240,7 @@ impl HistoryStore {
         Self::connect_to_schema(database_url, "public").await
     }
 
-    /// Connect for read-only use. Does not run migrations — `persist` owns the
+    /// Connect for read-only use. Does not run migrations: `persist` owns the
     /// history tables and applies them at its own boot.
     pub async fn connect_read_only(database_url: &str) -> Result<Self, StoreError> {
         Self::connect_read_only_to_schema(database_url, "public").await
@@ -255,7 +255,7 @@ impl HistoryStore {
         Ok(HistoryStore { pool })
     }
 
-    /// Read-only pool against a named schema. No migrations — tables must
+    /// Read-only pool against a named schema. No migrations: tables must
     /// already exist, written by `persist`.
     pub async fn connect_read_only_to_schema(
         database_url: &str,
