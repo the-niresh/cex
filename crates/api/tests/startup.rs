@@ -42,7 +42,7 @@ async fn api_history_connect_skips_migration_while_orders_is_locked() {
         .expect("lock orders");
 
     let start = Instant::now();
-    let history = HistoryStore::connect_read_only_to_schema(&url, schema)
+    let _history = HistoryStore::connect_read_only_to_schema(&url, schema)
         .await
         .expect("read-only history connect must not wait on migration locks");
     let elapsed = start.elapsed();
