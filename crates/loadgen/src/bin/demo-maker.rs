@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
         args.symbol, args.host, args.levels, args.refresh
     );
     println!(
-        "demo-maker: reference {reference}, book bid {:?} ask {:?} — quoting around {}",
+        "demo-maker: reference {reference}, book bid {:?} ask {:?}, quoting around {}",
         best_bid, best_ask, mid
     );
 
