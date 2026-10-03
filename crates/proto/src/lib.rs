@@ -11,6 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod deposit;
 pub mod retry;
 
 pub type UserId = uuid::Uuid;

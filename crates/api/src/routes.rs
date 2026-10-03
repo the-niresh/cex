@@ -712,12 +712,6 @@ async fn depth(
 /// Guest tokens last 30 days. Registered users stay at the API's configured TTL.
 const GUEST_TOKEN_TTL: Duration = Duration::from_secs(30 * 24 * 3600);
 
-/// Per-deposit limits in whole units of each asset, checked in atoms below.
-const DEPOSIT_LIMIT_USDT: i64 = 1_000_000;
-const DEPOSIT_LIMIT_BTC: i64 = 10;
-const DEPOSIT_LIMIT_ETH: i64 = 100;
-const DEPOSIT_LIMIT_SOL: i64 = 10_000;
-
 /// When we cannot see the socket or a proxy header, every such caller shares
 /// one rate-limit bucket so a missing extension never becomes a 500.
 const UNKNOWN_CLIENT_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
@@ -741,27 +735,12 @@ fn client_ip(headers: &HeaderMap, socket: Option<SocketAddr>) -> IpAddr {
     socket.map(|s| s.ip()).unwrap_or(UNKNOWN_CLIENT_IP)
 }
 
-/// Whole-unit deposit ceiling for a known asset, or `None` when unchecked.
-fn deposit_limit_whole(asset: &str) -> Option<(i64, u32)> {
-    match asset {
-        "USDT" => Some((DEPOSIT_LIMIT_USDT, 6)),
-        "BTC" => Some((DEPOSIT_LIMIT_BTC, 8)),
-        "ETH" => Some((DEPOSIT_LIMIT_ETH, 8)),
-        "SOL" => Some((DEPOSIT_LIMIT_SOL, 8)),
-        _ => None,
-    }
-}
-
-fn pow10_u32(n: u32) -> i64 {
-    10i64.pow(n)
-}
-
 /// Refuse a deposit above the per-asset ceiling. Unknown assets pass through.
 fn check_deposit_limit(asset: &str, amount: i64) -> Result<(), ApiError> {
-    let Some((whole, decimals)) = deposit_limit_whole(asset) else {
+    let Some((whole, decimals)) = cex_proto::deposit::deposit_limit_whole(asset) else {
         return Ok(());
     };
-    let limit_atoms = whole * pow10_u32(decimals);
+    let limit_atoms = whole * 10i64.pow(decimals);
     if amount > limit_atoms {
         return Err(ApiError::bad_request(format!(
             "deposit limit for {asset} is {whole} whole units"
