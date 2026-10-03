@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AreaSeries, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import { withAlpha } from "../lib/color";
 import { assetValue } from "../lib/portfolio";
@@ -19,46 +19,63 @@ interface Props {
  * Build a 24-point series: current holdings valued at each hour's close.
  * Not a real account history; labelled plainly on screen.
  */
-export function buildHoldingsValueSeries(
-  balances: Balance[],
-  candlesBySymbol: Map<string, Candle[]>,
-  markets: Market[],
-): ValuePoint[] {
+const QUOTE_UNIT = 1_000_000;
+
+function holdingsMap(balances: Balance[]): Map<string, bigint> {
   const holdings = new Map<string, bigint>();
   for (const b of balances) {
     const amount = b.available + b.locked;
     if (amount > 0n) holdings.set(b.asset, amount);
   }
+  return holdings;
+}
 
+function valueAtBucket(
+  holdings: Map<string, bigint>,
+  markets: Market[],
+  candlesBySymbol: Map<string, Candle[]>,
+  timeMs: bigint | null,
+): number {
+  let total = 0n;
+  for (const [asset, amount] of holdings) {
+    if (asset === "USDT") {
+      total += amount;
+      continue;
+    }
+    const market = markets.find((m) => m.base === asset);
+    if (!market) continue;
+    const candles = candlesBySymbol.get(market.symbol);
+    const close =
+      timeMs === null
+        ? (candles?.at(-1)?.close ?? null)
+        : (candles?.find((c) => c.time_ms === timeMs)?.close ?? null);
+    const priced = assetValue(amount, asset, close, markets);
+    if (priced !== null) total += priced;
+  }
+  return Number(total) / QUOTE_UNIT;
+}
+
+export function buildHoldingsValueSeries(
+  balances: Balance[],
+  candlesBySymbol: Map<string, Candle[]>,
+  markets: Market[],
+): ValuePoint[] {
+  const holdings = holdingsMap(balances);
   const timeline = candlesBySymbol.values().next().value ?? [];
+  const now = Math.floor(Date.now() / 1000);
+
   if (timeline.length === 0) {
-    const now = Math.floor(Date.now() / 1000);
+    const flat = valueAtBucket(holdings, markets, candlesBySymbol, null);
     return Array.from({ length: 24 }, (_, i) => ({
       time: (now - (23 - i) * 3600) as UTCTimestamp,
-      value: 0,
+      value: flat,
     }));
   }
 
-  const quoteUnit = 1_000_000;
-
-  return timeline.map((bucket) => {
-    const time = (Number(bucket.time_ms) / 1000) as UTCTimestamp;
-    let total = 0n;
-    for (const [asset, amount] of holdings) {
-      if (asset === "USDT") {
-        total += amount;
-        continue;
-      }
-      const market = markets.find((m) => m.base === asset);
-      if (!market) continue;
-      const candles = candlesBySymbol.get(market.symbol);
-      const at = candles?.find((c) => c.time_ms === bucket.time_ms);
-      const close = at?.close ?? null;
-      const priced = assetValue(amount, asset, close, markets);
-      if (priced !== null) total += priced;
-    }
-    return { time, value: Number(total) / quoteUnit };
-  });
+  return timeline.map((bucket) => ({
+    time: (Number(bucket.time_ms) / 1000) as UTCTimestamp,
+    value: valueAtBucket(holdings, markets, candlesBySymbol, bucket.time_ms),
+  }));
 }
 
 export function PortfolioValueChart({ balances, candlesBySymbol, markets }: Props) {
@@ -66,7 +83,10 @@ export function PortfolioValueChart({ balances, candlesBySymbol, markets }: Prop
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Area"> | null>(null);
 
-  const points = buildHoldingsValueSeries(balances, candlesBySymbol, markets);
+  const points = useMemo(
+    () => buildHoldingsValueSeries(balances, candlesBySymbol, markets),
+    [balances, candlesBySymbol, markets],
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -117,9 +137,11 @@ export function PortfolioValueChart({ balances, candlesBySymbol, markets }: Prop
 
   useEffect(() => {
     const series = seriesRef.current;
-    if (!series) return;
+    const chart = chartRef.current;
+    if (!series || !chart) return;
     series.setData(points);
-    chartRef.current?.timeScale().fitContent();
+    chart.timeScale().fitContent();
+    chart.priceScale("right").applyOptions({ autoScale: true });
   }, [points]);
 
   return (

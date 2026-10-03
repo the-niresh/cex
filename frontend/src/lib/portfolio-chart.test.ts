@@ -39,6 +39,13 @@ describe("buildHoldingsValueSeries", () => {
     ];
     const candlesBySymbol = new Map<string, Candle[]>([["BTC_USDT", candles]]);
     const points = buildHoldingsValueSeries(balances, candlesBySymbol, markets);
-    expect(points[0].value).toBe(10_000);
+    expect(points.every((p) => p.value === 10_000)).toBe(true);
+  });
+
+  it("draws a flat series at 10,000 for 10,000 USDT without candle history", () => {
+    const balances: Balance[] = [{ asset: "USDT", available: 10_000_000_000n, locked: 0n }];
+    const points = buildHoldingsValueSeries(balances, new Map(), markets);
+    expect(points.length).toBe(24);
+    expect(points.every((p) => p.value === 10_000)).toBe(true);
   });
 });
