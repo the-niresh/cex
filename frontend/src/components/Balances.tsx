@@ -3,7 +3,7 @@ import { decimalsForAsset, depositAssets } from "../lib/deposit";
 import { formatAtoms, parseAtoms } from "../lib/num";
 import type { Balance, Market } from "../lib/types";
 import { Num } from "./format";
-import { AvailableLine, GhostButton, Segment, Segmented, FieldInput } from "./ui/form";
+import { ActionButton, AvailableLine, Segment, Segmented, FieldInput } from "./ui/form";
 import { ColumnHeads, Empty, Meta, PanelHead, PanelTitle, Scroll } from "./ui/panel";
 
 /** Headings and rows share one column template, so they cannot drift apart. */
@@ -107,9 +107,13 @@ export function Balances({ balances, markets, signedIn, onGuest, onDeposit }: Pr
             aria-label="deposit amount"
             onChange={(e) => setAmount(e.target.value)}
           />
-          <GhostButton disabled={signedIn && !ready} onClick={() => void credit()}>
+          <ActionButton
+            disabled={signedIn && !ready}
+            className="h-10 px-3 text-micro"
+            onClick={() => void credit()}
+          >
             {!signedIn ? "Try as guest" : sending ? "…" : "Credit"}
-          </GhostButton>
+          </ActionButton>
         </div>
         {parsed !== null && (
           <AvailableLine label="credits">

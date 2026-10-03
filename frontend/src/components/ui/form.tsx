@@ -224,6 +224,28 @@ export function SubmitButton({
   );
 }
 
+/** Primary funding action: same green commit style as BUY in the ticket. */
+export function ActionButton({
+  className,
+  children,
+  ...rest
+}: { className?: string; children: ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <Button
+      variant="buy"
+      size="trade"
+      className={cn(
+        "focus-visible:border-buy focus-visible:ring-buy/40",
+        "disabled:opacity-100 disabled:bg-panel-hi disabled:text-ink-4",
+        className,
+      )}
+      {...rest}
+    >
+      {children}
+    </Button>
+  );
+}
+
 /** A secondary commit: outlined, not filled, so it never competes with BUY. */
 export function GhostButton({
   className,
