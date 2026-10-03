@@ -19,7 +19,7 @@ name = "loadgen"
 path = "src/main.rs"
 
 # Same crate because it needs the same three things the driver already has —
-# register, fund, place — and a second crate would only duplicate them.
+# register, fund, place, and a second crate would only duplicate them.
 [[bin]]
 name = "demo-maker"
 path = "src/bin/demo-maker.rs"
