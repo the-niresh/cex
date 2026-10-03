@@ -21,7 +21,8 @@ const DATABASE_URL: &str = "postgres://cex:cex@127.0.0.1:5442/cex";
 
 fn docker_redis_lock() -> MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn ensure_throwaway_redis() {
@@ -166,14 +167,20 @@ async fn wait_for_markets(h: &Harness) {
 
 #[tokio::test]
 async fn markets_survive_a_redis_restart_without_restarting_the_api() {
-    let _lock = docker_redis_lock();
+    {
+        let _lock = docker_redis_lock();
+        ensure_throwaway_redis();
+    }
     let h = Harness::start().await;
     wait_for_markets(&h).await;
 
-    let status = Command::new("docker")
-        .args(["restart", "cex-test-redis"])
-        .status()
-        .expect("docker restart");
+    let status = {
+        let _lock = docker_redis_lock();
+        Command::new("docker")
+            .args(["restart", "cex-test-redis"])
+            .status()
+            .expect("docker restart")
+    };
     assert!(status.success(), "docker restart cex-test-redis failed");
 
     wait_for_redis().await;
@@ -192,14 +199,20 @@ async fn markets_survive_a_redis_restart_without_restarting_the_api() {
 
 #[tokio::test]
 async fn health_returns_503_while_redis_is_down_and_200_when_it_is_back() {
-    let _lock = docker_redis_lock();
+    {
+        let _lock = docker_redis_lock();
+        ensure_throwaway_redis();
+    }
     let h = Harness::start().await;
     wait_for_markets(&h).await;
 
-    let stop = Command::new("docker")
-        .args(["stop", "cex-test-redis"])
-        .status()
-        .expect("docker stop");
+    let stop = {
+        let _lock = docker_redis_lock();
+        Command::new("docker")
+            .args(["stop", "cex-test-redis"])
+            .status()
+            .expect("docker stop")
+    };
     assert!(stop.success());
 
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -207,10 +220,13 @@ async fn health_returns_503_while_redis_is_down_and_200_when_it_is_back() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "body: {body}");
     assert!(body.contains("redis unavailable"));
 
-    let start = Command::new("docker")
-        .args(["start", "cex-test-redis"])
-        .status()
-        .expect("docker start");
+    let start = {
+        let _lock = docker_redis_lock();
+        Command::new("docker")
+            .args(["start", "cex-test-redis"])
+            .status()
+            .expect("docker start")
+    };
     assert!(start.success());
 
     wait_for_redis().await;

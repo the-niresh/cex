@@ -19,7 +19,8 @@ fn redis_url() -> String {
 
 fn docker_redis_lock() -> MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn ensure_throwaway_redis() {
@@ -115,8 +116,10 @@ fn batch(seq: u64, user: UserId) -> EventBatch {
 
 #[tokio::test]
 async fn pending_entries_survive_a_redis_restart() {
-    let _lock = docker_redis_lock();
-    ensure_throwaway_redis();
+    {
+        let _lock = docker_redis_lock();
+        ensure_throwaway_redis();
+    }
     let resources = TestResources::new();
     let cfg = test_config(&resources);
     let mut r = conn(&cfg).await;
@@ -148,10 +151,13 @@ async fn pending_entries_survive_a_redis_restart() {
         "entries should be pending before restart"
     );
 
-    Command::new("docker")
-        .args(["restart", "cex-test-redis"])
-        .status()
-        .expect("docker restart");
+    {
+        let _lock = docker_redis_lock();
+        Command::new("docker")
+            .args(["restart", "cex-test-redis"])
+            .status()
+            .expect("docker restart");
+    }
     wait_for_redis().await;
     tokio::time::sleep(Duration::from_secs(1)).await;
 
