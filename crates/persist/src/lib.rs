@@ -19,7 +19,6 @@
 pub mod config;
 pub mod consumer;
 pub mod retention;
-pub mod retry;
 pub mod store;
 pub mod test_support;
 pub mod trim;

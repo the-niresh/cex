@@ -13,7 +13,7 @@
 //! the pending list forever would grow it without bound.
 
 use anyhow::{Context, Result};
-use cex_proto::{EventBatch, Seq, FIELD_PAYLOAD};
+use cex_proto::{retry::Backoff, EventBatch, Seq, FIELD_PAYLOAD};
 use redis::aio::ConnectionManager;
 use redis::streams::{StreamReadOptions, StreamReadReply};
 use redis::AsyncCommands;
@@ -196,15 +196,23 @@ impl Feed {
             consumer = %self.cfg.consumer,
             "feed running"
         );
+        let mut backoff = Backoff::new();
         loop {
             match self.step().await {
-                Ok(0) => {}
-                Ok(n) => debug!(entries = n, "batch fanned out"),
+                Ok(0) => {
+                    backoff.reset();
+                }
+                Ok(n) => {
+                    backoff.reset();
+                    debug!(entries = n, "batch fanned out");
+                }
                 Err(e) => {
                     // Losing the read loop costs live data, not correctness —
                     // the durable record is `persist`'s job, not this one's.
-                    error!(error = %e, "read failed, retrying");
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                    let log_state = backoff.sleep().await;
+                    if log_state {
+                        error!(error = %e, "read failed, backing off");
+                    }
                 }
             }
         }

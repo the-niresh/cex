@@ -10,7 +10,7 @@
 use std::sync::{Arc, Mutex};
 
 use cex_core::state::State;
-use cex_proto::{Query, Response};
+use cex_proto::{retry::Backoff, Query, Response};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use tracing::{error, warn};
@@ -53,12 +53,18 @@ pub fn answer(state: &SharedState, payload: &str) -> Option<Response> {
 /// do, and it is stopped from outside (see `Runner::run` and `Drop for Runner`) rather than
 /// exiting on its own.
 pub async fn run(mut conn: ConnectionManager, cfg: QueryLoopConfig, state: SharedState) {
+    let mut backoff = Backoff::new();
     loop {
         let popped: Option<(String, String)> = match conn.brpop(&cfg.queries_queue, 0.0).await {
-            Ok(v) => v,
+            Ok(v) => {
+                backoff.reset();
+                v
+            }
             Err(e) => {
-                error!(error = %e, "query BRPOP failed, retrying");
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                let log_state = backoff.sleep().await;
+                if log_state {
+                    error!(error = %e, "query BRPOP failed, backing off");
+                }
                 continue;
             }
         };

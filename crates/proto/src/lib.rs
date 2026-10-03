@@ -11,6 +11,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod retry;
+
 pub type UserId = uuid::Uuid;
 pub type OrderId = u64;
 pub type RequestId = uuid::Uuid;
