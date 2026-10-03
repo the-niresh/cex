@@ -77,6 +77,15 @@
   --color-row-hover: #1a1b22;
   --color-hover: #262832;
 
+  /* Per-asset badge hues. Decorative only; not buy/sell/control signals. */
+  --color-asset-btc: #f7931a;
+  --color-asset-eth: #627eea;
+  --color-asset-sol: #9945ff;
+  --color-asset-usdt: #26a17b;
+  --color-asset-1: #4c94ff;
+  --color-asset-2: #d99a2b;
+  --color-asset-3: #9b59b6;
+
   /* ── type ─────────────────────────────────────────────────────────────
      Inter carries the interface. Plex Mono carries the numbers, because digits
      have to line up down a ladder — the reference sets everything in Inter and
