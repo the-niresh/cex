@@ -342,7 +342,22 @@ impl Runner {
         let path = self.store.save(&snap)?;
         self.applied_since_snapshot = 0;
         let pruned = self.store.prune()?;
-        let trim_position = self.store.oldest_kept_position()?.unwrap_or(self.position);
+        let trim_position = match self.store.oldest_kept_position() {
+            Ok(Some(pos)) => pos,
+            Ok(None) => self.position,
+            Err(e) => {
+                warn!(error = %e, "failed to list snapshots for command trim");
+                info!(
+                    path = %path.display(),
+                    position = %self.position,
+                    seq,
+                    pruned,
+                    trimmed = 0,
+                    "snapshot written"
+                );
+                return Ok(());
+            }
+        };
         let trimmed = match crate::trim::trim_commands_before(
             &mut self.conn,
             &self.cfg.commands_stream,

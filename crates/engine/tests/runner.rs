@@ -491,3 +491,28 @@ async fn snapshot_trim_keeps_commands_after_the_oldest_retained_snapshot() {
         "only commands after the oldest kept snapshot should remain"
     );
 }
+
+#[tokio::test]
+async fn snapshot_succeeds_when_command_trim_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let resources = TestResources::new();
+    let mut cfg = test_config(dir.path(), &resources);
+    cfg.snapshot_every = 1;
+    let mut c = conn(&cfg).await;
+    let alice = Uuid::new_v4();
+
+    send(&mut c, &cfg, &deposit(alice, "USDT", 1_000)).await;
+
+    let mut runner = Runner::boot(cfg.clone()).await.unwrap();
+    drain(&mut runner).await;
+    runner.snapshot().await.unwrap();
+
+    let _: () = redis::cmd("DEL")
+        .arg(&cfg.commands_stream)
+        .query_async(&mut c)
+        .await
+        .unwrap();
+
+    runner.snapshot().await.unwrap();
+    assert!(runner.step().await.is_ok(), "engine should keep stepping");
+}

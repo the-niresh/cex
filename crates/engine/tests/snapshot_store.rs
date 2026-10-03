@@ -256,6 +256,15 @@ fn pruning_a_directory_with_fewer_than_the_limit_removes_nothing() {
     assert_eq!(store.list().unwrap().len(), 1);
 }
 
+#[test]
+fn oldest_kept_position_propagates_list_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let bad_path = dir.path().join("not-a-directory");
+    fs::write(&bad_path, b"snapshot dir must be a directory").unwrap();
+    let store = SnapshotStore::new(&bad_path, 3);
+    assert!(store.oldest_kept_position().is_err());
+}
+
 // ───────────────────────── the recovery contract ─────────────────────────
 
 #[test]
