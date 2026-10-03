@@ -157,6 +157,64 @@ async fn deposit_one(
     Ok(())
 }
 
+/// Limits the demo maker needs from the market list.
+pub struct MarketLimits {
+    pub min_notional: i64,
+    pub base_decimals: u32,
+}
+
+/// Read `min_notional` and `base_decimals` for one symbol from `/markets`.
+pub async fn market_limits(
+    http: &reqwest::Client,
+    host: &str,
+    symbol: &str,
+) -> Result<MarketLimits> {
+    let body: serde_json::Value = http
+        .get(format!("{host}/markets"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    let market = body["markets"]
+        .as_array()
+        .context("no markets in the response")?
+        .iter()
+        .find(|m| m["symbol"].as_str() == Some(symbol))
+        .with_context(|| format!("market {symbol} not listed"))?;
+
+    Ok(MarketLimits {
+        min_notional: market["min_notional"]
+            .as_i64()
+            .context("min_notional missing")?,
+        base_decimals: market["base_decimals"]
+            .as_u64()
+            .context("base_decimals missing")? as u32,
+    })
+}
+
+/// The most recent trade price, if the tape has any prints yet.
+pub async fn last_trade_price(
+    http: &reqwest::Client,
+    host: &str,
+    symbol: &str,
+) -> Result<Option<i64>> {
+    let body: serde_json::Value = http
+        .get(format!("{host}/trades/{symbol}?limit=1"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    let price = body["trades"]
+        .as_array()
+        .and_then(|trades| trades.first())
+        .and_then(|t| t["price"].as_i64());
+    Ok(price)
+}
+
 /// The best bid and best ask currently resting, either of which may be absent.
 ///
 /// Read before quoting: a maker that does not know where the market is will
@@ -438,6 +496,17 @@ impl StateLogger {
             "backing off",
             Some(&format!("{}s after {err}", wait.as_secs())),
         );
+    }
+
+    pub fn ignored_stray_book(&mut self, reference: i64, touch: i64) {
+        self.note(
+            "ignoring stray book",
+            Some(&format!("reference {reference}, touch {touch}")),
+        );
+    }
+
+    pub fn below_min_notional(&mut self) {
+        self.note("skipping quotes below minimum notional", None);
     }
 }
 
