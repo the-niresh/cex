@@ -18,9 +18,9 @@ import { ColumnHeads, Scroll } from "./ui/panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 const COLS = [
-  "grid-cols-[minmax(140px,1fr)_minmax(88px,100px)_minmax(88px,100px)_minmax(88px,100px)_minmax(72px,88px)_minmax(72px,88px)_minmax(52px,56px)]",
-  "max-stack:grid-cols-[minmax(96px,1fr)_minmax(72px,1fr)_minmax(64px,80px)_minmax(56px,64px)_48px]",
-  "gap-x-2 [&>span:not(:first-child)]:text-right",
+  "grid-cols-[minmax(128px,1fr)_minmax(80px,92px)_minmax(80px,92px)_minmax(80px,92px)_minmax(64px,76px)_minmax(80px,92px)_72px]",
+  "max-stack:grid-cols-[minmax(80px,1fr)_minmax(72px,1fr)_minmax(64px,80px)_minmax(52px,60px)]",
+  "gap-x-2 max-stack:gap-x-2.5 [&>span:not(:first-child)]:text-right",
 ].join(" ");
 
 function compactPlaces(asset: string, markets: Market[]): number {
@@ -93,7 +93,7 @@ function AmountCell({
           <Num atoms={atoms} decimals={decimals} places={compact} />
         </span>
       </span>
-      <span className="font-sans text-micro">
+      <span className="font-sans text-micro max-stack:hidden">
         <DollarValue atoms={valueAtoms ?? (atoms === 0n ? 0n : null)} muted={muted} />
       </span>
     </div>
@@ -328,8 +328,8 @@ export function PortfolioPage() {
                 <span className="max-stack:hidden">Available</span>
                 <span className="max-stack:hidden">In open orders</span>
                 <span>Value</span>
-                <span>Share</span>
-                <span aria-hidden="true" />
+                <span className="max-stack:hidden">Share</span>
+                <span aria-hidden="true" className="max-stack:hidden" />
               </ColumnHeads>
               <Scroll className="min-h-14 flex-none">
                 {!x.session && (
@@ -403,7 +403,7 @@ export function PortfolioPage() {
                           />
                         </div>
                         <div className="flex flex-col items-end leading-tight">
-                          <span className={quiet ? "text-ink-4" : undefined}>
+                          <span className={`max-stack:hidden ${quiet ? "text-ink-4" : undefined}`}>
                             {row.total === 0n ? (
                               <Num atoms={0n} decimals={6n} places={2} />
                             ) : row.value === null ? (
@@ -419,8 +419,8 @@ export function PortfolioPage() {
                             />
                           </span>
                         </div>
-                        <span className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden">
-                          <span className="relative h-[3px] w-10 shrink-0 bg-rule">
+                        <span className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden max-stack:hidden">
+                          <span className="relative h-[3px] w-8 shrink-0 bg-rule group-hover:hidden">
                             <i
                               className="absolute inset-y-0 left-0 rounded-full"
                               style={{
@@ -429,16 +429,18 @@ export function PortfolioPage() {
                               }}
                             />
                           </span>
-                          <span className={`shrink-0 tabular-nums ${quiet ? "text-ink-4" : "text-ink-3"}`}>
+                          <span
+                            className={`shrink-0 tabular-nums group-hover:hidden ${quiet ? "text-ink-4" : "text-ink-3"}`}
+                          >
                             {quiet || row.sharePct !== null
                               ? `${(row.sharePct ?? 0).toFixed(quiet ? 0 : 1)}%`
                               : "-"}
                           </span>
                         </span>
-                        <span className="flex shrink-0 justify-end">
+                        <span className="overflow-hidden text-right max-stack:hidden">
                           <button
                             type="button"
-                            className="cursor-pointer whitespace-nowrap rounded-control px-1 py-0.5 font-sans text-micro text-control opacity-0 transition-opacity hover:bg-field group-hover:opacity-100 focus:opacity-100"
+                            className="hidden cursor-pointer whitespace-nowrap rounded-control px-1 py-0.5 font-sans text-micro text-control hover:bg-field group-hover:inline focus:inline"
                             onClick={() => openDeposit(row.asset)}
                             data-testid={`portfolio-row-deposit-${row.asset}`}
                           >
