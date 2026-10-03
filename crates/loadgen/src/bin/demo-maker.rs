@@ -23,7 +23,11 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use cex_loadgen::quotes::{ladder, opening_mid, walk, Rng};
-use cex_loadgen::venue::{cancel, fund, place_limit, place_market, register, touch};
+use cex_loadgen::venue::{
+    cancel, fund, place_limit, place_market, register, touch, with_reauth, Backoff, Funding,
+    StateLogger,
+};
+use cex_proto::deposit::deposit_limit_atoms;
 use cex_proto::Side;
 use clap::Parser;
 
@@ -31,8 +35,13 @@ use clap::Parser;
 const TICK: i64 = 10_000;
 /// Where the walk starts and the middle of the band it is held in.
 const MID: i64 = 50_000_000_000;
-/// Enough of both assets that a run measured in days cannot go broke quoting.
-const FUNDING: i64 = 1_000_000_000_000_000;
+
+/// Enough of both assets for a multi-day run, funded in limit-sized deposits.
+fn funding_targets() -> Funding {
+    let usdt = deposit_limit_atoms("USDT").expect("USDT limit");
+    let btc = deposit_limit_atoms("BTC").expect("BTC limit") * 10;
+    Funding { usdt, btc }
+}
 
 #[derive(Parser)]
 #[command(about = "Rests and refreshes a demo book so an idle venue looks alive")]
@@ -69,17 +78,18 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
     let http = reqwest::Client::new();
+    let funding = funding_targets();
 
-    let maker = register(&http, &args.host, "demomaker")
+    let mut maker = register(&http, &args.host, "demomaker")
         .await
         .context("register the maker")?;
-    let taker = register(&http, &args.host, "demotaker")
+    let mut taker = register(&http, &args.host, "demotaker")
         .await
         .context("register the taker")?;
-    fund(&http, &args.host, &maker, FUNDING)
+    fund(&http, &args.host, &maker, funding.usdt, funding.btc)
         .await
         .context("fund the maker")?;
-    fund(&http, &args.host, &taker, FUNDING)
+    fund(&http, &args.host, &taker, funding.usdt, funding.btc)
         .await
         .context("fund the taker")?;
 
@@ -114,6 +124,10 @@ async fn main() -> Result<()> {
     // without removing would bury the ladder under its own history.
     let mut resting: Vec<u64> = Vec::new();
     let mut cycle: u64 = 0;
+    let mut maker_log = StateLogger::new();
+    let mut taker_log = StateLogger::new();
+    let mut maker_backoff = Backoff::new();
+    let mut taker_backoff = Backoff::new();
 
     loop {
         if let Some(limit) = args.cycles {
@@ -124,9 +138,23 @@ async fn main() -> Result<()> {
         cycle += 1;
 
         for id in resting.drain(..) {
-            // One failed cancel must not end the run: the order may have just
-            // traded, and the next cycle re-quotes the level anyway.
-            if let Err(e) = cancel(&http, &args.host, &maker, id).await {
+            let host = args.host.clone();
+            if let Err(e) = with_reauth(
+                &http,
+                &host,
+                &mut maker,
+                funding,
+                &mut maker_log,
+                &mut maker_backoff,
+                |who| {
+                    let http = &http;
+                    let host = host.clone();
+                    let who = who.clone();
+                    async move { cancel(http, &host, &who, id).await }
+                },
+            )
+            .await
+            {
                 eprintln!("demo-maker: cancel {id}: {e}");
             }
         }
@@ -138,19 +166,29 @@ async fn main() -> Result<()> {
                 Side::Buy => "BUY",
                 Side::Sell => "SELL",
             };
-            match place_limit(
+            let host = args.host.clone();
+            let symbol = args.symbol.clone();
+            let price = quote.price;
+            let qty = quote.qty;
+            match with_reauth(
                 &http,
-                &args.host,
-                &maker,
-                &args.symbol,
-                side,
-                quote.price,
-                quote.qty,
+                &host,
+                &mut maker,
+                funding,
+                &mut maker_log,
+                &mut maker_backoff,
+                |who| {
+                    let http = &http;
+                    let host = host.clone();
+                    let symbol = symbol.clone();
+                    let who = who.clone();
+                    async move { place_limit(http, &host, &who, &symbol, side, price, qty).await }
+                },
             )
             .await
             {
                 Ok(id) => resting.push(id),
-                Err(e) => eprintln!("demo-maker: quote {side} {}: {e}", quote.price),
+                Err(e) => eprintln!("demo-maker: quote {side} {price}: {e}"),
             }
         }
 
@@ -160,7 +198,25 @@ async fn main() -> Result<()> {
         if args.trade_every > 0 && rng.one_in(args.trade_every) {
             let side = if rng.one_in(2) { "BUY" } else { "SELL" };
             let qty = args.size / 2;
-            match place_market(&http, &args.host, &taker, &args.symbol, side, qty).await {
+            let host = args.host.clone();
+            let symbol = args.symbol.clone();
+            match with_reauth(
+                &http,
+                &host,
+                &mut taker,
+                funding,
+                &mut taker_log,
+                &mut taker_backoff,
+                |who| {
+                    let http = &http;
+                    let host = host.clone();
+                    let symbol = symbol.clone();
+                    let who = who.clone();
+                    async move { place_market(http, &host, &who, &symbol, side, qty).await }
+                },
+            )
+            .await
+            {
                 Ok(id) => println!("demo-maker: cycle {cycle} traded {side} {qty} (order {id})"),
                 Err(e) => eprintln!("demo-maker: market {side}: {e}"),
             }

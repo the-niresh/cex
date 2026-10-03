@@ -6,7 +6,11 @@
 //! published numbers, so it keeps its own copy rather than growing a parameter
 //! it would have to ignore.
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
+use cex_proto::deposit::deposit_chunks;
+use reqwest::StatusCode;
 use uuid::Uuid;
 
 /// A registered account and the token that speaks for it.
@@ -14,36 +18,141 @@ pub struct User {
     pub token: String,
 }
 
+/// Credentials the demo maker can use to log back in after a token expires.
+#[derive(Clone)]
+pub struct Account {
+    pub token: String,
+    username: String,
+    password: String,
+}
+
+impl Account {
+    pub fn token(&self) -> &str {
+        &self.token
+    }
+}
+
 /// Register a throwaway account. The username is random, so runs never collide.
-pub async fn register(http: &reqwest::Client, host: &str, prefix: &str) -> Result<User> {
+pub async fn register(http: &reqwest::Client, host: &str, prefix: &str) -> Result<Account> {
     let username = format!("{prefix}{}", Uuid::new_v4().simple());
+    let password = "a-good-password";
+    let token = register_named(http, host, &username, password)
+        .await
+        .context("register")?;
+    Ok(Account {
+        token,
+        username,
+        password: password.to_string(),
+    })
+}
+
+async fn register_named(
+    http: &reqwest::Client,
+    host: &str,
+    username: &str,
+    password: &str,
+) -> Result<String> {
     let body: serde_json::Value = http
         .post(format!("{host}/register"))
-        .json(&serde_json::json!({ "username": username, "password": "a-good-password" }))
+        .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
         .await?
         .error_for_status()?
         .json()
         .await?;
 
-    Ok(User {
-        token: body["token"]
-            .as_str()
-            .context("no token in the register response")?
-            .to_string(),
-    })
+    Ok(body["token"]
+        .as_str()
+        .context("no token in the register response")?
+        .to_string())
 }
 
-/// Credit an account with enough of both assets that a long run cannot run dry.
-pub async fn fund(http: &reqwest::Client, host: &str, who: &User, amount: i64) -> Result<()> {
-    for asset in ["USDT", "BTC"] {
-        http.post(format!("{host}/deposit"))
-            .bearer_auth(&who.token)
-            .header("idempotency-key", Uuid::new_v4().to_string())
-            .json(&serde_json::json!({ "asset": asset, "amount": amount }))
-            .send()
-            .await?
-            .error_for_status()?;
+async fn login_named(
+    http: &reqwest::Client,
+    host: &str,
+    username: &str,
+    password: &str,
+) -> Result<String> {
+    let response = http
+        .post(format!("{host}/login"))
+        .json(&serde_json::json!({ "username": username, "password": password }))
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("login failed: {status} {body}");
+    }
+
+    let body: serde_json::Value = response.json().await?;
+    Ok(body["token"]
+        .as_str()
+        .context("no token in the login response")?
+        .to_string())
+}
+
+/// Log in with stored credentials, or register again when the user is gone.
+pub async fn reauth(http: &reqwest::Client, host: &str, account: &mut Account) -> Result<()> {
+    if let Ok(token) = login_named(http, host, &account.username, &account.password).await {
+        account.token = token;
+        return Ok(());
+    }
+
+    let prefix = account
+        .username
+        .chars()
+        .take_while(|c| c.is_ascii_alphabetic())
+        .collect::<String>();
+    let prefix = if prefix.is_empty() {
+        "demo"
+    } else {
+        prefix.as_str()
+    };
+    *account = register(http, host, prefix).await?;
+    Ok(())
+}
+
+/// Credit an account, splitting each asset into deposits within the API limit.
+pub async fn fund(
+    http: &reqwest::Client,
+    host: &str,
+    who: &Account,
+    usdt: i64,
+    btc: i64,
+) -> Result<()> {
+    for chunk in deposit_chunks("USDT", usdt) {
+        deposit_one(http, host, who, "USDT", chunk).await?;
+    }
+    for chunk in deposit_chunks("BTC", btc) {
+        deposit_one(http, host, who, "BTC", chunk).await?;
+    }
+    Ok(())
+}
+
+async fn deposit_one(
+    http: &reqwest::Client,
+    host: &str,
+    who: &Account,
+    asset: &str,
+    amount: i64,
+) -> Result<()> {
+    let response = http
+        .post(format!("{host}/deposit"))
+        .bearer_auth(who.token())
+        .header("idempotency-key", Uuid::new_v4().to_string())
+        .json(&serde_json::json!({ "asset": asset, "amount": amount }))
+        .send()
+        .await?;
+
+    if response.status() == StatusCode::UNAUTHORIZED {
+        anyhow::bail!("unauthorized");
+    }
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("deposit {asset} {amount}: {status} {body}");
     }
     Ok(())
 }
@@ -86,7 +195,7 @@ pub async fn touch(
 pub async fn place_limit(
     http: &reqwest::Client,
     host: &str,
-    who: &User,
+    who: &Account,
     symbol: &str,
     side: &str,
     price: i64,
@@ -107,7 +216,7 @@ pub async fn place_limit(
 pub async fn place_market(
     http: &reqwest::Client,
     host: &str,
-    who: &User,
+    who: &Account,
     symbol: &str,
     side: &str,
     qty: i64,
@@ -124,20 +233,28 @@ pub async fn place_market(
 async fn send_order(
     http: &reqwest::Client,
     host: &str,
-    who: &User,
+    who: &Account,
     body: &serde_json::Value,
 ) -> Result<u64> {
-    let response: serde_json::Value = http
+    let response = http
         .post(format!("{host}/orders"))
-        .bearer_auth(&who.token)
+        .bearer_auth(who.token())
         .header("idempotency-key", Uuid::new_v4().to_string())
         .json(body)
         .send()
-        .await?
-        .error_for_status()?
-        .json()
         .await?;
 
+    if response.status() == StatusCode::UNAUTHORIZED {
+        anyhow::bail!("unauthorized");
+    }
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        anyhow::bail!("order failed: {status} {body}");
+    }
+
+    let response: serde_json::Value = response.json().await?;
     response["order_id"]
         .as_u64()
         .context("no order_id in the order response")
@@ -152,24 +269,93 @@ async fn send_order(
 /// `error_for_status()` here would kill a long run the first time one of its
 /// own quotes traded, which is the one outcome the whole thing is trying to
 /// produce.
-pub async fn cancel(http: &reqwest::Client, host: &str, who: &User, order_id: u64) -> Result<()> {
+pub async fn cancel(
+    http: &reqwest::Client,
+    host: &str,
+    who: &Account,
+    order_id: u64,
+) -> Result<()> {
     let response = http
         .delete(format!("{host}/orders/{order_id}"))
-        .bearer_auth(&who.token)
+        .bearer_auth(who.token())
         .send()
         .await?;
 
     let status = response.status();
-    if status.is_success() || status == reqwest::StatusCode::NOT_FOUND {
+    if status == StatusCode::UNAUTHORIZED {
+        anyhow::bail!("unauthorized");
+    }
+    if status.is_success() || status == StatusCode::NOT_FOUND {
         return Ok(());
     }
 
     let body = response.text().await.unwrap_or_default();
-    if status == reqwest::StatusCode::BAD_REQUEST && already_gone(&body) {
+    if status == StatusCode::BAD_REQUEST && already_gone(&body) {
         return Ok(());
     }
 
     anyhow::bail!("cancel {order_id} failed: {status} {body}")
+}
+
+/// Run `op` and on `401` log in again, fund if the account was re-registered,
+/// then retry once. Persistent failures back off from 1 s to 30 s and log once
+/// per change of state.
+/// USDT and BTC atom targets used when an account must be re-funded.
+#[derive(Clone, Copy)]
+pub struct Funding {
+    pub usdt: i64,
+    pub btc: i64,
+}
+
+pub async fn with_reauth<T, F, Fut>(
+    http: &reqwest::Client,
+    host: &str,
+    account: &mut Account,
+    funding: Funding,
+    logger: &mut StateLogger,
+    backoff: &mut Backoff,
+    op: F,
+) -> Result<T>
+where
+    F: Fn(&Account) -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    loop {
+        match op(account).await {
+            Ok(value) => {
+                backoff.reset();
+                logger.ok();
+                return Ok(value);
+            }
+            Err(e) if is_unauthorized(&e) => {
+                logger.reauthing();
+                reauth(http, host, account).await?;
+                fund(http, host, account, funding.usdt, funding.btc).await?;
+                logger.reauthed();
+                match op(account).await {
+                    Ok(value) => {
+                        backoff.reset();
+                        logger.ok();
+                        return Ok(value);
+                    }
+                    Err(retry_err) => {
+                        let wait = backoff.wait_after_failure();
+                        logger.backing_off(wait, &retry_err);
+                        tokio::time::sleep(wait).await;
+                    }
+                }
+            }
+            Err(e) => {
+                let wait = backoff.wait_after_failure();
+                logger.backing_off(wait, &e);
+                tokio::time::sleep(wait).await;
+            }
+        }
+    }
+}
+
+fn is_unauthorized(err: &anyhow::Error) -> bool {
+    err.to_string().contains("unauthorized")
 }
 
 /// Whether a rejected cancel means the order had already left the book.
@@ -179,6 +365,80 @@ pub async fn cancel(http: &reqwest::Client, host: &str, who: &User, order_id: u6
 fn already_gone(body: &str) -> bool {
     let body = body.to_ascii_lowercase();
     body.contains("already closed") || body.contains("not found") || body.contains("unknown order")
+}
+
+/// Exponential backoff from one second up to thirty.
+pub struct Backoff {
+    current: Duration,
+    max: Duration,
+}
+
+impl Default for Backoff {
+    fn default() -> Self {
+        Self {
+            current: Duration::from_secs(1),
+            max: Duration::from_secs(30),
+        }
+    }
+}
+
+impl Backoff {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn wait_after_failure(&mut self) -> Duration {
+        let wait = self.current;
+        self.current = (self.current * 2).min(self.max);
+        wait
+    }
+
+    pub fn reset(&mut self) {
+        self.current = Duration::from_secs(1);
+    }
+}
+
+/// Logs a state change once, not on every failed order in the same state.
+#[derive(Default)]
+pub struct StateLogger {
+    last: Option<&'static str>,
+}
+
+impl StateLogger {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn note(&mut self, state: &'static str, detail: Option<&str>) {
+        if self.last == Some(state) {
+            return;
+        }
+        self.last = Some(state);
+        if let Some(detail) = detail {
+            eprintln!("demo-maker: {state}: {detail}");
+        } else {
+            eprintln!("demo-maker: {state}");
+        }
+    }
+
+    pub fn ok(&mut self) {
+        self.note("running", None);
+    }
+
+    pub fn reauthing(&mut self) {
+        self.note("token expired, logging in again", None);
+    }
+
+    pub fn reauthed(&mut self) {
+        self.note("logged in and re-funded", None);
+    }
+
+    pub fn backing_off(&mut self, wait: Duration, err: &anyhow::Error) {
+        self.note(
+            "backing off",
+            Some(&format!("{}s after {err}", wait.as_secs())),
+        );
+    }
 }
 
 #[cfg(test)]
