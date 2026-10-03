@@ -14,6 +14,7 @@ import { PanelHead, PanelTitle } from "./ui/panel";
 interface Props {
   markets: Market[];
   signedIn: boolean;
+  initialAsset?: string;
   onGuest(): void;
   onDeposit(asset: string, amount: bigint): Promise<void>;
   onClose(): void;
@@ -22,12 +23,13 @@ interface Props {
 export function DepositDialog({
   markets,
   signedIn,
+  initialAsset = "USDT",
   onGuest,
   onDeposit,
   onClose,
 }: Props) {
   const assets = depositAssets(markets);
-  const [asset, setAsset] = useState("USDT");
+  const [asset, setAsset] = useState(initialAsset);
   const [amount, setAmount] = useState("10000");
   const [sending, setSending] = useState(false);
   const titleId = useId();
