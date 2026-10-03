@@ -109,7 +109,7 @@ export function TradeScreen() {
           markets={x.markets}
           market={x.market}
           symbol={x.symbol}
-          onSelect={x.selectMarket}
+          marketPrices={x.marketPrices}
           lastPrice={lastPrint?.price ?? null}
           lastSide={lastPrint?.taker_side ?? null}
           status={x.status}
