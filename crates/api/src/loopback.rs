@@ -119,10 +119,14 @@ impl Loopback {
     /// Whether Redis answers a ping. Used by `/health` to report a real outage.
     pub async fn ping_redis(&self) -> bool {
         let mut conn = self.conn.clone();
-        redis::cmd("PING")
-            .query_async::<String>(&mut conn)
-            .await
-            .is_ok()
+        matches!(
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                redis::cmd("PING").query_async::<String>(&mut conn),
+            )
+            .await,
+            Ok(Ok(_))
+        )
     }
 
     /// How many requests are currently in flight. Exposed so tests can prove the
