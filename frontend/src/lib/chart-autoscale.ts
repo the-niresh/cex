@@ -12,21 +12,17 @@ export type ChartPriceRange = {
   maxValue: number;
 };
 
-const P_LOW = 0.02;
-const P_HIGH = 0.98;
+const MIN_INLIER_BARS = 10;
+const MAD_MULTIPLIER = 20;
+const MEDIAN_BAND_FRACTION = 0.005;
 const DEFAULT_PADDING_FRACTION = 0.03;
 
-function percentile(sorted: readonly number[], q: number): number {
-  if (sorted.length === 0) return NaN;
-  if (sorted.length === 1) return sorted[0]!;
-
-  const position = q * (sorted.length - 1);
-  const lower = Math.floor(position);
-  const upper = Math.ceil(position);
-  if (lower === upper) return sorted[lower]!;
-
-  const weight = position - lower;
-  return sorted[lower]! * (1 - weight) + sorted[upper]! * weight;
+function median(values: readonly number[]): number {
+  if (values.length === 0) return NaN;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid]!;
+  return (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 /** Min low and max high across the bars, matching default candle autoscale. */
@@ -43,28 +39,32 @@ export function naivePriceRange(bars: readonly ChartOhlc[]): ChartPriceRange | n
 }
 
 /**
- * Robust core range before padding: 2nd percentile of lows, 98th of highs, with the
- * last close kept inside so the last-value label stays on screen.
+ * Robust core range: median of closes, MAD of lows and highs from it, keep bars
+ * within max(20 x MAD, 0.5% of median). Fall back to the plain visible range
+ * when fewer than ten bars pass.
  */
 export function robustCorePriceRange(bars: readonly ChartOhlc[]): ChartPriceRange | null {
   if (bars.length === 0) return null;
 
-  const lows = [...bars.map((bar) => bar.low)].sort((a, b) => a - b);
-  const highs = [...bars.map((bar) => bar.high)].sort((a, b) => a - b);
+  const closeMedian = median(bars.map((bar) => bar.close));
+  const deviations: number[] = [];
+  for (const bar of bars) {
+    deviations.push(Math.abs(bar.low - closeMedian));
+    deviations.push(Math.abs(bar.high - closeMedian));
+  }
+  const mad = median(deviations);
+  const band = Math.max(MAD_MULTIPLIER * mad, MEDIAN_BAND_FRACTION * Math.abs(closeMedian));
 
-  let minValue = percentile(lows, P_LOW);
-  let maxValue = percentile(highs, P_HIGH);
+  const inliers = bars.filter(
+    (bar) =>
+      Math.abs(bar.low - closeMedian) <= band && Math.abs(bar.high - closeMedian) <= band,
+  );
 
-  if (minValue > maxValue) {
-    minValue = lows[0]!;
-    maxValue = highs[highs.length - 1]!;
+  if (inliers.length < MIN_INLIER_BARS) {
+    return naivePriceRange(bars);
   }
 
-  const lastClose = bars[bars.length - 1]!.close;
-  return {
-    minValue: Math.min(minValue, lastClose),
-    maxValue: Math.max(maxValue, lastClose),
-  };
+  return naivePriceRange(inliers);
 }
 
 /** Visible-bar autoscale with a small padding band. */
