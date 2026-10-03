@@ -90,7 +90,7 @@ async fn confirmed_trim_point(
                     .and_then(value_str)
                     .filter(|id| *id != "0-0");
                 if let Some(id) = last {
-                    limits.push(id.clone());
+                    limits.push(next_stream_id(&id));
                 }
             }
             break;
@@ -107,7 +107,7 @@ async fn confirmed_trim_point(
     }
 
     limits.sort_by(|a, b| compare_stream_ids(a, b));
-    Ok(Some(next_stream_id(&limits[0])))
+    Ok(Some(limits[0].clone()))
 }
 
 fn next_stream_id(id: &str) -> String {

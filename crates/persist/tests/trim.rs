@@ -77,3 +77,93 @@ async fn events_are_trimmed_only_after_both_groups_confirm() {
         .unwrap();
     assert_eq!(len, 0, "stream should be empty after trim");
 }
+
+#[tokio::test]
+async fn pending_entries_block_trim_of_the_oldest_unacknowledged_id() {
+    let resources = TestResources::new();
+    let redis_url =
+        std::env::var("CEX_REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6390".into());
+    let stream = format!("test:{}:events", resources.tag);
+    let mut r = conn(&redis_url).await;
+
+    let _: String = r
+        .xgroup_create_mkstream(&stream, GROUP_A, "0")
+        .await
+        .unwrap();
+    let _: String = r
+        .xgroup_create_mkstream(&stream, GROUP_B, "0")
+        .await
+        .unwrap();
+
+    for seq in [1_u64, 2] {
+        let batch = EventBatch {
+            seq,
+            request_id: Uuid::new_v4(),
+            events: vec![Event::DepthUpdated {
+                symbol: "BTC_USDT".into(),
+                depth_seq: seq,
+                deltas: vec![],
+            }],
+        };
+        let json = serde_json::to_string(&batch).unwrap();
+        let _: String = r
+            .xadd(&stream, "*", &[(FIELD_PAYLOAD, json.as_str())])
+            .await
+            .unwrap();
+    }
+
+    let opts = StreamReadOptions::default().group(GROUP_A, "c1").count(10);
+    let reply_a: Option<StreamReadReply> =
+        r.xread_options(&[&stream], &[">"], &opts).await.unwrap();
+    let ids_a: Vec<String> = reply_a
+        .unwrap()
+        .keys
+        .iter()
+        .flat_map(|k| k.ids.iter().map(|e| e.id.clone()))
+        .collect();
+    assert_eq!(ids_a.len(), 2);
+    let first_id = ids_a[0].clone();
+    let _: i64 = r.xack(&stream, GROUP_A, &[&ids_a[1]]).await.unwrap();
+
+    let opts = StreamReadOptions::default().group(GROUP_B, "c1").count(10);
+    let reply_b: Option<StreamReadReply> =
+        r.xread_options(&[&stream], &[">"], &opts).await.unwrap();
+    let ids_b: Vec<String> = reply_b
+        .unwrap()
+        .keys
+        .iter()
+        .flat_map(|k| k.ids.iter().map(|e| e.id.clone()))
+        .collect();
+    let _: i64 = r.xack(&stream, GROUP_B, &ids_b).await.unwrap();
+
+    let mut manager = redis::aio::ConnectionManager::new(redis::Client::open(redis_url).unwrap())
+        .await
+        .unwrap();
+    let _ = trim::trim_confirmed_events(&mut manager, &stream, &[GROUP_A, GROUP_B])
+        .await
+        .unwrap();
+
+    let remaining: redis::Value = redis::cmd("XRANGE")
+        .arg(&stream)
+        .arg("-")
+        .arg("+")
+        .query_async(&mut r)
+        .await
+        .unwrap();
+    let still_there = match &remaining {
+        redis::Value::Array(entries) => entries.iter().any(|entry| {
+            matches!(entry, redis::Value::Array(pair) if pair.first().and_then(|id| {
+                match id {
+                    redis::Value::BulkString(b) => Some(String::from_utf8_lossy(b) == first_id),
+                    redis::Value::SimpleString(s) => Some(s == &first_id),
+                    _ => None,
+                }
+            }) == Some(true))
+        }),
+        _ => false,
+    };
+    assert!(
+        still_there,
+        "the oldest pending entry must survive trim until it is acknowledged"
+    );
+}
