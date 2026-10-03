@@ -26,6 +26,9 @@ export const apiPaths = [
   "/candles",
 ];
 
+const apiTarget = process.env.CEX_DEV_API ?? "http://localhost:8080";
+const wsTarget = process.env.CEX_DEV_WS ?? "ws://localhost:8081";
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
@@ -33,8 +36,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      ...Object.fromEntries(apiPaths.map((path) => [path, "http://localhost:8080"])),
-      "/ws": { target: "ws://localhost:8081", ws: true },
+      ...Object.fromEntries(apiPaths.map((path) => [path, apiTarget])),
+      "/ws": { target: wsTarget, ws: true },
     },
   },
   test: {
