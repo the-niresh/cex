@@ -18,9 +18,9 @@ import { ColumnHeads, Scroll } from "./ui/panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 
 const COLS = [
-  "grid-cols-[minmax(128px,1fr)_minmax(80px,92px)_minmax(80px,92px)_minmax(80px,92px)_minmax(64px,76px)_minmax(80px,92px)_72px]",
+  "grid-cols-[minmax(128px,1fr)_minmax(88px,96px)_minmax(88px,96px)_minmax(88px,96px)_minmax(72px,80px)_minmax(72px,80px)_72px]",
   "max-stack:grid-cols-[minmax(80px,1fr)_minmax(72px,1fr)_minmax(64px,80px)_minmax(52px,60px)]",
-  "gap-x-2 max-stack:gap-x-2.5 [&>span:not(:first-child)]:text-right",
+  "gap-x-3 max-stack:gap-x-2.5 [&>span:not(:first-child)]:px-1 [&>span:not(:first-child)]:text-right [&>div:not(:first-child)]:px-1 [&>div:not(:first-child)]:text-right",
 ].join(" ");
 
 function compactPlaces(asset: string, markets: Market[]): number {
@@ -86,12 +86,7 @@ function AmountCell({
   return (
     <div className="flex flex-col items-end leading-tight">
       <span className={muted ? "text-ink-4" : undefined}>
-        <span className="max-stack:hidden">
-          <Num atoms={atoms} decimals={decimals} />
-        </span>
-        <span className="hidden max-stack:inline">
-          <Num atoms={atoms} decimals={decimals} places={compact} />
-        </span>
+        <Num atoms={atoms} decimals={decimals} places={compact} />
       </span>
       <span className="font-sans text-micro max-stack:hidden">
         <DollarValue atoms={valueAtoms ?? (atoms === 0n ? 0n : null)} muted={muted} />
