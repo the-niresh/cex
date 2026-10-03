@@ -253,6 +253,15 @@ Two rules this crate exists to keep:
 forwarding one to `trades@SYMBOL` would tell everyone who traded with whom. The public message is a
 separate type with no user fields, so the leak does not compile rather than relying on review.
 
+## Redis streams and recovery
+
+The command and event streams used to grow without limit. On a busy box that pushed Redis to about
+870 MB, the Linux out-of-memory killer chose it first and restarted it, which took the chart and
+book down until every service reconnected. Trimming keeps the streams bounded: persist trims
+`cex:events` only after both consumer groups have confirmed past a point, and the engine trims
+`cex:commands` only before the oldest snapshot still kept on disk. The live Redis service also sets
+`oom_score_adj: -500` so the kernel looks elsewhere before killing it again.
+
 **A slow subscriber is dropped, never allowed to stall the others.** Each connection has its own
 cursor into a shared ring buffer, so one that stops reading falls behind alone. When it falls off
 the end its connection is closed and it is told why — a client that carried on would be rebuilding
