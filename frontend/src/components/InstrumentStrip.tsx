@@ -57,7 +57,7 @@ export function InstrumentStrip({
       className={[
         // The strip is the floor of the screen, not a floating card — but it is
         // still a surface, so it takes the same border and radius as one.
-        "col-span-full flex items-stretch gap-5 rounded-panel border border-rule bg-panel-hi px-3",
+        "col-span-full flex min-w-0 items-stretch gap-5 rounded-panel border border-rule bg-panel-hi px-3",
         // Stacked on a phone it has to wrap rather than push the page sideways.
         "max-stack:h-auto max-stack:min-h-[22px] max-stack:flex-wrap max-stack:gap-y-0.5",
       ].join(" ")}
@@ -95,7 +95,14 @@ export function InstrumentStrip({
         title="What the wire added, between this browser and the API"
       />
 
-      <div className="ml-auto flex items-center gap-4 self-center text-micro text-ink-4">
+      <div
+        className={[
+          "ml-auto flex min-w-0 items-center gap-4 self-center text-micro text-ink-4",
+          // Facts are one row on desktop; on a phone they wrap as whole items so
+          // nothing is clipped and labels like "Depth seq" never split mid-word.
+          "max-stack:ml-0 max-stack:w-full max-stack:max-w-full max-stack:flex-wrap max-stack:gap-x-3 max-stack:gap-y-1",
+        ].join(" ")}
+      >
         {noTimings && (
           <span className="flex items-baseline gap-1.5 whitespace-nowrap text-warn">
             <span>Timings</span>
@@ -114,7 +121,7 @@ export function InstrumentStrip({
           value={silentForMs === null ? "—" : describeSilence(silentForMs)}
           testid="status-updated"
         />
-        <span className="flex items-center gap-1.5">
+        <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           <i
             className={`size-1.5 rounded-full ${feedDegraded ? "bg-warn" : "bg-buy"}`}
             aria-hidden
@@ -174,7 +181,7 @@ function Gauge({
 
 function Fact({ label, value, testid }: { label: string; value: string; testid?: string }) {
   return (
-    <span className="flex items-baseline gap-1.5">
+    <span className="flex shrink-0 items-baseline gap-1.5 whitespace-nowrap">
       <span>{label}</span>
       <b className="tnum font-normal text-ink-2" data-testid={testid}>
         {value}

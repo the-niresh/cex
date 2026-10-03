@@ -2,9 +2,13 @@ import { useEffect, useRef } from "react";
 import {
   CandlestickSeries,
   HistogramSeries,
+  TickMarkType,
   createChart,
+  isBusinessDay,
+  isUTCTimestamp,
   type IChartApi,
   type ISeriesApi,
+  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
 import { cn } from "@/lib/utils";
@@ -14,6 +18,36 @@ import type { Candle, Interval, Market } from "../lib/types";
 import { Empty, Meta, Panel, PanelHead, PanelTitle } from "./ui/panel";
 
 const INTERVALS: Interval[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+
+function tickTime(time: Time): Date {
+  if (isUTCTimestamp(time)) return new Date(time * 1000);
+  if (isBusinessDay(time)) return new Date(time.year, time.month - 1, time.day);
+  return new Date(time);
+}
+
+/** One format per tick weight so the axis never ends on a lone month name. */
+function formatChartTick(time: Time, tickMarkType: TickMarkType): string {
+  const date = tickTime(time);
+  const month = date.toLocaleString("en-US", { month: "short" });
+  const day = date.getDate();
+  const hours = date.getHours().toString().padStart(2, "0");
+  const mins = date.getMinutes().toString().padStart(2, "0");
+
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return String(date.getFullYear());
+    case TickMarkType.Month:
+      return `${month} ${day}`;
+    case TickMarkType.DayOfMonth:
+      return `${month} ${day}`;
+    case TickMarkType.Time:
+      return `${hours}:${mins}`;
+    case TickMarkType.TimeWithSeconds:
+      return `${hours}:${mins}:${date.getSeconds().toString().padStart(2, "0")}`;
+    default:
+      return `${month} ${day}`;
+  }
+}
 
 interface Props {
   market: Market | null;
@@ -63,6 +97,9 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
         borderColor: token("--color-rule-hi"),
         timeVisible: true,
         secondsVisible: false,
+        tickMarkFormatter: (time: Time, tickMarkType: TickMarkType) =>
+          formatChartTick(time, tickMarkType),
+        rightOffset: 4,
         // `fitContent` below spreads whatever bars exist across the panel. On a
         // young market that is a dozen bars over 900px, and a candle 100px wide
         // stops reading as a candle. Capping the spacing keeps them the shape
@@ -95,6 +132,9 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     });
     // Volume is context, not the subject: it lives in the bottom fifth.
     chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    // Keep the price tag off the time-axis ticks, especially on the 300px phone
+    // panel where the volume pane leaves little room at the bottom.
+    chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.28 } });
 
     chartRef.current = chart;
     priceRef.current = price;

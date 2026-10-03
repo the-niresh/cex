@@ -108,24 +108,34 @@ export function TopBar({
   return (
     <header
       className={[
-        "col-span-full flex min-w-0 flex-row flex-nowrap items-stretch overflow-hidden",
-        "min-h-14 rounded-panel border border-rule bg-panel-hi [&>*]:min-h-14",
-        "max-stack:flex-wrap",
+        "col-span-full flex h-14 min-w-0 flex-row flex-nowrap items-stretch overflow-x-clip",
+        "rounded-panel border border-rule bg-panel-hi",
+        "max-stack:h-auto max-stack:min-h-14 max-stack:flex-wrap",
       ].join(" ")}
     >
-      <div className="flex flex-none items-center gap-2 border-r border-rule pl-3 pr-3.5">
-        {/* Sized in CSS and given its dimensions in the markup, so the row does
-            not jump a pixel taller the moment the image finishes loading. */}
-        <img
-          src="/logo.png"
-          alt=""
-          width={25}
-          height={32}
-          className="h-8 w-auto flex-none select-none"
-          draggable={false}
-          data-testid="brand-logo"
-        />
-        <span className="font-sans text-[11px] font-bold tracking-tight text-ink">CEX</span>
+      <div className="flex h-14 flex-none items-center gap-2 border-r border-rule pl-3 pr-3.5 max-stack:h-auto max-stack:min-h-14">
+        <Link
+          to="/"
+          aria-label="CEX home"
+          className={cn(
+            "flex flex-none items-center gap-2 rounded-control py-1 pr-1 transition-colors",
+            "hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-control",
+          )}
+          data-testid="brand-home"
+        >
+          {/* Sized in CSS and given its dimensions in the markup, so the row does
+              not jump a pixel taller the moment the image finishes loading. */}
+          <img
+            src="/logo.png"
+            alt=""
+            width={25}
+            height={32}
+            className="h-8 w-auto flex-none select-none"
+            draggable={false}
+            data-testid="brand-logo"
+          />
+          <span className="font-sans text-[11px] font-bold tracking-tight text-ink">CEX</span>
+        </Link>
         <span className="font-sans text-micro tracking-[0.06em] text-ink-4">spot</span>
         <nav className="ml-1 flex items-center gap-0.5" aria-label="Primary">
           <NavLink to="/" active={page === "trade"} testId="nav-trade">Trade</NavLink>
@@ -154,9 +164,9 @@ export function TopBar({
           account block, which then swallowed the clicks meant for them. */}
       <nav
         className={[
-          "flex min-w-[150px] flex-[0_1_auto] items-center gap-1 overflow-x-auto px-2 py-1",
+          "flex h-14 min-w-[150px] flex-[0_1_auto] items-center gap-1 overflow-x-auto px-2",
           "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          "max-stack:flex-[1_1_auto]",
+          "max-stack:h-auto max-stack:min-h-14 max-stack:flex-[1_1_auto]",
         ].join(" ")}
         data-testid="markets"
       >
@@ -205,13 +215,13 @@ export function TopBar({
            room, and folds its own readouts onto more lines when there is not. */
         <div
           className={[
-            "flex min-w-0 flex-[1_1_auto] flex-wrap items-center gap-x-[22px] gap-y-0.5",
-            "ml-1 px-4.5 py-1.5",
-            "max-stack:order-1 max-stack:ml-0 max-stack:flex-[0_0_100%]",
+            "flex h-14 min-w-0 flex-[1_1_auto] flex-nowrap items-center gap-x-[22px]",
+            "ml-1 px-4.5",
+            "max-stack:order-1 max-stack:ml-0 max-stack:flex-[0_0_100%] max-stack:flex-wrap max-stack:gap-y-1 max-stack:py-1.5",
           ].join(" ")}
           data-testid="ticker"
         >
-          <div className="flex flex-col gap-px leading-[1.15]">
+          <div className="flex flex-none flex-col gap-px leading-[1.15]">
             <Key>last</Key>
             <span
               className={`tnum text-[22px] font-medium leading-[1.1] tracking-[-0.015em] ${
@@ -229,7 +239,7 @@ export function TopBar({
             </span>
           </div>
 
-          <div className="flex flex-col gap-px leading-[1.15]">
+          <div className="flex flex-none flex-col gap-px leading-[1.15]">
             <Key>24h change</Key>
             {/* The day's move is the one number here that carries a direction,
                 so it is the only other one that carries a colour. */}
@@ -259,7 +269,7 @@ export function TopBar({
             </span>
           </div>
 
-          <div className="flex flex-col gap-px leading-[1.15]">
+          <div className="hidden min-[1180px]:flex flex-none flex-col gap-px leading-[1.15]">
             <Key>24h high</Key>
             <span className="tnum text-micro text-ink-2">
               {day === null ? (
@@ -270,7 +280,7 @@ export function TopBar({
             </span>
           </div>
 
-          <div className="flex flex-col gap-px leading-[1.15]">
+          <div className="hidden min-[1180px]:flex flex-none flex-col gap-px leading-[1.15]">
             <Key>24h low</Key>
             <span className="tnum text-micro text-ink-2">
               {day === null ? (
@@ -281,7 +291,7 @@ export function TopBar({
             </span>
           </div>
 
-          <div className="flex flex-col gap-px leading-[1.15]">
+          <div className="hidden min-[1380px]:flex flex-none flex-col gap-px leading-[1.15]">
             <Key>24h volume</Key>
             <span className="tnum text-micro text-ink-2">
               {day === null ? (
@@ -299,8 +309,8 @@ export function TopBar({
 
       <div
         className={[
-          "ml-auto flex flex-none items-center gap-[9px] border-l border-rule px-3",
-          "max-stack:order-2",
+          "ml-auto flex h-14 flex-none items-center gap-[9px] border-l border-rule px-3",
+          "max-stack:order-2 max-stack:h-auto max-stack:min-h-14",
         ].join(" ")}
       >
         <i
@@ -313,8 +323,8 @@ export function TopBar({
 
       <div
         className={[
-          "flex flex-none items-center gap-2 border-l border-rule px-3",
-          "max-stack:order-2",
+          "flex h-14 flex-none items-center gap-2 border-l border-rule px-3",
+          "max-stack:order-2 max-stack:h-auto max-stack:min-h-14",
         ].join(" ")}
       >
         {session ? (

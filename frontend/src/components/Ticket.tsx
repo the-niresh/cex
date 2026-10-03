@@ -181,7 +181,7 @@ export function Ticket({
         )}
       </PanelHead>
 
-      <div className="flex flex-none flex-col gap-4 p-3 [&>*]:flex-none">
+      <div className="flex flex-none flex-col gap-3 p-3 [&>*]:flex-none">
         <Segmented variant="side" className="grid-cols-2" data-testid="side-select">
           <Segment
             data-side="buy"

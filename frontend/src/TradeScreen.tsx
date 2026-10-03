@@ -165,8 +165,7 @@ export function TradeScreen() {
 
             `ScrollShade` because scrolling silently is nearly as bad as
             clipping: the cut lands mid-row and reads as a broken table. */}
-        <Panel data-testid="ticket-rail">
-          <ScrollShade>
+        <Panel className="min-h-0" data-testid="ticket-rail">
           <Ticket
             market={x.market}
             balances={x.balances}
@@ -178,13 +177,14 @@ export function TradeScreen() {
             onGuest={() => void x.signInAsGuest()}
             onSubmit={x.submitOrder}
           />
-          <Balances
-            balances={x.balances}
-            markets={x.markets}
-            signedIn={x.session !== null}
-            onGuest={() => void x.signInAsGuest()}
-            onDeposit={x.credit}
-          />
+          <ScrollShade className="min-h-0 flex-1">
+            <Balances
+              balances={x.balances}
+              markets={x.markets}
+              signedIn={x.session !== null}
+              onGuest={() => void x.signInAsGuest()}
+              onDeposit={x.credit}
+            />
           </ScrollShade>
         </Panel>
 
