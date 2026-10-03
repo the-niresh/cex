@@ -5,7 +5,11 @@
 
 set -eu
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=deploy-api-ip.sh
+. "$SCRIPT_DIR/deploy-api-ip.sh"
+
+REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEPLOY_DIR="${CEX_DEPLOY_DIR:-/srv/claude/deploy/cex}"
 ENV_FILE="${CEX_ENV_FILE:-$REPO/.env}"
 DRY_RUN=0
@@ -46,7 +50,7 @@ wait_for_http() {
     label="$2"
     deadline=$(( $(date +%s) + 60 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-        if curl -sf "$url" >/dev/null 2>&1; then
+        if curl -sf -m 5 "$url" >/dev/null 2>&1; then
             return 0
         fi
         sleep 1
@@ -84,11 +88,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
     exit 0
 fi
 
-API_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' cex-api)"
-if [ -z "$API_IP" ]; then
-    echo "could not resolve cex-api container ip" >&2
+CEX_NETWORK="$(cex_project_network cex)"
+API_IP="$(docker inspect cex-api | CEX_NETWORK="$CEX_NETWORK" cex_api_ip_from_inspect_json)" || {
+    echo "could not resolve cex-api container ip on network $CEX_NETWORK" >&2
     exit 1
-fi
+}
 
 wait_for_http "http://${API_IP}:8080/health" "GET /health"
 wait_for_http "http://${API_IP}:8080/markets" "GET /markets"
