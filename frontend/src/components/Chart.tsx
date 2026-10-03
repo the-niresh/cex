@@ -132,6 +132,9 @@ export function Chart({ market, candles, interval, onInterval }: Props) {
     });
     // Volume is context, not the subject: it lives in the bottom fifth.
     chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    // Keep the price tag off the time-axis ticks — especially on the 300px phone
+    // panel where the volume pane leaves little room at the bottom.
+    chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.28 } });
 
     chartRef.current = chart;
     priceRef.current = price;
